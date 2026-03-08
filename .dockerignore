@@ -1,0 +1,17 @@
+node_modules
+.next
+.git
+.gitignore
+.env*
+.claude
+data
+coverage
+*.md
+*.gif
+*.mp4
+pvq-gif-*.png
+gif-input.txt
+create-gif.mjs
+Dockerfile
+docker-compose*.yml
+.dockerignore
