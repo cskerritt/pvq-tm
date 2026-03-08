@@ -39,3 +39,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/src/generated/prisma
+
+# Large data files (already seeded in DB)
+/data/
+
+# Media/walkthrough files
+*.gif
+*.mp4
+pvq-gif-*.png
+gif-input.txt
+create-gif.mjs
+
+# Claude context
+.claude/

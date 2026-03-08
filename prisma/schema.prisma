@@ -1,0 +1,288 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model OccupationDOT {
+  id             String   @id
+  title          String
+  industryDesig  String?
+  svp            Int
+  strength       String
+  gedR           Int
+  gedM           Int
+  gedL           Int
+  aptitudes      Json
+  temperaments   String[]
+  interests      String[]
+  physicalDemands Json
+  envConditions  Json
+  workFields     String[]
+  mpsms          String[]
+  dlu            String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  crosswalks       DOTONETCrosswalk[]
+  pastRelevantWork PastRelevantWork[]
+}
+
+model OccupationONET {
+  id             String   @id
+  title          String
+  description    String?
+  tasks          Json?
+  dwas           Json?
+  toolsTech      Json?
+  knowledge      Json?
+  skills         Json?
+  abilities      Json?
+  workActivities Json?
+  workContext    Json?
+  jobZone        Int?
+  svpRange       String?
+  relatedOccs    Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  crosswalks      DOTONETCrosswalk[]
+  targetOccs      TargetOccupation[]
+}
+
+model OccupationORS {
+  id             String   @id @default(cuid())
+  onetSocCode    String   @unique
+  title          String
+  physicalDemands Json?
+  envConditions  Json?
+  cogMental      Json?
+  eduTrainExp    Json?
+  standardErrors Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model OccupationWages {
+  id          String   @id @default(cuid())
+  onetSocCode String
+  areaType    String
+  areaCode    String
+  areaName    String
+  employment  Int?
+  meanWage    Float?
+  medianWage  Float?
+  pct10       Float?
+  pct25       Float?
+  pct75       Float?
+  pct90       Float?
+  year        Int
+  createdAt   DateTime @default(now())
+
+  @@unique([onetSocCode, areaType, areaCode, year])
+}
+
+model OccupationProjections {
+  id             String   @id @default(cuid())
+  socCode        String
+  title          String
+  baseYear       Int
+  projYear       Int
+  baseEmployment Float?
+  projEmployment Float?
+  changeN        Float?
+  changePct      Float?
+  openingsAnnual Float?
+  createdAt      DateTime @default(now())
+
+  @@unique([socCode, baseYear, projYear])
+}
+
+model DOTONETCrosswalk {
+  id          String @id @default(cuid())
+  dotCode     String
+  onetSocCode String
+
+  dotOcc  OccupationDOT  @relation(fields: [dotCode], references: [id])
+  onetOcc OccupationONET @relation(fields: [onetSocCode], references: [id])
+
+  @@unique([dotCode, onetSocCode])
+}
+
+model Case {
+  id             String    @id @default(cuid())
+  clientName     String
+  clientDOB      DateTime?
+  evaluatorName  String?
+  referralSource String?
+  dateOfInjury   DateTime?
+  dateOfEval     DateTime?
+  notes          String?
+  status         String    @default("active")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  profiles         WorkerProfile[]
+  pastRelevantWork PastRelevantWork[]
+  acquiredSkills   AcquiredSkill[]
+  analyses         Analysis[]
+}
+
+model WorkerProfile {
+  id          String @id @default(cuid())
+  caseId      String
+  profileType String
+
+  reasoning           Int?
+  math                Int?
+  language            Int?
+  spatialPerception   Int?
+  formPerception      Int?
+  clericalPerception  Int?
+  motorCoordination   Int?
+  fingerDexterity     Int?
+  manualDexterity     Int?
+  eyeHandFoot         Int?
+  colorDiscrimination Int?
+  strength            Int?
+  climbBalance        Int?
+  stoopKneel          Int?
+  reachHandle         Int?
+  talkHear            Int?
+  see                 Int?
+  workLocation        Int?
+  extremeCold         Int?
+  extremeHeat         Int?
+  wetnessHumidity     Int?
+  noiseVibration      Int?
+  hazards             Int?
+  dustsFumes          Int?
+
+  notes   String?
+  sources String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@unique([caseId, profileType])
+}
+
+model PastRelevantWork {
+  id                   String    @id @default(cuid())
+  caseId               String
+  jobTitle             String
+  employer             String?
+  dotCode              String?
+  onetSocCode          String?
+  svp                  Int?
+  skillLevel           String?
+  strengthLevel        String?
+  startDate            DateTime?
+  endDate              DateTime?
+  durationMonths       Int?
+  dutiesDescription    String?
+  isSubstantialGainful Boolean   @default(true)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  case           Case           @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  dotOcc         OccupationDOT? @relation(fields: [dotCode], references: [id])
+  acquiredSkills AcquiredSkill[]
+}
+
+model AcquiredSkill {
+  id                String  @id @default(cuid())
+  caseId            String
+  prwId             String
+  actionVerb        String
+  object            String
+  context           String?
+  toolsSoftware     String?
+  materialsServices String?
+  svpLevel          Int?
+  evidenceSource    String?
+  frequency         String?
+  recency           String?
+  performanceMode   String?
+  isTransferable    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  case Case             @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  prw  PastRelevantWork @relation(fields: [prwId], references: [id], onDelete: Cascade)
+}
+
+model Analysis {
+  id             String   @id @default(cuid())
+  caseId         String
+  name           String?
+  status         String   @default("draft")
+  step           Int      @default(1)
+  ageRule        String?
+  priorEarnings  Float?
+  targetArea     String?
+  targetAreaName String?
+  dataVersions   Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  case              Case               @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  targetOccupations TargetOccupation[]
+}
+
+model TargetOccupation {
+  id              String  @id @default(cuid())
+  analysisId      String
+  onetSocCode     String
+  dotCode         String?
+  title           String
+  svp             Int?
+  stq             Float?
+  stqDetails      Json?
+  tfq             Float?
+  tfqDetails      Json?
+  vaq             Float?
+  vaqDetails      Json?
+  lmq             Float?
+  lmqDetails      Json?
+  pvq             Float?
+  excluded        Boolean @default(false)
+  exclusionReason String?
+  confidenceGrade String?
+  notes           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  analysis Analysis       @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  onetOcc  OccupationONET @relation(fields: [onetSocCode], references: [id])
+}
+
+model DataSyncLog {
+  id             String    @id @default(cuid())
+  source         String
+  status         String
+  recordsUpdated Int       @default(0)
+  version        String?
+  error          String?
+  startedAt      DateTime
+  completedAt    DateTime?
+}
+
+// RHAJ Reference Data — structured definitions from the
+// Revised Handbook for Analyzing Jobs (DOL, 1991)
+model RHAJReference {
+  id          String   @id // e.g. "dpt", "ged", "svp", "aptitudes", "temperaments", "physical_demands", "env_conditions", "work_fields", "mpsms"
+  category    String   // chapter/topic category
+  title       String   // human-readable title
+  data        Json     // structured definitions from the RHAJ chapter
+  source      String?  // source citation
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
