@@ -34,6 +34,7 @@ import {
   Info,
 } from "lucide-react";
 import { toast } from "sonner";
+import { CaseBreadcrumb } from "@/components/case-breadcrumb";
 
 interface AnalysisData {
   id: string;
@@ -190,6 +191,8 @@ export default function AnalysisPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+      <CaseBreadcrumb caseId={caseId} currentPage="Analysis" />
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Analysis</h1>

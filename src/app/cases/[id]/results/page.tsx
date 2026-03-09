@@ -19,6 +19,7 @@ import { FileText, Download, ChevronDown, ChevronUp, ExternalLink, DollarSign, T
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Fragment } from "react";
+import { CaseBreadcrumb } from "@/components/case-breadcrumb";
 
 interface AnalysisResult {
   id: string;
@@ -220,6 +221,8 @@ export default function ResultsPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+      <CaseBreadcrumb caseId={caseId} currentPage="Results" />
+
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Analysis Results</h1>

@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Save, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
+import { CaseBreadcrumb } from "@/components/case-breadcrumb";
 import {
   TRAIT_KEYS,
   TRAIT_LABELS,
@@ -143,6 +144,8 @@ export default function ProfilesPage() {
 
   return (
     <div className="p-6 space-y-4">
+      <CaseBreadcrumb caseId={caseId} currentPage="Worker Profiles" />
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Worker Profiles</h1>

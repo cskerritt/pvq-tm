@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/table";
 import { Plus, Wrench, CheckCircle, XCircle, Trash2, Pencil, Sparkles, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { CaseBreadcrumb } from "@/components/case-breadcrumb";
 
 interface PRWEntry {
   id: string;
@@ -198,6 +199,8 @@ export default function SkillsPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+      <CaseBreadcrumb caseId={caseId} currentPage="Acquired Skills" />
+
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Acquired Skill Inventory</h1>

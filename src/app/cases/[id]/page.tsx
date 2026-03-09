@@ -17,6 +17,7 @@ import {
   Circle,
   AlertCircle,
 } from "lucide-react";
+import { CaseBreadcrumb } from "@/components/case-breadcrumb";
 
 interface CaseData {
   id: string;
@@ -161,6 +162,8 @@ export default function CaseDetailPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+      <CaseBreadcrumb caseId={id} currentPage="" />
+
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>

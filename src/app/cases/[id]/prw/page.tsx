@@ -23,8 +23,26 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, Search, Briefcase, Trash2, Pencil, ExternalLink, Loader2, Sparkles } from "lucide-react";
+import { Plus, Search, Briefcase, Trash2, Pencil, ExternalLink, Loader2, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
+import { CaseBreadcrumb } from "@/components/case-breadcrumb";
+
+interface DOTOccData {
+  id: string;
+  title: string;
+  svp: number;
+  strength: string;
+  gedR: number;
+  gedM: number;
+  gedL: number;
+  aptitudes: Record<string, number>;
+  temperaments: string[];
+  interests: string[];
+  physicalDemands: Record<string, unknown>;
+  envConditions: Record<string, unknown>;
+  workFields: string[];
+  mpsms: string[];
+}
 
 interface PRWEntry {
   id: string;
@@ -41,6 +59,7 @@ interface PRWEntry {
   dutiesDescription: string | null;
   isSubstantialGainful: boolean;
   acquiredSkills: { id: string }[];
+  dotOcc: DOTOccData | null;
 }
 
 interface OccSearchResult {
@@ -168,6 +187,7 @@ export default function PRWPage() {
   const [saving, setSaving] = useState(false);
   const [generatingDuties, setGeneratingDuties] = useState(false);
   const [generatedDuties, setGeneratedDuties] = useState("");
+  const [expandedPRW, setExpandedPRW] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -475,8 +495,12 @@ export default function PRWPage() {
     ? entries.find((e) => e.id === editingId)
     : null;
 
+  const STRENGTH_MAP: Record<string, string> = { S: "Sedentary", L: "Light", M: "Medium", H: "Heavy", V: "Very Heavy" };
+
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+      <CaseBreadcrumb caseId={caseId} currentPage="Past Relevant Work" />
+
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Past Relevant Work</h1>
@@ -799,7 +823,7 @@ export default function PRWPage() {
                     <p className="text-sm text-muted-foreground">
                       {e.employer && `${e.employer} | `}
                       {e.onetSocCode && <span className="font-mono">{e.onetSocCode}</span>}
-                      {e.dotCode && <span className="font-mono ml-2">{e.dotCode}</span>}
+                      {e.dotCode && <span className="font-mono ml-2">DOT {e.dotCode}</span>}
                       {e.durationMonths && ` | ${e.durationMonths} months`}
                       {e.startDate && ` | ${new Date(e.startDate).toLocaleDateString()}`}
                       {e.endDate && ` \u2013 ${new Date(e.endDate).toLocaleDateString()}`}
@@ -812,9 +836,17 @@ export default function PRWPage() {
                   </div>
                   <div className="flex flex-wrap gap-2 items-center">
                     {e.svp !== null && <Badge variant="outline">SVP {e.svp}</Badge>}
-                    {e.strengthLevel && <Badge variant="secondary">{e.strengthLevel}</Badge>}
+                    {e.strengthLevel && <Badge variant="secondary">{STRENGTH_MAP[e.strengthLevel] ?? e.strengthLevel}</Badge>}
                     {e.skillLevel && <Badge variant="secondary">{e.skillLevel}</Badge>}
                     <Badge variant="outline">{e.acquiredSkills.length} skills</Badge>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setExpandedPRW(expandedPRW === e.id ? null : e.id)}
+                      title="Show DOT details"
+                    >
+                      {expandedPRW === e.id ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    </Button>
                     <Button variant="ghost" size="sm" onClick={() => openEdit(e)}>
                       <Pencil className="h-3 w-3" />
                     </Button>
@@ -828,6 +860,126 @@ export default function PRWPage() {
                     </Button>
                   </div>
                 </div>
+
+                {/* Expanded DOT Details */}
+                {expandedPRW === e.id && (
+                  <div className="mt-3 pt-3 border-t space-y-3">
+                    {e.dotOcc ? (
+                      <>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                          <div>
+                            <p className="text-xs text-muted-foreground">DOT Title</p>
+                            <p className="font-medium">{e.dotOcc.title}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">DOT Code</p>
+                            <p className="font-mono">{e.dotOcc.id}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">SVP / Skill Level</p>
+                            <p>{e.dotOcc.svp} ({e.dotOcc.svp <= 3 ? "Unskilled" : e.dotOcc.svp <= 6 ? "Semi-skilled" : "Skilled"})</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Strength</p>
+                            <p>{STRENGTH_MAP[e.dotOcc.strength] ?? e.dotOcc.strength}</p>
+                          </div>
+                        </div>
+
+                        {/* GED */}
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1 font-medium">GED Levels</p>
+                          <div className="flex gap-3">
+                            <Badge variant="outline">R: {e.dotOcc.gedR}</Badge>
+                            <Badge variant="outline">M: {e.dotOcc.gedM}</Badge>
+                            <Badge variant="outline">L: {e.dotOcc.gedL}</Badge>
+                          </div>
+                        </div>
+
+                        {/* Aptitudes */}
+                        {e.dotOcc.aptitudes && Object.keys(e.dotOcc.aptitudes).length > 0 && (
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-1 font-medium">Aptitudes (1=High, 5=Low)</p>
+                            <div className="flex flex-wrap gap-2">
+                              {Object.entries(e.dotOcc.aptitudes).map(([key, val]) => (
+                                <Badge key={key} variant="secondary" className="text-xs">
+                                  {key}: {val as number}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Work Fields */}
+                        {e.dotOcc.workFields?.length > 0 && (
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-1 font-medium">Work Fields</p>
+                            <div className="flex flex-wrap gap-1">
+                              {e.dotOcc.workFields.map((wf) => (
+                                <Badge key={wf} variant="outline" className="text-xs">{wf}</Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* MPSMS (Materials, Products, Subject Matter, Services) */}
+                        {e.dotOcc.mpsms?.length > 0 && (
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-1 font-medium">MPSMS (Materials/Products/Subject Matter/Services)</p>
+                            <div className="flex flex-wrap gap-1">
+                              {e.dotOcc.mpsms.map((m) => (
+                                <Badge key={m} variant="outline" className="text-xs">{m}</Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Temperaments */}
+                        {e.dotOcc.temperaments?.length > 0 && (
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-1 font-medium">Temperaments</p>
+                            <div className="flex flex-wrap gap-1">
+                              {e.dotOcc.temperaments.map((t) => (
+                                <Badge key={t} variant="secondary" className="text-xs">{t}</Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Physical Demands */}
+                        {e.dotOcc.physicalDemands && Object.keys(e.dotOcc.physicalDemands).length > 0 && (
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-1 font-medium">Physical Demands</p>
+                            <div className="flex flex-wrap gap-2">
+                              {Object.entries(e.dotOcc.physicalDemands).map(([key, val]) => (
+                                <Badge key={key} variant="secondary" className="text-xs">
+                                  {key}: {String(val)}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Environmental Conditions */}
+                        {e.dotOcc.envConditions && Object.keys(e.dotOcc.envConditions).length > 0 && (
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-1 font-medium">Environmental Conditions</p>
+                            <div className="flex flex-wrap gap-2">
+                              {Object.entries(e.dotOcc.envConditions).map(([key, val]) => (
+                                <Badge key={key} variant="secondary" className="text-xs">
+                                  {key}: {String(val)}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        No DOT crosswalk data linked. Edit this entry and select an O*NET occupation to auto-lookup DOT data.
+                      </p>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}
