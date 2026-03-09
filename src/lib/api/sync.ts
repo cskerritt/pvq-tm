@@ -335,12 +335,49 @@ export async function syncSingleOccupation(
 }
 
 /**
+ * SOC code crosswalk: maps O*NET base SOC codes to their OEWS equivalents.
+ * Needed because BLS periodically restructures SOC codes — O*NET may split
+ * occupations that OEWS combines under a single code, or vice versa.
+ * Military occupations (55-xxxx) have no OEWS data.
+ */
+const OEWS_SOC_CROSSWALK: Record<string, string> = {
+  // Buyers & Purchasing → combined in OEWS
+  "13-1021": "13-1020", "13-1022": "13-1020", "13-1023": "13-1020",
+  // Property Appraisers → combined in OEWS
+  "13-2022": "13-2020", "13-2023": "13-2020",
+  // Counselors → combined in OEWS
+  "21-1011": "21-1018", "21-1014": "21-1018",
+  // Special Ed Teachers → combined K+Elem in OEWS
+  "25-2055": "25-2052", "25-2056": "25-2052",
+  // Teaching Assistants → combined in OEWS
+  "25-9042": "25-9045", "25-9043": "25-9045", "25-9049": "25-9045",
+  // Lab Technologists/Technicians → combined in OEWS
+  "29-2011": "29-2010", "29-2012": "29-2010",
+  // Home Health + Personal Care → combined in OEWS
+  "31-1121": "31-1120", "31-1122": "31-1120",
+  // Tour & Travel Guides → combined in OEWS
+  "39-7011": "39-7010", "39-7012": "39-7010",
+  // Construction workers → combined in OEWS
+  "47-4091": "47-4090", "47-4099": "47-4090",
+  // Assemblers → combined in OEWS
+  "51-2022": "51-2028", "51-2023": "51-2028",
+  "51-2092": "51-2090", "51-2099": "51-2090",
+  // First-Line Supervisors Transportation → combined in OEWS
+  "53-1042": "53-1047", "53-1043": "53-1047",
+  "53-1044": "53-1047", "53-1049": "53-1047",
+};
+
+/**
  * Sync OEWS (wage & employment) data from local BLS dataset.
  *
  * Uses the complete OEWS May 2024 dataset (Excel export from BLS) which has been
  * converted to a JSON file at src/data/oews-data.json. This contains
  * 831 detailed occupations with employment, mean wage, median wage,
  * and percentile wage data (10th, 25th, 75th, 90th).
+ *
+ * Handles SOC code restructuring via a crosswalk — O*NET codes that
+ * don't directly match an OEWS code are mapped to their combined equivalent.
+ * Only military occupations (55-xxxx) and fishing (45-3031) lack OEWS data.
  *
  * No BLS API calls needed — all data is local.
  */
@@ -389,13 +426,32 @@ export async function syncOEWS(): Promise<{ synced: number; errors: number }> {
 
     let matched = 0;
     let unmatched = 0;
+    let crosswalked = 0;
     const year = 2024; // OEWS May 2024 dataset
 
     for (const occ of occupations) {
       try {
         // Extract base SOC code: "11-1021.00" → "11-1021"
         const baseCode = occ.id.replace(/\.\d+$/, "");
-        const oewsOcc = oewsLookup.get(baseCode);
+
+        // Try direct match first, then crosswalk, then parent code
+        let oewsOcc = oewsLookup.get(baseCode);
+
+        if (!oewsOcc) {
+          // Try the crosswalk for restructured SOC codes
+          const mappedCode = OEWS_SOC_CROSSWALK[baseCode];
+          if (mappedCode) {
+            oewsOcc = oewsLookup.get(mappedCode);
+            if (oewsOcc) crosswalked++;
+          }
+        }
+
+        if (!oewsOcc) {
+          // Try parent code: "13-1021" → "13-1020"
+          const parentCode = baseCode.slice(0, -1) + "0";
+          oewsOcc = oewsLookup.get(parentCode);
+          if (oewsOcc) crosswalked++;
+        }
 
         if (oewsOcc) {
           matched++;
@@ -446,7 +502,7 @@ export async function syncOEWS(): Promise<{ synced: number; errors: number }> {
     }
 
     console.log(
-      `[syncOEWS] Done: ${matched} matched, ${unmatched} unmatched, ${synced} synced, ${errors} errors`
+      `[syncOEWS] Done: ${matched} matched (${crosswalked} via crosswalk), ${unmatched} unmatched (military/fishing), ${synced} synced, ${errors} errors`
     );
 
     await prisma.dataSyncLog.update({
