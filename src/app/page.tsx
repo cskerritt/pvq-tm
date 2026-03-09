@@ -100,7 +100,7 @@ export default function Dashboard() {
     ])
       .then(([c, s]) => {
         setCases(c);
-        setSyncStatus(s);
+        setSyncStatus(Array.isArray(s) ? s : s.sources ?? []);
       })
       .catch(() => {
         toast.error("Failed to load data");
