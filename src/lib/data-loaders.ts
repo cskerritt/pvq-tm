@@ -66,3 +66,17 @@ export async function loadDOTData(): Promise<Record<string, DOTOccupationData>> 
   const data = await import("@/data/dot-data.json");
   return data.default as unknown as Record<string, DOTOccupationData>;
 }
+
+export interface ONETOccupationData {
+  t: string;       // title
+  jz: number | null; // job zone
+}
+
+/**
+ * Load O*NET occupation list from bundled JSON.
+ * Returns a map of O*NET code (format "XX-XXXX.XX") → basic occupation data.
+ */
+export async function loadONETData(): Promise<Record<string, ONETOccupationData>> {
+  const data = await import("@/data/onet-occupations.json");
+  return data.default as unknown as Record<string, ONETOccupationData>;
+}

@@ -8,7 +8,7 @@
 
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma";
-import { browseAllOccupations, getFullOccupation } from "./onet";
+import { getFullOccupation } from "./onet";
 
 /** OEWS wage data structure (mirrors data-loaders.ts — inline to avoid Edge Runtime warnings) */
 interface OEWSOccupationData {
@@ -96,8 +96,12 @@ export async function getSyncStatus(): Promise<SyncStatus[]> {
 }
 
 /**
- * Sync O*NET occupation data using the browse API.
- * Fetches ALL occupations (~1,016+) and stores full details in the local cache.
+ * Sync O*NET occupation data from local dataset + O*NET API for details.
+ *
+ * Phase 1: Load all 1,016 occupations from local dataset (code, title, jobZone).
+ *          This ensures every occupation exists in the database immediately.
+ * Phase 2: For occupations missing detailed data (tasks, skills, etc.),
+ *          fetch from O*NET API and update. This is optional and rate-limited.
  */
 export async function syncONET(): Promise<{ synced: number; errors: number }> {
   const log = await prisma.dataSyncLog.create({
@@ -112,66 +116,98 @@ export async function syncONET(): Promise<{ synced: number; errors: number }> {
   let errors = 0;
 
   try {
-    // Step 1: Browse all O*NET occupations (paginated, ~11 API calls)
-    console.log("[syncONET] Browsing all O*NET occupations...");
-    const allOccs = await browseAllOccupations();
-    console.log(`[syncONET] Found ${allOccs.length} occupations`);
+    // Phase 1: Load all occupations from local dataset
+    console.log("[syncONET] Loading O*NET occupations from local dataset...");
+    const { loadONETData } = await import("@/lib/data-loaders");
+    const onetData = await loadONETData();
 
-    // Step 2: For each occupation, fetch full details and upsert
-    for (let i = 0; i < allOccs.length; i++) {
-      const occ = allOccs[i];
+    const codes = Object.keys(onetData);
+    console.log(`[syncONET] Loaded ${codes.length} occupations from local dataset`);
 
+    // Upsert all basic occupation records
+    for (const code of codes) {
+      const occ = onetData[code];
       try {
-        const full = await getFullOccupation(occ.code);
-
         await prisma.occupationONET.upsert({
-          where: { id: occ.code },
+          where: { id: code },
           create: {
-            id: occ.code,
-            title: full.title,
-            description: full.description,
-            tasks: toJson(full.tasks),
-            dwas: toJson(full.dwas),
-            toolsTech: toJson(full.toolsTech),
-            knowledge: toJson(full.knowledge),
-            skills: toJson(full.skills),
-            abilities: toJson(full.abilities),
-            workActivities: toJson(full.workActivities),
-            workContext: toJson(full.workContext),
-            relatedOccs: toJson(full.relatedOccs),
-            jobZone: full.jobZone ?? occ.jobZone ?? null,
+            id: code,
+            title: occ.t,
+            jobZone: occ.jz,
           },
           update: {
-            title: full.title,
-            description: full.description,
-            tasks: toJson(full.tasks),
-            dwas: toJson(full.dwas),
-            toolsTech: toJson(full.toolsTech),
-            knowledge: toJson(full.knowledge),
-            skills: toJson(full.skills),
-            abilities: toJson(full.abilities),
-            workActivities: toJson(full.workActivities),
-            workContext: toJson(full.workContext),
-            relatedOccs: toJson(full.relatedOccs),
-            jobZone: full.jobZone ?? occ.jobZone ?? null,
+            title: occ.t,
+            jobZone: occ.jz,
           },
         });
-
         synced++;
       } catch (e) {
         errors++;
-        console.error(`[syncONET] Failed to sync ${occ.code}:`, e);
+        if (errors <= 5) {
+          console.error(`[syncONET] Failed to upsert ${code}:`, e);
+        }
+      }
+    }
+
+    console.log(`[syncONET] Phase 1 done: ${synced} basic records upserted`);
+
+    // Phase 2: Fetch detailed data from O*NET API for occupations missing it
+    const needDetails = await prisma.occupationONET.findMany({
+      where: { description: null },
+      select: { id: true },
+    });
+
+    if (needDetails.length > 0) {
+      console.log(`[syncONET] Phase 2: ${needDetails.length} occupations need detailed data from O*NET API`);
+
+      let detailed = 0;
+      let detailErrors = 0;
+
+      for (let i = 0; i < needDetails.length; i++) {
+        const occ = needDetails[i];
+        try {
+          const full = await getFullOccupation(occ.id);
+
+          await prisma.occupationONET.update({
+            where: { id: occ.id },
+            data: {
+              title: full.title,
+              description: full.description,
+              tasks: toJson(full.tasks),
+              dwas: toJson(full.dwas),
+              toolsTech: toJson(full.toolsTech),
+              knowledge: toJson(full.knowledge),
+              skills: toJson(full.skills),
+              abilities: toJson(full.abilities),
+              workActivities: toJson(full.workActivities),
+              workContext: toJson(full.workContext),
+              relatedOccs: toJson(full.relatedOccs),
+              jobZone: full.jobZone ?? onetData[occ.id]?.jz ?? null,
+            },
+          });
+
+          detailed++;
+        } catch (e) {
+          detailErrors++;
+          if (detailErrors <= 5) {
+            console.error(`[syncONET] Failed to fetch details for ${occ.id}:`, e);
+          }
+        }
+
+        // Rate limiting: 200ms between API calls
+        await new Promise((r) => setTimeout(r, 200));
+
+        // Progress logging every 100 occupations
+        if ((i + 1) % 100 === 0 || i === needDetails.length - 1) {
+          console.log(
+            `[syncONET] Phase 2 progress: ${i + 1}/${needDetails.length} — ${detailed} detailed, ${detailErrors} errors`
+          );
+        }
       }
 
-      // Rate limiting: 200ms between occupations
-      await new Promise((r) => setTimeout(r, 200));
-
-      // Progress logging every 100 occupations
-      if ((i + 1) % 100 === 0 || i === allOccs.length - 1) {
-        console.log(
-          `[syncONET] Progress: ${i + 1}/${allOccs.length} — ${synced} synced, ${errors} errors`
-        );
-      }
+      console.log(`[syncONET] Phase 2 done: ${detailed} occupations enriched with API data`);
+    } else {
+      console.log("[syncONET] All occupations already have detailed data");
     }
 
     await prisma.dataSyncLog.update({
