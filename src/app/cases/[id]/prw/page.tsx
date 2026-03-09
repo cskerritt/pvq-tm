@@ -23,7 +23,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, Search, Briefcase, Trash2, Pencil, ExternalLink, Loader2 } from "lucide-react";
+import { Plus, Search, Briefcase, Trash2, Pencil, ExternalLink, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 interface PRWEntry {
@@ -166,6 +166,8 @@ export default function PRWPage() {
   const [selectedDot, setSelectedDot] = useState<DOTEntry | null>(null);
   const [loadingDot, setLoadingDot] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [generatingDuties, setGeneratingDuties] = useState(false);
+  const [generatedDuties, setGeneratedDuties] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -221,7 +223,85 @@ export default function PRWPage() {
   function handleSelectOcc(occ: OccSearchResult) {
     setSelectedOcc(occ);
     setSearchResults([]);
+    setGeneratedDuties("");
     lookupDOT(occ.code);
+  }
+
+  async function generateDutiesWithAI() {
+    if (!selectedOcc) {
+      toast.error("Select an occupation first");
+      return;
+    }
+    setGeneratingDuties(true);
+    try {
+      const res = await fetch("/api/ai/duties", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobTitle: selectedOcc.title,
+          onetCode: selectedOcc.code,
+          dotCode: selectedDot?.dotCode ?? undefined,
+          svp: selectedDot?.svp ?? undefined,
+          strength: selectedDot?.strength ?? undefined,
+        }),
+      });
+      if (res.status === 503) {
+        toast.error("AI not available — OpenAI key not configured");
+        return;
+      }
+      const data = await res.json();
+      if (data.description) {
+        setGeneratedDuties(data.description);
+        toast.success("Duties description generated!");
+      } else {
+        toast.error("AI could not generate duties");
+      }
+    } catch {
+      toast.error("Failed to generate duties");
+    }
+    setGeneratingDuties(false);
+  }
+
+  async function generateSkillsWithAI(prwId: string) {
+    if (!selectedOcc) return;
+    try {
+      const res = await fetch("/api/ai/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobTitle: selectedOcc.title,
+          onetCode: selectedOcc.code,
+          svp: selectedDot?.svp ?? undefined,
+          strength: selectedDot?.strength ?? undefined,
+          dutiesDescription: generatedDuties || undefined,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.skills?.length > 0) {
+          for (const skill of data.skills) {
+            await fetch(`/api/cases/${caseId}/skills`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                prwId,
+                actionVerb: skill.actionVerb,
+                object: skill.object,
+                context: skill.context || null,
+                toolsSoftware: skill.toolsSoftware || null,
+                svpLevel: selectedDot?.svp ?? null,
+                evidenceSource: "AI-generated (OpenAI)",
+                isTransferable: true,
+              }),
+            });
+          }
+          return true;
+        }
+      }
+    } catch {
+      // Fall back to template-based skills
+    }
+    return false;
   }
 
   function openEdit(entry: PRWEntry) {
@@ -243,6 +323,7 @@ export default function PRWPage() {
     setDotEntries([]);
     setSearchQuery("");
     setSearchResults([]);
+    setGeneratedDuties("");
     setDialogOpen(true);
   }
 
@@ -342,8 +423,12 @@ export default function PRWPage() {
             await autoPopulateProfiles(selectedDot);
           }
 
-          toast.info("Auto-populating acquired skills...");
-          await autoPopulateSkills(savedPrw.id, selectedOcc.code, selectedDot);
+          toast.info("Generating acquired skills with AI...");
+          const aiSuccess = await generateSkillsWithAI(savedPrw.id);
+          if (!aiSuccess) {
+            toast.info("AI unavailable, using template skills...");
+            await autoPopulateSkills(savedPrw.id, selectedOcc.code, selectedDot);
+          }
           toast.success("Profiles and skills auto-populated!");
         }
 
@@ -607,17 +692,52 @@ export default function PRWPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="dutiesDescription">Duties Description</Label>
-                <Textarea id="dutiesDescription" name="dutiesDescription" rows={3} defaultValue={editingEntry?.dutiesDescription ?? ""} />
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="dutiesDescription">Duties Description</Label>
+                  {selectedOcc && !editingId && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={generateDutiesWithAI}
+                      disabled={generatingDuties}
+                      className="text-xs"
+                    >
+                      {generatingDuties ? (
+                        <><Loader2 className="mr-1 h-3 w-3 animate-spin" />Generating...</>
+                      ) : (
+                        <><Sparkles className="mr-1 h-3 w-3" />Generate with AI</>
+                      )}
+                    </Button>
+                  )}
+                </div>
+                <Textarea
+                  id="dutiesDescription"
+                  name="dutiesDescription"
+                  rows={4}
+                  defaultValue={generatedDuties || editingEntry?.dutiesDescription || ""}
+                  key={`duties-${generatedDuties ? "ai" : editingEntry?.id ?? "new"}`}
+                  placeholder="Describe the primary duties, tools used, and work environment..."
+                />
+                {generatedDuties && (
+                  <p className="text-xs text-green-600 flex items-center gap-1">
+                    <Sparkles className="h-3 w-3" />
+                    AI-generated — review and edit as needed
+                  </p>
+                )}
               </div>
 
               {/* Auto-populate info */}
               {!editingId && selectedOcc && (
                 <div className="rounded-md border bg-muted/30 p-3 text-sm">
-                  <p className="font-medium text-green-700 mb-1">Auto-Populate on Save:</p>
+                  <p className="font-medium text-green-700 mb-1 flex items-center gap-1">
+                    <Sparkles className="h-4 w-4" />
+                    Auto-Populate on Save:
+                  </p>
                   <ul className="text-muted-foreground space-y-1 text-xs">
                     {selectedDot && <li>Worker Profiles (all 4 rows) from DOT trait data</li>}
-                    <li>Acquired Skills Inventory (typical skills for this occupation)</li>
+                    <li>Acquired Skills via AI (falls back to templates if AI unavailable)</li>
+                    {generatedDuties && <li>AI-generated duties description included</li>}
                   </ul>
                   <p className="text-xs text-muted-foreground mt-1">
                     You can adjust the Evaluative and Post profiles afterward.
