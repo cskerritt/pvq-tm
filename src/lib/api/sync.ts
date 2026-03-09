@@ -9,7 +9,7 @@
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma";
 import { browseAllOccupations, getFullOccupation } from "./onet";
-import { fetchBLSSeries, buildOEWSSeriesId, fetchORSData } from "./bls";
+import { fetchBLSSeries, buildOEWSSeriesId } from "./bls";
 
 function toJson(val: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(val ?? []));
@@ -501,10 +501,23 @@ export async function syncOEWS(): Promise<{ synced: number; errors: number }> {
 }
 
 /**
- * Sync ORS (Occupational Requirements Survey) data from BLS.
- * ORS publishes aggregate-level data for all civilian workers.
- * We fetch comprehensive physical, environmental, cognitive, and education demands
- * and store them for each cached occupation as a baseline.
+ * Convert a 6-digit SOC code to the O*NET base format.
+ * e.g., "111021" → "11-1021"
+ */
+function socToOnetBase(soc: string): string {
+  return soc.slice(0, 2) + "-" + soc.slice(2);
+}
+
+/**
+ * Sync ORS (Occupational Requirements Survey) data from local dataset.
+ *
+ * Uses the complete ORS 2025 dataset (Excel export from BLS) which has been
+ * converted to a JSON file at src/data/ors-data.json. This contains
+ * per-occupation data for 226 SOC codes across 48 categories covering
+ * physical demands, environmental conditions, cognitive/mental requirements,
+ * and education/training/experience.
+ *
+ * No BLS API calls needed — all data is local.
  */
 export async function syncORS(): Promise<{ synced: number; errors: number }> {
   const log = await prisma.dataSyncLog.create({
@@ -519,74 +532,89 @@ export async function syncORS(): Promise<{ synced: number; errors: number }> {
   let errors = 0;
 
   try {
-    // Fetch aggregate ORS data (BLS API calls for all demand categories)
-    console.log("[syncORS] Fetching comprehensive ORS data from BLS...");
-    const orsData = await fetchORSData("all");
+    // Load ORS data from bundled JSON file
+    console.log("[syncORS] Loading ORS data from local dataset...");
 
-    if (Object.keys(orsData).length === 0) {
-      console.log("[syncORS] No ORS data returned from BLS.");
-      await prisma.dataSyncLog.update({
-        where: { id: log.id },
-        data: { status: "completed", recordsUpdated: 0, completedAt: new Date() },
-      });
-      return { synced: 0, errors: 0 };
-    }
+    // Dynamic import of the JSON file
+    const fs = await import("fs");
+    const path = await import("path");
+    const orsFilePath = path.join(process.cwd(), "src/data/ors-data.json");
+    const orsRaw = fs.readFileSync(orsFilePath, "utf-8");
+    const orsData: Record<string, {
+      n: string;
+      p: Record<string, { t: string; v: string }[]>;
+      e: Record<string, { t: string; v: string }[]>;
+      c: Record<string, { t: string; v: string }[]>;
+      d: Record<string, { t: string; v: string }[]>;
+    }> = JSON.parse(orsRaw);
 
-    console.log(`[syncORS] Received ${Object.keys(orsData).length} ORS data points`);
+    const orsSocCodes = Object.keys(orsData);
+    console.log(`[syncORS] Loaded ${orsSocCodes.length} occupations from ORS dataset`);
 
-    // Separate data into physical, environmental, cognitive, and education categories
-    const physicalDemands: Record<string, string | null> = {};
-    const envConditions: Record<string, string | null> = {};
-    const cogMental: Record<string, string | null> = {};
-    const eduTrainExp: Record<string, string | null> = {};
-
-    for (const [key, value] of Object.entries(orsData)) {
-      if (key.startsWith("physical_")) physicalDemands[key.replace("physical_", "")] = value;
-      else if (key.startsWith("env_")) envConditions[key.replace("env_", "")] = value;
-      else if (key.startsWith("cog_")) cogMental[key.replace("cog_", "")] = value;
-      else if (key.startsWith("edu_")) eduTrainExp[key.replace("edu_", "")] = value;
-    }
-
-    // Store ORS data for all cached occupations
+    // Get all cached O*NET occupations
     const occupations = await prisma.occupationONET.findMany({
       select: { id: true, title: true },
     });
 
-    console.log(`[syncORS] Storing ORS data for ${occupations.length} occupations...`);
+    console.log(`[syncORS] Matching against ${occupations.length} O*NET occupations...`);
+
+    // Build a map from O*NET base code (e.g., "11-1021") to ORS data
+    // O*NET codes like "11-1021.00" and "11-1021.01" both map to SOC "111021"
+    const orsLookup = new Map<string, typeof orsData[string]>();
+    for (const [socCode, data] of Object.entries(orsData)) {
+      const onetBase = socToOnetBase(socCode);
+      orsLookup.set(onetBase, data);
+    }
+
+    let matched = 0;
+    let unmatched = 0;
 
     for (const occ of occupations) {
       try {
-        await prisma.occupationORS.upsert({
-          where: { onetSocCode: occ.id },
-          create: {
-            onetSocCode: occ.id,
-            title: occ.title,
-            physicalDemands: toJson(physicalDemands),
-            envConditions: toJson(envConditions),
-            cogMental: toJson(cogMental),
-            eduTrainExp: toJson(eduTrainExp),
-          },
-          update: {
-            title: occ.title,
-            physicalDemands: toJson(physicalDemands),
-            envConditions: toJson(envConditions),
-            cogMental: toJson(cogMental),
-            eduTrainExp: toJson(eduTrainExp),
-          },
-        });
-        synced++;
+        // Extract base SOC code: "11-1021.00" → "11-1021"
+        const baseCode = occ.id.replace(/\.\d+$/, "");
+        const orsOcc = orsLookup.get(baseCode);
+
+        if (orsOcc) {
+          matched++;
+          await prisma.occupationORS.upsert({
+            where: { onetSocCode: occ.id },
+            create: {
+              onetSocCode: occ.id,
+              title: occ.title,
+              physicalDemands: toJson(orsOcc.p),
+              envConditions: toJson(orsOcc.e),
+              cogMental: toJson(orsOcc.c),
+              eduTrainExp: toJson(orsOcc.d),
+            },
+            update: {
+              title: occ.title,
+              physicalDemands: toJson(orsOcc.p),
+              envConditions: toJson(orsOcc.e),
+              cogMental: toJson(orsOcc.c),
+              eduTrainExp: toJson(orsOcc.d),
+            },
+          });
+          synced++;
+        } else {
+          unmatched++;
+        }
       } catch (e) {
         errors++;
         console.error(`[syncORS] Failed to store ORS for ${occ.id}:`, e);
       }
     }
 
+    console.log(
+      `[syncORS] Done: ${matched} matched, ${unmatched} unmatched, ${synced} synced, ${errors} errors`
+    );
+
     await prisma.dataSyncLog.update({
       where: { id: log.id },
       data: {
         status: "completed",
         recordsUpdated: synced,
-        version: `ORS-${new Date().getFullYear()}`,
+        version: "ORS-2025",
         completedAt: new Date(),
       },
     });

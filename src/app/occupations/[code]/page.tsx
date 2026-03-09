@@ -227,7 +227,8 @@ function OrsSection({
   if (!data) return null;
 
   const entries = Object.entries(data).filter(
-    ([key]) => !["id", "onetSocCode", "createdAt", "updatedAt", "title", "standardErrors"].includes(key)
+    ([key]) =>
+      !["id", "onetSocCode", "createdAt", "updatedAt", "title", "standardErrors"].includes(key)
   );
 
   if (entries.length === 0) return null;
@@ -239,17 +240,52 @@ function OrsSection({
         <CardTitle className="text-base">{title}</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="space-y-2">
+        <div className="space-y-4">
           {entries.map(([key, value]) => {
             if (value == null) return null;
 
-            // Handle nested objects/arrays
+            // New ORS format: { "Category Name": [{ t: "description", v: "value" }, ...] }
+            if (Array.isArray(value) && value.length > 0 && typeof value[0] === "object" && "t" in value[0] && "v" in value[0]) {
+              const estimates = value as { t: string; v: string }[];
+              // Filter to only show meaningful estimates (skip <0.5 and similar)
+              const meaningful = estimates.filter(
+                (e) => e.v !== "<0.5" && e.v !== "—" && e.v !== "-"
+              );
+              if (meaningful.length === 0) return null;
+
+              return (
+                <div key={key} className="space-y-1">
+                  <p className="text-sm font-medium">{key}</p>
+                  <div className="ml-2 space-y-0.5">
+                    {meaningful.map((est, i) => {
+                      const numVal = parseFloat(est.v);
+                      const isPercent = !isNaN(numVal);
+                      return (
+                        <div
+                          key={i}
+                          className="flex items-center justify-between gap-3 text-sm text-muted-foreground"
+                        >
+                          <span className="truncate flex-1 capitalize">
+                            {est.t}
+                          </span>
+                          <span className="font-mono text-foreground whitespace-nowrap">
+                            {isPercent ? `${est.v}%` : est.v}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            }
+
+            // Legacy flat format: { key: "value" }
             if (typeof value === "object" && !Array.isArray(value)) {
               const obj = value as Record<string, unknown>;
               return (
                 <div key={key} className="space-y-1">
                   <p className="text-sm font-medium">{humanizeKey(key)}</p>
-                  <div className="ml-4 space-y-1">
+                  <div className="ml-2 space-y-0.5">
                     {Object.entries(obj).map(([subKey, subVal]) => (
                       <div
                         key={subKey}
@@ -270,7 +306,7 @@ function OrsSection({
               return (
                 <div key={key} className="space-y-1">
                   <p className="text-sm font-medium">{humanizeKey(key)}</p>
-                  <div className="ml-4 flex flex-wrap gap-1.5">
+                  <div className="ml-2 flex flex-wrap gap-1.5">
                     {value.map((v, i) => (
                       <Badge key={i} variant="outline">
                         {typeof v === "object" ? JSON.stringify(v) : String(v)}
@@ -282,10 +318,7 @@ function OrsSection({
             }
 
             return (
-              <div
-                key={key}
-                className="flex justify-between text-sm"
-              >
+              <div key={key} className="flex justify-between text-sm">
                 <span>{humanizeKey(key)}</span>
                 <span className="font-mono text-muted-foreground">
                   {String(value)}
