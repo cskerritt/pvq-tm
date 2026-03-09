@@ -1,13 +1,27 @@
 /**
  * Next.js instrumentation hook — runs once on server startup.
- * Triggers background data sync if data is stale or missing.
+ * Triggers background data sync if data is stale or missing,
+ * and schedules daily automatic sync at 5:00 AM.
  */
 export async function register() {
   // Only run on the server (not in edge runtime)
-  // In production, skip auto-sync on startup to avoid hammering external APIs on deploy.
-  // Data sync should be triggered manually via the admin UI.
-  if (process.env.NEXT_RUNTIME === "nodejs" && process.env.NODE_ENV !== "production") {
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    // Check on startup if data is stale and sync if needed
     await runAutoSync();
+
+    // Schedule daily sync at 5:00 AM
+    try {
+      const cron = await import("node-cron");
+      cron.schedule("0 5 * * *", () => {
+        console.log("[AutoSync] Daily scheduled sync triggered.");
+        runAutoSync().catch((e) => {
+          console.error("[AutoSync] Scheduled sync failed:", e);
+        });
+      });
+      console.log("[AutoSync] Daily sync scheduled for 5:00 AM.");
+    } catch (e) {
+      console.error("[AutoSync] Failed to set up cron schedule:", e);
+    }
   }
 }
 
@@ -22,13 +36,13 @@ async function runAutoSync() {
     const orsCount = await prisma.occupationORS.count();
     const projCount = await prisma.occupationProjections.count();
 
-    // Check if last sync was more than 24 hours ago
+    // Check if last sync was more than 23 hours ago
     const lastSync = await prisma.dataSyncLog.findFirst({
       where: { status: "completed" },
       orderBy: { completedAt: "desc" },
     });
 
-    const staleThreshold = 24 * 60 * 60 * 1000; // 24 hours
+    const staleThreshold = 23 * 60 * 60 * 1000; // 23 hours
     const isStale = !lastSync?.completedAt ||
       (Date.now() - lastSync.completedAt.getTime()) > staleThreshold;
 
@@ -47,7 +61,13 @@ async function runAutoSync() {
     );
 
     // Import sync functions dynamically
-    const { syncAll } = await import("@/lib/api/sync");
+    const { syncAll, getSyncLock } = await import("@/lib/api/sync");
+
+    // Check if another sync is already running
+    if (getSyncLock()) {
+      console.log("[AutoSync] Another sync is already in progress, skipping.");
+      return;
+    }
 
     // Run sync in background (don't block server startup)
     syncAll().catch((e) => {

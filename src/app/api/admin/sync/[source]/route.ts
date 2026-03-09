@@ -7,7 +7,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sou
 
   switch (source.toUpperCase()) {
     case "ONET": {
-      const result = await syncONET(20, 100);
+      const result = await syncONET();
       return NextResponse.json(result);
     }
     case "OEWS": {

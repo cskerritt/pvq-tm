@@ -4,28 +4,55 @@ import { useEffect, useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, Loader2, Database, CheckCircle } from "lucide-react";
+import {
+  RefreshCw,
+  Loader2,
+  Database,
+  CheckCircle,
+  Clock,
+  Zap,
+} from "lucide-react";
 import { toast } from "sonner";
 
 interface SyncStatus {
   source: string;
   lastSync: string | null;
   recordCount: number;
+  totalOccupations: number;
   version: string | null;
   status: string;
 }
 
+interface AutoSyncInfo {
+  enabled: boolean;
+  schedule: string;
+  isSyncing: boolean;
+}
+
+interface SyncStatusResponse {
+  sources: SyncStatus[];
+  autoSync: AutoSyncInfo;
+}
+
 export default function DataSyncPage() {
   const [statuses, setStatuses] = useState<SyncStatus[]>([]);
+  const [autoSync, setAutoSync] = useState<AutoSyncInfo | null>(null);
   const [syncing, setSyncing] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/sync/status");
-      setStatuses(await res.json());
+      const data: SyncStatusResponse = await res.json();
+      // Handle both old format (array) and new format (object with sources)
+      if (Array.isArray(data)) {
+        setStatuses(data);
+      } else {
+        setStatuses(data.sources ?? []);
+        setAutoSync(data.autoSync ?? null);
+      }
     } catch {
-      toast.error("Failed to load data");
+      toast.error("Failed to load sync status");
     }
     setLoading(false);
   }, []);
@@ -42,9 +69,16 @@ export default function DataSyncPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        toast.success(
-          `${source} sync complete: ${data.synced ?? 0} records updated`
-        );
+        if (source === "ALL") {
+          const total = Object.values(
+            data as Record<string, { synced?: number }>
+          ).reduce((sum: number, s) => sum + (s.synced ?? 0), 0);
+          toast.success(`Full sync complete: ${total} total records updated`);
+        } else {
+          toast.success(
+            `${source} sync complete: ${data.synced ?? 0} records updated`
+          );
+        }
       } else {
         toast.error(data.error ?? `${source} sync failed`);
       }
@@ -56,11 +90,13 @@ export default function DataSyncPage() {
   }
 
   const sourceDescriptions: Record<string, string> = {
-    ONET: "O*NET occupational data (tasks, skills, abilities, tools, related occupations)",
-    ORS: "Occupational Requirements Survey (physical, environmental, cognitive demands)",
-    OEWS: "Occupational Employment & Wage Statistics (employment, wages by area)",
-    PROJECTIONS: "Employment Projections (projected employment, openings)",
+    ONET: "O*NET occupational data — all 1,016+ occupations with tasks, skills, abilities, tools, knowledge, work context, and related occupations",
+    ORS: "Occupational Requirements Survey — comprehensive physical demands, environmental conditions, cognitive demands, and education/training requirements",
+    OEWS: "Occupational Employment & Wage Statistics — national employment levels and annual wage percentiles (10th, 25th, median, 75th, 90th)",
+    PROJECTIONS: "Employment Projections — projected employment, growth rates, and annual openings estimates",
   };
+
+  const isSyncingAny = Object.values(syncing).some(Boolean) || autoSync?.isSyncing;
 
   return (
     <div className="p-6 space-y-6">
@@ -71,8 +107,56 @@ export default function DataSyncPage() {
         </p>
       </div>
 
+      {/* Auto-Sync Status Card */}
+      {autoSync && (
+        <Card className="border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/30">
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Clock className="h-5 w-5 text-blue-600" />
+                <div>
+                  <div className="font-medium flex items-center gap-2">
+                    Automatic Sync
+                    <Badge
+                      variant={autoSync.enabled ? "default" : "outline"}
+                      className="text-xs"
+                    >
+                      {autoSync.enabled ? "Enabled" : "Disabled"}
+                    </Badge>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {autoSync.schedule}
+                    {autoSync.isSyncing && (
+                      <span className="text-blue-600 ml-2">
+                        <Loader2 className="inline h-3 w-3 animate-spin mr-1" />
+                        Sync in progress...
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <Button
+                variant="default"
+                onClick={() => triggerSync("ALL")}
+                disabled={!!isSyncingAny}
+              >
+                {syncing["ALL"] ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Zap className="mr-2 h-4 w-4" />
+                )}
+                {syncing["ALL"] ? "Syncing All..." : "Sync All Now"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {loading ? (
-        <p className="text-muted-foreground">Loading...</p>
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin mr-2" />
+          <span>Loading sync status...</span>
+        </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {statuses.map((s) => (
@@ -88,7 +172,11 @@ export default function DataSyncPage() {
                   {s.recordCount > 0 ? (
                     <>
                       <CheckCircle className="h-3 w-3 mr-1" />
-                      {s.recordCount} records
+                      {s.recordCount.toLocaleString()}
+                      {s.totalOccupations > 0 && s.recordCount < s.totalOccupations
+                        ? ` / ${s.totalOccupations.toLocaleString()}`
+                        : ""}{" "}
+                      records
                     </>
                   ) : (
                     "No data"
@@ -114,7 +202,7 @@ export default function DataSyncPage() {
                   size="sm"
                   variant="outline"
                   onClick={() => triggerSync(s.source)}
-                  disabled={!!syncing[s.source]}
+                  disabled={!!syncing[s.source] || !!isSyncingAny}
                 >
                   {syncing[s.source] ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -135,20 +223,28 @@ export default function DataSyncPage() {
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground space-y-2">
           <p>
-            O*NET data is fetched from{" "}
-            <span className="font-mono">services.onetcenter.org</span> using
-            the O*NET Web Services API. This data includes current task
-            statements, detailed work activities, tools and technology,
-            knowledge, skills, and abilities.
+            <strong>O*NET:</strong> All occupations are synced via the browse
+            API at{" "}
+            <span className="font-mono text-xs">api-v2.onetcenter.org</span>.
+            This includes tasks, detailed work activities, tools and technology,
+            knowledge, skills, abilities, work activities, work context, related
+            occupations, and job zone data.
           </p>
           <p>
-            ORS, OEWS, and Projections data is fetched from the Bureau of
-            Labor Statistics API. ORS provides physical, environmental, and
-            cognitive job demands. OEWS provides employment and wage
-            statistics.
+            <strong>OEWS &amp; ORS:</strong> Fetched from the Bureau of Labor
+            Statistics API. OEWS provides national employment and wage
+            statistics. Due to BLS daily API limits (500 queries/day), OEWS
+            data is synced incrementally — ~700 occupations per daily run,
+            prioritising occupations with missing or oldest data. Full
+            coverage is achieved in ~2 daily runs. ORS provides comprehensive
+            physical, environmental, cognitive, and education/training demands.
           </p>
           <p>
-            All cached data includes timestamps and version tracking for
+            <strong>Auto-Sync:</strong> Data is automatically synced daily at
+            5:00 AM. On server startup, a sync is triggered if data is older
+            than 23 hours. OEWS syncs are incremental to respect BLS API
+            limits — records will grow each day until all occupations are
+            covered. All sync operations are tracked in the DataSyncLog for
             auditability.
           </p>
         </CardContent>

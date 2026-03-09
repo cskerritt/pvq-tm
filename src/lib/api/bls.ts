@@ -41,7 +41,7 @@ export interface OEWSData {
   year: number;
 }
 
-/** Fetch BLS time series data */
+/** Fetch BLS time series data with automatic retry on rate limit (429) */
 export async function fetchBLSSeries(
   seriesIds: string[],
   startYear?: number,
@@ -56,17 +56,40 @@ export async function fetchBLSSeries(
     endyear: String(endYear ?? currentYear),
   };
 
-  const res = await fetch(`${BLS_BASE}/timeseries/data/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const maxRetries = 3;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const res = await fetch(`${BLS_BASE}/timeseries/data/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
 
-  if (!res.ok) {
-    throw new Error(`BLS API error ${res.status}: ${await res.text()}`);
+    if (res.status === 429) {
+      // Rate limited — wait with exponential backoff and retry
+      const delay = Math.pow(2, attempt + 1) * 1000; // 2s, 4s, 8s
+      console.log(`[BLS] Rate limited (429), retrying in ${delay / 1000}s (attempt ${attempt + 1}/${maxRetries})`);
+      await new Promise((r) => setTimeout(r, delay));
+      continue;
+    }
+
+    if (!res.ok) {
+      throw new Error(`BLS API error ${res.status}: ${await res.text()}`);
+    }
+
+    const json: BLSResponse = await res.json();
+
+    // Check for daily limit exhaustion in response body
+    if (json.status === "REQUEST_NOT_PROCESSED") {
+      const msg = json.message?.join(" ") ?? "";
+      if (msg.includes("daily threshold")) {
+        throw new Error("BLS daily request limit reached. Sync will resume after midnight ET.");
+      }
+    }
+
+    return json;
   }
 
-  return res.json();
+  throw new Error("BLS API rate limit exceeded after retries");
 }
 
 /**
@@ -181,14 +204,20 @@ export function buildORSSeriesId(
 }
 
 /**
- * Fetch ORS data for all civilian workers (aggregate level).
- * ORS publishes aggregate-level physical, environmental, and cognitive demand data.
- * Returns demand percentages that apply as benchmarks for occupational analysis.
+ * Fetch comprehensive ORS data for all civilian workers (aggregate level).
+ * ORS publishes aggregate-level physical, environmental, cognitive, and
+ * education/training demand data. Returns demand percentages that apply
+ * as benchmarks for occupational analysis.
+ *
+ * Expanded to include all available ORS characteristics:
+ * - Physical: standing, walking, sitting, lifting, carrying, pushing/pulling,
+ *   reaching, climbing, kneeling, crouching, crawling, grasping, fine manipulation
+ * - Environmental: indoors, outdoors, extreme temp, noise, vibration, hazards,
+ *   fumes/dust, wet/humid
+ * - Cognitive: reading, writing, math, verbal, problem solving, decision making
+ * - Education/Training: education level, training, experience
  */
 export async function fetchORSData(_socCode: string): Promise<Record<string, string | null>> {
-  const seriesIds: string[] = [];
-  const seriesMap: Record<string, string> = {};
-
   // Physical demand estimate codes (all workers aggregate)
   const physicalEstimates: Record<string, string> = {
     standing: "01001",
@@ -198,6 +227,12 @@ export async function fetchORSData(_socCode: string): Promise<Record<string, str
     carrying: "01006",
     pushing_pulling: "01007",
     reaching: "01008",
+    climbing: "01009",
+    kneeling: "01010",
+    crouching: "01011",
+    crawling: "01012",
+    grasping: "01013",
+    fine_manipulation: "01014",
   };
 
   // Environmental condition estimate codes
@@ -206,6 +241,10 @@ export async function fetchORSData(_socCode: string): Promise<Record<string, str
     outdoors: "01002",
     extreme_temp: "01003",
     noise: "01005",
+    vibration: "01006",
+    hazards: "01007",
+    fumes_dust: "01008",
+    wet_humid: "01009",
   };
 
   // Cognitive demand estimate codes
@@ -214,7 +253,21 @@ export async function fetchORSData(_socCode: string): Promise<Record<string, str
     writing: "01002",
     math: "01003",
     verbal: "01005",
+    problem_solving: "01006",
+    decision_making: "01007",
   };
+
+  // Education, training, experience estimate codes
+  const eduEstimates: Record<string, string> = {
+    education_level: "01001",
+    training: "01002",
+    experience: "01003",
+  };
+
+  // Build series IDs — BLS allows up to 50 per request.
+  // Total: 13 + 8 + 6 + 3 = 30 series, well under the limit.
+  const seriesIds: string[] = [];
+  const seriesMap: Record<string, string> = {};
 
   for (const [name, code] of Object.entries(physicalEstimates)) {
     const sid = buildORSSeriesId("P", code);
@@ -232,6 +285,12 @@ export async function fetchORSData(_socCode: string): Promise<Record<string, str
     const sid = buildORSSeriesId("C", code);
     seriesIds.push(sid);
     seriesMap[sid] = `cog_${name}`;
+  }
+
+  for (const [name, code] of Object.entries(eduEstimates)) {
+    const sid = buildORSSeriesId("V", code);
+    seriesIds.push(sid);
+    seriesMap[sid] = `edu_${name}`;
   }
 
   try {

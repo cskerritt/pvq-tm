@@ -85,6 +85,57 @@ export interface OnetRelatedOccupation {
   tags?: Record<string, boolean>;
 }
 
+interface OnetBrowseItem {
+  code: string;
+  title: string;
+  tags?: Record<string, boolean>;
+  zone?: { code: number; title: string };
+}
+
+interface OnetBrowseResponse {
+  start: number;
+  end: number;
+  total: number;
+  next?: string;
+  occupation: OnetBrowseItem[];
+}
+
+/**
+ * Browse ALL O*NET occupations via the paginated browse endpoint.
+ * Returns all ~1,016+ occupations with their codes, titles, and jobZone.
+ */
+export async function browseAllOccupations(): Promise<
+  { code: string; title: string; jobZone: number | null }[]
+> {
+  const allOccs: { code: string; title: string; jobZone: number | null }[] = [];
+  let start = 1;
+  const batchSize = 100;
+
+  while (true) {
+    const end = start + batchSize - 1;
+    const page = await onetFetch<OnetBrowseResponse>("/online/occupations/", {
+      start: String(start),
+      end: String(end),
+    });
+
+    for (const occ of page.occupation) {
+      allOccs.push({
+        code: occ.code,
+        title: occ.title,
+        jobZone: occ.zone?.code ?? null,
+      });
+    }
+
+    if (!page.next || allOccs.length >= page.total) break;
+    start = end + 1;
+
+    // Small delay to be respectful to the API
+    await new Promise((r) => setTimeout(r, 200));
+  }
+
+  return allOccs;
+}
+
 // ─── API Functions ─────────────────────────────────────────────────────
 
 export async function searchOccupations(keyword: string, start = 1, end = 20): Promise<OnetSearchResult> {
