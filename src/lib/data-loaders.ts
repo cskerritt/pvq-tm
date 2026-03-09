@@ -1,9 +1,8 @@
 /**
  * Data loaders for local BLS datasets.
  *
- * These functions load pre-converted JSON datasets from src/data/.
- * They use dynamic imports guarded by runtime checks to avoid
- * Edge Runtime warnings in Next.js.
+ * Uses JSON module imports (resolved by Turbopack/webpack) instead of
+ * fs/path/process.cwd to avoid Edge Runtime warnings in Next.js.
  */
 
 export interface ORSOccupationData {
@@ -26,25 +25,21 @@ export interface OEWSOccupationData {
 }
 
 /**
- * Load ORS dataset from local JSON file.
+ * Load ORS dataset from bundled JSON.
  * Returns a map of 6-digit SOC code → ORS data.
  */
 export async function loadORSData(): Promise<Record<string, ORSOccupationData>> {
-  const fs = await import("fs");
-  const path = await import("path");
-  const filePath = path.join(process.cwd(), "src/data/ors-data.json");
-  const raw = fs.readFileSync(filePath, "utf-8");
-  return JSON.parse(raw);
+  // Dynamic JSON import — resolved by the bundler, no fs/path needed
+  const data = await import("@/data/ors-data.json");
+  return data.default as unknown as Record<string, ORSOccupationData>;
 }
 
 /**
- * Load OEWS dataset from local JSON file.
+ * Load OEWS dataset from bundled JSON.
  * Returns a map of SOC code (format "XX-XXXX") → OEWS wage data.
  */
 export async function loadOEWSData(): Promise<Record<string, OEWSOccupationData>> {
-  const fs = await import("fs");
-  const path = await import("path");
-  const filePath = path.join(process.cwd(), "src/data/oews-data.json");
-  const raw = fs.readFileSync(filePath, "utf-8");
-  return JSON.parse(raw);
+  // Dynamic JSON import — resolved by the bundler, no fs/path needed
+  const data = await import("@/data/oews-data.json");
+  return data.default as unknown as Record<string, OEWSOccupationData>;
 }
