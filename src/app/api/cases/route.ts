@@ -27,6 +27,9 @@ export async function POST(req: NextRequest) {
         referralSource: body.referralSource,
         dateOfInjury: body.dateOfInjury ? new Date(body.dateOfInjury) : null,
         dateOfEval: body.dateOfEval ? new Date(body.dateOfEval) : null,
+        zipCode: body.zipCode || null,
+        metroAreaCode: body.metroAreaCode || null,
+        metroAreaName: body.metroAreaName || null,
         notes: body.notes,
       },
     });

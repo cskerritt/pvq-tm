@@ -215,6 +215,8 @@ export default function PRWPage() {
   const [formEndDate, setFormEndDate] = useState("");
   const [formDurationMonths, setFormDurationMonths] = useState("");
   const [formDuties, setFormDuties] = useState("");
+  const [autoFillSource, setAutoFillSource] = useState<string | null>(null);
+  const [autoFillWages, setAutoFillWages] = useState<WageInfo | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -271,22 +273,55 @@ export default function PRWPage() {
     setSearching(false);
   }
 
-  async function lookupDOT(onetCode: string) {
+  async function lookupOccupationData(onetCode: string) {
     setLoadingDot(true);
     setDotEntries([]);
     setSelectedDot(null);
     try {
-      const res = await fetch(`/api/occupations/dot-lookup?onet=${encodeURIComponent(onetCode)}`);
-      const data = await res.json();
-      if (data.dotEntries?.length > 0) {
-        setDotEntries(data.dotEntries);
-        const first = data.dotEntries[0];
-        setSelectedDot(first);
-        // Auto-fill form fields from DOT data
-        applyDotToForm(first);
+      // Use the unified auto-fill API that works with or without DOT crosswalk
+      const res = await fetch(`/api/occupations/auto-fill?code=${encodeURIComponent(onetCode)}`);
+      if (res.ok) {
+        const data = await res.json();
+
+        // Auto-fill form from the best available source
+        if (data.autoFill) {
+          setFormSvp(String(data.autoFill.svp));
+          setFormSkillLevel(data.autoFill.skillLevel);
+          setFormStrength(data.autoFill.strength);
+          if (data.autoFill.dotCode) {
+            setFormDotCode(data.autoFill.dotCode);
+          }
+          toast.success(`Auto-filled from ${data.source}`);
+        }
+
+        // If DOT crosswalk entries exist, populate the list
+        if (data.dotEntries?.length > 0) {
+          setDotEntries(data.dotEntries);
+          setSelectedDot(data.dotEntries[0]);
+        }
+
+        // Store source info for display
+        setAutoFillSource(data.source ?? null);
+
+        // Store wage info if available
+        if (data.wages) {
+          setAutoFillWages(data.wages);
+        }
       }
     } catch {
-      // DOT lookup failed silently
+      // Fallback: try the old DOT-only lookup
+      try {
+        const res = await fetch(`/api/occupations/dot-lookup?onet=${encodeURIComponent(onetCode)}`);
+        const data = await res.json();
+        if (data.dotEntries?.length > 0) {
+          setDotEntries(data.dotEntries);
+          const first = data.dotEntries[0];
+          setSelectedDot(first);
+          applyDotToForm(first);
+        }
+      } catch {
+        // Silent fail
+      }
     }
     setLoadingDot(false);
   }
@@ -328,10 +363,12 @@ export default function PRWPage() {
     setSelectedOcc(occ);
     setSearchResults([]);
     setGeneratedDuties("");
+    setAutoFillSource(null);
+    setAutoFillWages(null);
     // Auto-fill job title and O*NET code
     setFormJobTitle(occ.title);
     setFormOnetCode(occ.code);
-    lookupDOT(occ.code);
+    lookupOccupationData(occ.code);
   }
 
   async function generateDutiesWithAI() {
@@ -445,6 +482,8 @@ export default function PRWPage() {
     setSearchQuery("");
     setSearchResults([]);
     setGeneratedDuties("");
+    setAutoFillSource(null);
+    setAutoFillWages(null);
     // Reset form state
     setFormJobTitle("");
     setFormEmployer("");
@@ -716,7 +755,7 @@ export default function PRWPage() {
                 <div className="rounded-md border border-green-200 bg-green-50/50 dark:bg-green-950/20 p-3 space-y-2">
                   <p className="text-xs font-medium text-green-700 dark:text-green-400 flex items-center gap-1">
                     <Sparkles className="h-3 w-3" />
-                    Auto-filled from DOT crosswalk — editable if needed
+                    Auto-filled from {autoFillSource ?? "occupation data"} — editable if needed
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
                     {formDotCode && (
@@ -744,6 +783,22 @@ export default function PRWPage() {
                       </div>
                     )}
                   </div>
+                  {/* Inline wage preview */}
+                  {autoFillWages && (
+                    <div className="pt-2 border-t border-green-200/50">
+                      <div className="flex flex-wrap gap-3 text-xs">
+                        <span className="text-muted-foreground">
+                          Median Wage: <span className="font-semibold text-green-700">${autoFillWages.medianWage?.toLocaleString() ?? "—"}</span>
+                        </span>
+                        <span className="text-muted-foreground">
+                          Employment: <span className="font-medium">{autoFillWages.employment?.toLocaleString() ?? "—"}</span>
+                        </span>
+                        <span className="text-muted-foreground">
+                          ({autoFillWages.areaName}, {autoFillWages.year})
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

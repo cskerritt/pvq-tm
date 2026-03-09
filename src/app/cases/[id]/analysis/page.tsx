@@ -31,7 +31,9 @@ import {
   ArrowRight,
   Plus,
   BarChart3,
-  Info,
+  Pencil,
+  Check,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { CaseBreadcrumb } from "@/components/case-breadcrumb";
@@ -44,6 +46,7 @@ interface AnalysisData {
   ageRule: string | null;
   priorEarnings: number | null;
   targetArea: string | null;
+  targetAreaName: string | null;
   targetOccupations: TargetOcc[];
 }
 
@@ -103,6 +106,11 @@ export default function AnalysisPage() {
   const [active, setActive] = useState<AnalysisData | null>(null);
   const [running, setRunning] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [editingEarnings, setEditingEarnings] = useState(false);
+  const [earningsInput, setEarningsInput] = useState("");
+  const [savingEarnings, setSavingEarnings] = useState(false);
+  const [editingAgeRule, setEditingAgeRule] = useState(false);
+  const [ageRuleInput, setAgeRuleInput] = useState("");
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/cases/${caseId}/analysis`);
@@ -187,6 +195,57 @@ export default function AnalysisPage() {
     }
 
     setRunning(false);
+  }
+
+  async function saveEarnings() {
+    if (!active) return;
+    setSavingEarnings(true);
+    try {
+      const val = earningsInput ? parseFloat(earningsInput) : null;
+      const res = await fetch(`/api/cases/${caseId}/analysis`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: active.id, priorEarnings: val }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setActive({ ...active, priorEarnings: updated.priorEarnings });
+        setAnalyses((prev) =>
+          prev.map((a) => (a.id === active.id ? { ...a, priorEarnings: updated.priorEarnings } : a))
+        );
+        toast.success("Prior earnings updated");
+        setEditingEarnings(false);
+      } else {
+        toast.error("Failed to update earnings");
+      }
+    } catch {
+      toast.error("Failed to update earnings");
+    }
+    setSavingEarnings(false);
+  }
+
+  async function saveAgeRule() {
+    if (!active) return;
+    try {
+      const res = await fetch(`/api/cases/${caseId}/analysis`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: active.id, ageRule: ageRuleInput }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setActive({ ...active, ageRule: updated.ageRule });
+        setAnalyses((prev) =>
+          prev.map((a) => (a.id === active.id ? { ...a, ageRule: updated.ageRule } : a))
+        );
+        toast.success("Age rule updated");
+        setEditingAgeRule(false);
+      } else {
+        toast.error("Failed to update age rule");
+      }
+    } catch {
+      toast.error("Failed to update age rule");
+    }
   }
 
   return (
@@ -312,12 +371,84 @@ export default function AnalysisPage() {
                 <BarChart3 className="h-5 w-5" />
                 {active.name ?? "Analysis"} — Step {active.step} of 5
               </CardTitle>
-              {active.ageRule && (
-                <p className="text-sm text-muted-foreground">
-                  Age Rule: {active.ageRule === "advanced_age" ? "Advanced Age (55+)" : active.ageRule === "closely_approaching" ? "Closely Approaching (50-54)" : "Standard"}
-                  {active.priorEarnings ? ` | Prior Earnings: $${active.priorEarnings.toLocaleString()}` : ""}
-                </p>
-              )}
+              <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                {/* Age Rule - inline editable */}
+                <div className="flex items-center gap-1">
+                  <span className="font-medium">Age Rule:</span>
+                  {editingAgeRule ? (
+                    <div className="flex items-center gap-1">
+                      <Select value={ageRuleInput} onValueChange={(v) => setAgeRuleInput(v ?? "standard")}>
+                        <SelectTrigger className="h-7 w-[220px] text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="standard">Standard</SelectItem>
+                          <SelectItem value="closely_approaching">Closely Approaching (50-54)</SelectItem>
+                          <SelectItem value="advanced_age">Advanced Age (55+)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={saveAgeRule}>
+                        <Check className="h-3 w-3 text-green-600" />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingAgeRule(false)}>
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <span
+                      className="cursor-pointer hover:underline inline-flex items-center gap-1"
+                      onClick={() => {
+                        setAgeRuleInput(active.ageRule ?? "standard");
+                        setEditingAgeRule(true);
+                      }}
+                    >
+                      {active.ageRule === "advanced_age" ? "Advanced Age (55+)" : active.ageRule === "closely_approaching" ? "Closely Approaching (50-54)" : "Standard"}
+                      <Pencil className="h-3 w-3 opacity-50" />
+                    </span>
+                  )}
+                </div>
+
+                <Separator orientation="vertical" className="h-4" />
+
+                {/* Prior Earnings - inline editable */}
+                <div className="flex items-center gap-1">
+                  <span className="font-medium">Prior Earnings:</span>
+                  {editingEarnings ? (
+                    <div className="flex items-center gap-1">
+                      <span className="text-sm">$</span>
+                      <Input
+                        className="h-7 w-28 text-xs"
+                        type="number"
+                        placeholder="e.g. 45000"
+                        value={earningsInput}
+                        onChange={(e) => setEarningsInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveEarnings();
+                          if (e.key === "Escape") setEditingEarnings(false);
+                        }}
+                        autoFocus
+                      />
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={saveEarnings} disabled={savingEarnings}>
+                        {savingEarnings ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3 text-green-600" />}
+                      </Button>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingEarnings(false)}>
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <span
+                      className="cursor-pointer hover:underline inline-flex items-center gap-1"
+                      onClick={() => {
+                        setEarningsInput(active.priorEarnings?.toString() ?? "");
+                        setEditingEarnings(true);
+                      }}
+                    >
+                      {active.priorEarnings ? `$${active.priorEarnings.toLocaleString()}` : "Not set"}
+                      <Pencil className="h-3 w-3 opacity-50" />
+                    </span>
+                  )}
+                </div>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               <Progress value={(active.step / 5) * 100} />

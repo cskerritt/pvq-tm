@@ -7,10 +7,37 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { MapPin, Loader2 } from "lucide-react";
 
 export default function NewCasePage() {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
+  const [zipCode, setZipCode] = useState("");
+  const [metroAreaCode, setMetroAreaCode] = useState("");
+  const [metroAreaName, setMetroAreaName] = useState("");
+  const [lookingUpZip, setLookingUpZip] = useState(false);
+
+  async function lookupZip(zip: string) {
+    setZipCode(zip);
+    if (zip.length === 5) {
+      setLookingUpZip(true);
+      try {
+        const res = await fetch(`/api/geo/zip-to-metro?zip=${zip}`);
+        if (res.ok) {
+          const data = await res.json();
+          setMetroAreaCode(data.areaCode ?? "");
+          setMetroAreaName(data.areaName ?? "");
+        }
+      } catch {
+        // Silent
+      }
+      setLookingUpZip(false);
+    } else {
+      setMetroAreaCode("");
+      setMetroAreaName("");
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -23,6 +50,9 @@ export default function NewCasePage() {
       referralSource: form.get("referralSource") || null,
       dateOfInjury: form.get("dateOfInjury") || null,
       dateOfEval: form.get("dateOfEval") || null,
+      zipCode: zipCode || null,
+      metroAreaCode: metroAreaCode || null,
+      metroAreaName: metroAreaName || null,
       notes: form.get("notes") || null,
     };
 
@@ -78,6 +108,44 @@ export default function NewCasePage() {
                 <Input id="dateOfEval" name="dateOfEval" type="date" />
               </div>
             </div>
+
+            {/* Zip Code + Metro Area */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="zipCode" className="flex items-center gap-1">
+                  <MapPin className="h-3 w-3" />
+                  Zip Code
+                </Label>
+                <Input
+                  id="zipCode"
+                  maxLength={5}
+                  placeholder="e.g. 04101"
+                  value={zipCode}
+                  onChange={(e) => lookupZip(e.target.value.replace(/\D/g, ""))}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Auto-populates metro area for local wage data
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>Metro Area</Label>
+                <div className="flex items-center gap-2 h-9 px-3 border rounded-md bg-muted/30">
+                  {lookingUpZip ? (
+                    <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                  ) : metroAreaName ? (
+                    <span className="text-sm truncate">{metroAreaName}</span>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">Enter zip code to auto-detect</span>
+                  )}
+                </div>
+                {metroAreaCode && metroAreaCode !== "0000000" && (
+                  <Badge variant="outline" className="text-xs">
+                    BLS Area: {metroAreaCode}
+                  </Badge>
+                )}
+              </div>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="notes">Notes</Label>
               <Textarea id="notes" name="notes" rows={4} />

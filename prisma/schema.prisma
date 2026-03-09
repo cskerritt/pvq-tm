@@ -120,6 +120,9 @@ model Case {
   referralSource String?
   dateOfInjury   DateTime?
   dateOfEval     DateTime?
+  zipCode        String?
+  metroAreaCode  String?
+  metroAreaName  String?
   notes          String?
   status         String    @default("active")
   createdAt      DateTime  @default(now())
