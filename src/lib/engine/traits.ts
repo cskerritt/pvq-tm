@@ -213,6 +213,239 @@ export function normalizeORSFrequency(orsEstimate: {
   return categories.reduce((max, c) => (c.pct > max.pct ? c : max)).level;
 }
 
+// ─── ORS → Trait Mapping ──────────────────────────────────────────────
+
+/**
+ * Parse an ORS percentage value string to a number.
+ * Handles: "89.8", ">99.5", "<0.5", "<5", ">95" → number
+ */
+function parseORSPercent(val: string | number): number {
+  if (typeof val === "number") return val;
+  const s = String(val).trim();
+  if (s.startsWith(">")) return parseFloat(s.slice(1)) || 0;
+  if (s.startsWith("<")) return parseFloat(s.slice(1)) * 0.5 || 0; // half of threshold
+  return parseFloat(s) || 0;
+}
+
+/**
+ * Extract frequency level (0-4) from an ORS category's items.
+ * Looks for items containing frequency keywords (seldom/occasionally/frequently/constantly)
+ * and picks the dominant frequency level.
+ */
+function orsFrequencyFromItems(
+  items: { t: string; v: string | number }[]
+): number | null {
+  const freq: Record<string, number> = {
+    notPresent: 0,
+    seldom: 0,
+    occasionally: 0,
+    frequently: 0,
+    constantly: 0,
+  };
+
+  for (const item of items) {
+    const t = item.t.toLowerCase();
+    const pct = parseORSPercent(item.v);
+
+    if (t.includes("were not") || t.includes("did not require") || t.includes("not exposed") || t.includes("not in proximity")) {
+      freq.notPresent = Math.max(freq.notPresent, pct);
+    } else if (t.includes("constantly")) {
+      freq.constantly = Math.max(freq.constantly, pct);
+    } else if (t.includes("frequently")) {
+      freq.frequently = Math.max(freq.frequently, pct);
+    } else if (t.includes("occasionally")) {
+      freq.occasionally = Math.max(freq.occasionally, pct);
+    } else if (t.includes("seldom")) {
+      freq.seldom = Math.max(freq.seldom, pct);
+    }
+  }
+
+  // If we found no frequency data, return null
+  const total = Object.values(freq).reduce((a, b) => a + b, 0);
+  if (total === 0) return null;
+
+  return normalizeORSFrequency({
+    notPresent: freq.notPresent,
+    seldom: freq.seldom,
+    occasionally: freq.occasionally,
+    frequently: freq.frequently,
+    constantly: freq.constantly,
+  });
+}
+
+/**
+ * Extract strength level (0-4) from the ORS Strength category.
+ * Picks the strength level with the highest percentage.
+ */
+function orsStrengthFromItems(
+  items: { t: string; v: string | number }[]
+): number | null {
+  const levels: { level: number; pct: number }[] = [];
+
+  for (const item of items) {
+    const t = item.t.toLowerCase();
+    const pct = parseORSPercent(item.v);
+
+    if (t.includes("sedentary")) levels.push({ level: 0, pct });
+    else if (t.includes("light")) levels.push({ level: 1, pct });
+    else if (t.includes("medium")) levels.push({ level: 2, pct });
+    else if (t.includes("very heavy")) levels.push({ level: 4, pct });
+    else if (t.includes("heavy")) levels.push({ level: 3, pct });
+  }
+
+  if (levels.length === 0) return null;
+  return levels.reduce((max, l) => (l.pct > max.pct ? l : max)).level;
+}
+
+/**
+ * Extract noise level (0-4) from the ORS Noise category.
+ * Maps: quiet→1, moderate→2, loud→3, very loud→4
+ */
+function orsNoiseFromItems(
+  items: { t: string; v: string | number }[]
+): number | null {
+  const levels: { level: number; pct: number }[] = [];
+
+  for (const item of items) {
+    const t = item.t.toLowerCase();
+    const pct = parseORSPercent(item.v);
+
+    if (t.includes("quiet")) levels.push({ level: 1, pct });
+    else if (t.includes("very loud")) levels.push({ level: 4, pct });
+    else if (t.includes("loud")) levels.push({ level: 3, pct });
+    else if (t.includes("moderate")) levels.push({ level: 2, pct });
+  }
+
+  if (levels.length === 0) return null;
+  return levels.reduce((max, l) => (l.pct > max.pct ? l : max)).level;
+}
+
+/**
+ * Map ORS data to the 24-trait system.
+ *
+ * Takes the raw ORS JSON stored in the database (physicalDemands and envConditions)
+ * and maps the categories to trait keys with 0-4 scale values.
+ *
+ * ORS format: { "Category Name": [{t: "description", v: "percentage"}, ...] }
+ */
+export function mapORSToTraits(
+  physicalDemands?: Record<string, { t: string; v: string | number }[]> | null,
+  envConditions?: Record<string, { t: string; v: string | number }[]> | null
+): Partial<TraitVector> {
+  const traits: Partial<TraitVector> = {};
+
+  if (physicalDemands) {
+    for (const [category, items] of Object.entries(physicalDemands)) {
+      const cat = category.toLowerCase();
+
+      if (cat === "strength") {
+        const val = orsStrengthFromItems(items);
+        if (val !== null) traits.strength = val;
+      } else if (cat.includes("fine manipulation")) {
+        const val = orsFrequencyFromItems(items);
+        if (val !== null) traits.fingerDexterity = val;
+      } else if (cat.includes("gross manipulation")) {
+        const val = orsFrequencyFromItems(items);
+        if (val !== null) traits.manualDexterity = val;
+      } else if (cat.includes("foot or leg controls")) {
+        const val = orsFrequencyFromItems(items);
+        if (val !== null) traits.motorCoordination = val;
+      } else if (cat.includes("reaching")) {
+        const val = orsFrequencyFromItems(items);
+        if (val !== null) {
+          traits.reachHandle = Math.max(traits.reachHandle ?? 0, val);
+        }
+      } else if (cat.includes("low postures")) {
+        const val = orsFrequencyFromItems(items);
+        if (val !== null) traits.stoopKneel = val;
+      } else if (cat.includes("climbing")) {
+        const val = orsFrequencyFromItems(items);
+        if (val !== null) {
+          traits.climbBalance = Math.max(traits.climbBalance ?? 0, val);
+        }
+      } else if (cat === "speaking") {
+        const val = orsFrequencyFromItems(items);
+        if (val !== null) {
+          traits.talkHear = Math.max(traits.talkHear ?? 0, val);
+        }
+      } else if (cat.includes("hearing")) {
+        // Hearing: check if required (binary yes/no)
+        let required = false;
+        for (const item of items) {
+          if (item.t.toLowerCase().includes("required") && !item.t.toLowerCase().includes("did not")) {
+            const pct = parseORSPercent(item.v);
+            if (pct > 50) required = true;
+          }
+        }
+        if (required) {
+          traits.talkHear = Math.max(traits.talkHear ?? 0, 3);
+        }
+      } else if (cat === "vision") {
+        // Vision: if near/far vision required by majority → see=3
+        let required = false;
+        for (const item of items) {
+          if (item.t.toLowerCase().includes("required") && !item.t.toLowerCase().includes("did not")) {
+            const pct = parseORSPercent(item.v);
+            if (pct > 50) required = true;
+          }
+        }
+        if (required) {
+          traits.see = 3;
+        }
+      }
+    }
+  }
+
+  if (envConditions) {
+    for (const [category, items] of Object.entries(envConditions)) {
+      const cat = category.toLowerCase();
+
+      if (cat.includes("extreme cold")) {
+        const val = orsFrequencyFromItems(items);
+        if (val !== null) traits.extremeCold = val;
+      } else if (cat.includes("extreme heat")) {
+        const val = orsFrequencyFromItems(items);
+        if (val !== null) traits.extremeHeat = val;
+      } else if (cat === "humidity" || cat === "wetness") {
+        const val = orsFrequencyFromItems(items);
+        if (val !== null) {
+          traits.wetnessHumidity = Math.max(traits.wetnessHumidity ?? 0, val);
+        }
+      } else if (cat.includes("noise")) {
+        const val = orsNoiseFromItems(items);
+        if (val !== null) traits.noiseVibration = val;
+      } else if (cat.includes("heavy vibrations")) {
+        const val = orsFrequencyFromItems(items);
+        if (val !== null) {
+          traits.noiseVibration = Math.max(traits.noiseVibration ?? 0, val);
+        }
+      } else if (cat.includes("hazardous") || cat.includes("heights") || cat.includes("proximity")) {
+        const val = orsFrequencyFromItems(items);
+        if (val !== null) {
+          traits.hazards = Math.max(traits.hazards ?? 0, val);
+        }
+      } else if (cat.includes("outdoors")) {
+        const val = orsFrequencyFromItems(items);
+        if (val !== null) traits.workLocation = val;
+      }
+    }
+  }
+
+  // Dusts/fumes: check hazardous contaminants
+  if (envConditions) {
+    for (const [category, items] of Object.entries(envConditions)) {
+      if (category.toLowerCase().includes("hazardous contaminants")) {
+        const val = orsFrequencyFromItems(items);
+        if (val !== null) {
+          traits.dustsFumes = val;
+        }
+      }
+    }
+  }
+
+  return traits;
+}
+
 // ─── Trait Comparison ──────────────────────────────────────────────────
 
 export interface TraitComparison {

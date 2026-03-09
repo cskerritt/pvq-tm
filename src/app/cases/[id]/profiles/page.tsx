@@ -17,7 +17,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Save, RotateCcw } from "lucide-react";
+import { Save, RotateCcw, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { CaseBreadcrumb } from "@/components/case-breadcrumb";
 import {
@@ -73,6 +73,7 @@ export default function ProfilesPage() {
     {} as Record<ProfileType, ProfileData>
   );
   const [saving, setSaving] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const [dirty, setDirty] = useState(false);
 
   const loadProfiles = useCallback(async () => {
@@ -107,13 +108,23 @@ export default function ProfilesPage() {
     trait: TraitKey,
     value: number | null
   ) {
-    setProfiles((prev) => ({
-      ...prev,
-      [profileType]: {
-        ...prev[profileType],
-        [trait]: value,
-      },
-    }));
+    setProfiles((prev) => {
+      const updated = {
+        ...prev,
+        [profileType]: {
+          ...prev[profileType],
+          [trait]: value,
+        },
+      };
+      // Evaluative edits cascade to Post-Profile
+      if (profileType === "EVALUATIVE") {
+        updated.POST = {
+          ...updated.POST,
+          [trait]: value,
+        };
+      }
+      return updated;
+    });
     setDirty(true);
   }
 
@@ -137,6 +148,52 @@ export default function ProfilesPage() {
     setSaving(false);
   }
 
+  async function analyzePRW() {
+    setAnalyzing(true);
+    try {
+      const res = await fetch(`/api/cases/${caseId}/profiles/analyze`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        toast.error(err.error ?? "Analysis failed");
+        setAnalyzing(false);
+        return;
+      }
+      const data = await res.json();
+      const meta = data._meta;
+
+      // Populate all 4 rows identically — no assumed reduction
+      setProfiles((prev) => {
+        const traitValues: Record<string, number> = {};
+        let filled = 0;
+        for (const key of TRAIT_KEYS) {
+          if (data[key] !== undefined && data[key] !== null) {
+            traitValues[key] = data[key];
+            filled++;
+          }
+        }
+
+        const updated = { ...prev };
+        for (const pt of PROFILE_TYPES) {
+          updated[pt.key] = {
+            ...updated[pt.key],
+            ...traitValues,
+          };
+        }
+
+        toast.success(
+          `Auto-filled ${filled}/${meta?.totalTraits ?? 24} traits across all profiles from ${meta?.jobsAnalyzed ?? "?"} PRW jobs`
+        );
+        return updated;
+      });
+      setDirty(true);
+    } catch {
+      toast.error("Failed to analyze PRW data");
+    }
+    setAnalyzing(false);
+  }
+
   const groupLabels = {
     aptitudes: "Aptitudes",
     physical: "Physical",
@@ -155,6 +212,14 @@ export default function ProfilesPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={analyzePRW}
+            disabled={saving || analyzing}
+          >
+            <Zap className="mr-2 h-4 w-4" />
+            {analyzing ? "Analyzing..." : "Analyze PRW"}
+          </Button>
           <Button
             variant="outline"
             onClick={loadProfiles}
