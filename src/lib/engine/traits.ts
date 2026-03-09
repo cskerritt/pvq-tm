@@ -244,7 +244,8 @@ function orsFrequencyFromItems(
   };
 
   for (const item of items) {
-    const t = item.t.toLowerCase();
+    if (!item?.t) continue;
+    const t = String(item.t).toLowerCase();
     const pct = parseORSPercent(item.v);
 
     if (t.includes("were not") || t.includes("did not require") || t.includes("not exposed") || t.includes("not in proximity")) {
@@ -283,7 +284,8 @@ function orsStrengthFromItems(
   const levels: { level: number; pct: number }[] = [];
 
   for (const item of items) {
-    const t = item.t.toLowerCase();
+    if (!item?.t) continue;
+    const t = String(item.t).toLowerCase();
     const pct = parseORSPercent(item.v);
 
     if (t.includes("sedentary")) levels.push({ level: 0, pct });
@@ -307,7 +309,8 @@ function orsNoiseFromItems(
   const levels: { level: number; pct: number }[] = [];
 
   for (const item of items) {
-    const t = item.t.toLowerCase();
+    if (!item?.t) continue;
+    const t = String(item.t).toLowerCase();
     const pct = parseORSPercent(item.v);
 
     if (t.includes("quiet")) levels.push({ level: 1, pct });
@@ -335,7 +338,9 @@ export function mapORSToTraits(
   const traits: Partial<TraitVector> = {};
 
   if (physicalDemands) {
-    for (const [category, items] of Object.entries(physicalDemands)) {
+    for (const [category, rawItems] of Object.entries(physicalDemands)) {
+      if (!Array.isArray(rawItems)) continue;
+      const items = rawItems;
       const cat = category.toLowerCase();
 
       if (cat === "strength") {
@@ -372,7 +377,9 @@ export function mapORSToTraits(
         // Hearing: check if required (binary yes/no)
         let required = false;
         for (const item of items) {
-          if (item.t.toLowerCase().includes("required") && !item.t.toLowerCase().includes("did not")) {
+          if (!item?.t) continue;
+          const label = String(item.t).toLowerCase();
+          if (label.includes("required") && !label.includes("did not")) {
             const pct = parseORSPercent(item.v);
             if (pct > 50) required = true;
           }
@@ -384,7 +391,9 @@ export function mapORSToTraits(
         // Vision: if near/far vision required by majority → see=3
         let required = false;
         for (const item of items) {
-          if (item.t.toLowerCase().includes("required") && !item.t.toLowerCase().includes("did not")) {
+          if (!item?.t) continue;
+          const label = String(item.t).toLowerCase();
+          if (label.includes("required") && !label.includes("did not")) {
             const pct = parseORSPercent(item.v);
             if (pct > 50) required = true;
           }
@@ -397,7 +406,9 @@ export function mapORSToTraits(
   }
 
   if (envConditions) {
-    for (const [category, items] of Object.entries(envConditions)) {
+    for (const [category, rawEnvItems] of Object.entries(envConditions)) {
+      if (!Array.isArray(rawEnvItems)) continue;
+      const items = rawEnvItems;
       const cat = category.toLowerCase();
 
       if (cat.includes("extreme cold")) {
@@ -433,9 +444,10 @@ export function mapORSToTraits(
 
   // Dusts/fumes: check hazardous contaminants
   if (envConditions) {
-    for (const [category, items] of Object.entries(envConditions)) {
+    for (const [category, rawDustItems] of Object.entries(envConditions)) {
+      if (!Array.isArray(rawDustItems)) continue;
       if (category.toLowerCase().includes("hazardous contaminants")) {
-        const val = orsFrequencyFromItems(items);
+        const val = orsFrequencyFromItems(rawDustItems);
         if (val !== null) {
           traits.dustsFumes = val;
         }
