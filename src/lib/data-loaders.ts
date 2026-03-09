@@ -1,5 +1,5 @@
 /**
- * Data loaders for local BLS datasets.
+ * Data loaders for local occupational datasets.
  *
  * Uses JSON module imports (resolved by Turbopack/webpack) instead of
  * fs/path/process.cwd to avoid Edge Runtime warnings in Next.js.
@@ -73,10 +73,86 @@ export interface ONETOccupationData {
 }
 
 /**
- * Load O*NET occupation list from bundled JSON.
+ * Load O*NET occupation list from bundled JSON (lightweight — 62 KB).
  * Returns a map of O*NET code (format "XX-XXXX.XX") → basic occupation data.
  */
 export async function loadONETData(): Promise<Record<string, ONETOccupationData>> {
   const data = await import("@/data/onet-occupations.json");
   return data.default as unknown as Record<string, ONETOccupationData>;
+}
+
+/** Compact element entry in the full O*NET dataset */
+export interface ONETElement {
+  id: string;  // element ID (e.g., "2.A.1.a")
+  n: string;   // element name
+  v?: number;  // importance value
+  l?: number;  // level value
+}
+
+/** Compact task entry */
+export interface ONETTask {
+  id: string;  // task ID
+  t: string;   // task text
+  im?: number; // importance score
+}
+
+/** Compact tool/technology entry */
+export interface ONETToolTech {
+  t: string;   // title (tool/tech name)
+  c: string;   // category (commodity title)
+  h?: boolean; // hot technology flag
+}
+
+/** Compact DWA entry */
+export interface ONETDWA {
+  id: string;  // DWA ID
+  t: string;   // DWA title
+}
+
+/** Compact related occupation entry */
+export interface ONETRelated {
+  c: string;   // related O*NET-SOC code
+  t: string;   // related title
+}
+
+/** Compact education/training entry */
+export interface ONETEducation {
+  id: string;  // element ID
+  n: string;   // element name
+  s: string;   // scale ID
+  cat: number | null; // category
+  v: number;   // data value
+}
+
+/** Full O*NET occupation data (compact keys from onet-full.json) */
+export interface ONETFullOccupationData {
+  t: string;               // title
+  d: string;               // description
+  jz?: number;             // job zone (1-5)
+  ta?: ONETTask[];         // tasks
+  sk?: ONETElement[];      // skills
+  ab?: ONETElement[];      // abilities
+  kn?: ONETElement[];      // knowledge
+  wa?: ONETElement[];      // work activities
+  wc?: ONETElement[];      // work context
+  tt?: ONETToolTech[];     // tools & technology
+  dw?: ONETDWA[];          // detailed work activities
+  ro?: ONETRelated[];      // related occupations
+  ws?: ONETElement[];      // work styles
+  in?: ONETElement[];      // interests (RIASEC)
+  ed?: ONETEducation[];    // education/training/experience
+  at?: string[];           // alternate titles
+}
+
+/**
+ * Load complete O*NET 30.2 dataset from bundled JSON (26 MB).
+ * Contains ALL data for 1,016 occupations: tasks, skills, abilities,
+ * knowledge, work activities, work context, tools/tech, DWAs,
+ * related occupations, work styles, interests, education, alternate titles.
+ *
+ * Returns a map of O*NET code (format "XX-XXXX.XX") → full occupation data.
+ */
+export async function loadONETFullData(): Promise<Record<string, ONETFullOccupationData>> {
+  const data = await import("@/data/onet-full.json");
+  return data.default as unknown as Record<string, ONETFullOccupationData>;
 }

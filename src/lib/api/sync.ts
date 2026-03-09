@@ -8,7 +8,6 @@
 
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma";
-import { getFullOccupation } from "./onet";
 
 /** OEWS wage data structure (mirrors data-loaders.ts — inline to avoid Edge Runtime warnings) */
 interface OEWSOccupationData {
@@ -96,12 +95,15 @@ export async function getSyncStatus(): Promise<SyncStatus[]> {
 }
 
 /**
- * Sync O*NET occupation data from local dataset + O*NET API for details.
+ * Sync O*NET occupation data from the complete local O*NET 30.2 dataset.
  *
- * Phase 1: Load all 1,016 occupations from local dataset (code, title, jobZone).
- *          This ensures every occupation exists in the database immediately.
- * Phase 2: For occupations missing detailed data (tasks, skills, etc.),
- *          fetch from O*NET API and update. This is optional and rate-limited.
+ * Loads ALL data from src/data/onet-full.json (converted from O*NET 30.2 Excel files).
+ * No O*NET API calls needed — everything comes from the local dataset:
+ *   - 1,016 occupations with title, description
+ *   - Tasks (18,796), Skills (31,290), Abilities (46,488), Knowledge (29,502)
+ *   - Work Activities (36,654), Work Context (49,170), Tools/Tech (74,435)
+ *   - DWAs (18,357), Related Occupations (18,460), Work Styles, Interests
+ *   - Education/Training, Alternate Titles, Job Zones
  */
 export async function syncONET(): Promise<{ synced: number; errors: number }> {
   const log = await prisma.dataSyncLog.create({
@@ -116,106 +118,136 @@ export async function syncONET(): Promise<{ synced: number; errors: number }> {
   let errors = 0;
 
   try {
-    // Phase 1: Load all occupations from local dataset
-    console.log("[syncONET] Loading O*NET occupations from local dataset...");
-    const { loadONETData } = await import("@/lib/data-loaders");
-    const onetData = await loadONETData();
+    console.log("[syncONET] Loading complete O*NET 30.2 dataset from local files...");
+    const { loadONETFullData } = await import("@/lib/data-loaders");
+    const onetData = await loadONETFullData();
 
     const codes = Object.keys(onetData);
-    console.log(`[syncONET] Loaded ${codes.length} occupations from local dataset`);
+    console.log(`[syncONET] Loaded ${codes.length} occupations with full data`);
 
-    // Upsert all basic occupation records
-    for (const code of codes) {
-      const occ = onetData[code];
-      try {
-        await prisma.occupationONET.upsert({
-          where: { id: code },
-          create: {
-            id: code,
-            title: occ.t,
-            jobZone: occ.jz,
-          },
-          update: {
-            title: occ.t,
-            jobZone: occ.jz,
-          },
-        });
-        synced++;
-      } catch (e) {
-        errors++;
-        if (errors <= 5) {
-          console.error(`[syncONET] Failed to upsert ${code}:`, e);
-        }
-      }
-    }
+    // Process in batches of 50 for better performance
+    const batchSize = 50;
+    for (let i = 0; i < codes.length; i += batchSize) {
+      const batch = codes.slice(i, i + batchSize);
 
-    console.log(`[syncONET] Phase 1 done: ${synced} basic records upserted`);
+      await Promise.all(
+        batch.map(async (code) => {
+          const occ = onetData[code];
+          try {
+            // Expand compact keys to DB format
+            const tasks = occ.ta?.map((t) => ({
+              id: t.id,
+              title: t.t,
+              importance: t.im,
+            })) ?? [];
 
-    // Phase 2: Fetch detailed data from O*NET API for occupations missing it
-    const needDetails = await prisma.occupationONET.findMany({
-      where: { description: null },
-      select: { id: true },
-    });
+            const skills = occ.sk?.map((e) => ({
+              id: e.id,
+              name: e.n,
+              value: e.v,
+              level: e.l,
+            })) ?? [];
 
-    if (needDetails.length > 0) {
-      console.log(`[syncONET] Phase 2: ${needDetails.length} occupations need detailed data from O*NET API`);
+            const abilities = occ.ab?.map((e) => ({
+              id: e.id,
+              name: e.n,
+              value: e.v,
+              level: e.l,
+            })) ?? [];
 
-      let detailed = 0;
-      let detailErrors = 0;
+            const knowledge = occ.kn?.map((e) => ({
+              id: e.id,
+              name: e.n,
+              value: e.v,
+              level: e.l,
+            })) ?? [];
 
-      for (let i = 0; i < needDetails.length; i++) {
-        const occ = needDetails[i];
-        try {
-          const full = await getFullOccupation(occ.id);
+            const workActivities = occ.wa?.map((e) => ({
+              id: e.id,
+              name: e.n,
+              value: e.v,
+              level: e.l,
+            })) ?? [];
 
-          await prisma.occupationONET.update({
-            where: { id: occ.id },
-            data: {
-              title: full.title,
-              description: full.description,
-              tasks: toJson(full.tasks),
-              dwas: toJson(full.dwas),
-              toolsTech: toJson(full.toolsTech),
-              knowledge: toJson(full.knowledge),
-              skills: toJson(full.skills),
-              abilities: toJson(full.abilities),
-              workActivities: toJson(full.workActivities),
-              workContext: toJson(full.workContext),
-              relatedOccs: toJson(full.relatedOccs),
-              jobZone: full.jobZone ?? onetData[occ.id]?.jz ?? null,
-            },
-          });
+            const workContext = occ.wc?.map((e) => ({
+              id: e.id,
+              name: e.n,
+              value: e.v,
+            })) ?? [];
 
-          detailed++;
-        } catch (e) {
-          detailErrors++;
-          if (detailErrors <= 5) {
-            console.error(`[syncONET] Failed to fetch details for ${occ.id}:`, e);
+            const toolsTech = occ.tt?.map((t) => ({
+              title: t.t,
+              category: t.c,
+              hot_technology: t.h ?? false,
+            })) ?? [];
+
+            const dwas = occ.dw?.map((d) => ({
+              id: d.id,
+              title: d.t,
+            })) ?? [];
+
+            const relatedOccs = occ.ro?.map((r) => ({
+              code: r.c,
+              title: r.t,
+            })) ?? [];
+
+            await prisma.occupationONET.upsert({
+              where: { id: code },
+              create: {
+                id: code,
+                title: occ.t,
+                description: occ.d || null,
+                tasks: toJson(tasks),
+                dwas: toJson(dwas),
+                toolsTech: toJson(toolsTech),
+                knowledge: toJson(knowledge),
+                skills: toJson(skills),
+                abilities: toJson(abilities),
+                workActivities: toJson(workActivities),
+                workContext: toJson(workContext),
+                relatedOccs: toJson(relatedOccs),
+                jobZone: occ.jz ?? null,
+              },
+              update: {
+                title: occ.t,
+                description: occ.d || null,
+                tasks: toJson(tasks),
+                dwas: toJson(dwas),
+                toolsTech: toJson(toolsTech),
+                knowledge: toJson(knowledge),
+                skills: toJson(skills),
+                abilities: toJson(abilities),
+                workActivities: toJson(workActivities),
+                workContext: toJson(workContext),
+                relatedOccs: toJson(relatedOccs),
+                jobZone: occ.jz ?? null,
+              },
+            });
+            synced++;
+          } catch (e) {
+            errors++;
+            if (errors <= 5) {
+              console.error(`[syncONET] Failed to upsert ${code}:`, e);
+            }
           }
-        }
+        })
+      );
 
-        // Rate limiting: 200ms between API calls
-        await new Promise((r) => setTimeout(r, 200));
-
-        // Progress logging every 100 occupations
-        if ((i + 1) % 100 === 0 || i === needDetails.length - 1) {
-          console.log(
-            `[syncONET] Phase 2 progress: ${i + 1}/${needDetails.length} — ${detailed} detailed, ${detailErrors} errors`
-          );
-        }
+      if ((i + batchSize) % 200 === 0 || i + batchSize >= codes.length) {
+        console.log(
+          `[syncONET] Progress: ${Math.min(i + batchSize, codes.length)}/${codes.length} — ${synced} synced, ${errors} errors`
+        );
       }
-
-      console.log(`[syncONET] Phase 2 done: ${detailed} occupations enriched with API data`);
-    } else {
-      console.log("[syncONET] All occupations already have detailed data");
     }
+
+    console.log(`[syncONET] Done: ${synced} occupations synced with full data, ${errors} errors`);
 
     await prisma.dataSyncLog.update({
       where: { id: log.id },
       data: {
         status: "completed",
         recordsUpdated: synced,
-        version: `ONET-${new Date().getFullYear()}`,
+        version: "ONET-30.2",
         completedAt: new Date(),
       },
     });
@@ -236,44 +268,62 @@ export async function syncONET(): Promise<{ synced: number; errors: number }> {
 
 /**
  * Sync a single O*NET occupation by code.
+ * Uses local dataset — no API calls needed.
  * Useful for on-demand caching when a user looks up a specific occupation.
  */
 export async function syncSingleOccupation(
   onetCode: string
 ): Promise<boolean> {
   try {
-    const full = await getFullOccupation(onetCode);
+    const { loadONETFullData } = await import("@/lib/data-loaders");
+    const onetData = await loadONETFullData();
+    const occ = onetData[onetCode];
+
+    if (!occ) {
+      console.warn(`[syncSingle] O*NET code ${onetCode} not found in local dataset`);
+      return false;
+    }
+
+    const tasks = occ.ta?.map((t) => ({ id: t.id, title: t.t, importance: t.im })) ?? [];
+    const skills = occ.sk?.map((e) => ({ id: e.id, name: e.n, value: e.v, level: e.l })) ?? [];
+    const abilities = occ.ab?.map((e) => ({ id: e.id, name: e.n, value: e.v, level: e.l })) ?? [];
+    const knowledge = occ.kn?.map((e) => ({ id: e.id, name: e.n, value: e.v, level: e.l })) ?? [];
+    const workActivities = occ.wa?.map((e) => ({ id: e.id, name: e.n, value: e.v, level: e.l })) ?? [];
+    const workContext = occ.wc?.map((e) => ({ id: e.id, name: e.n, value: e.v })) ?? [];
+    const toolsTech = occ.tt?.map((t) => ({ title: t.t, category: t.c, hot_technology: t.h ?? false })) ?? [];
+    const dwas = occ.dw?.map((d) => ({ id: d.id, title: d.t })) ?? [];
+    const relatedOccs = occ.ro?.map((r) => ({ code: r.c, title: r.t })) ?? [];
 
     await prisma.occupationONET.upsert({
       where: { id: onetCode },
       create: {
         id: onetCode,
-        title: full.title,
-        description: full.description,
-        tasks: toJson(full.tasks),
-        dwas: toJson(full.dwas),
-        toolsTech: toJson(full.toolsTech),
-        knowledge: toJson(full.knowledge),
-        skills: toJson(full.skills),
-        abilities: toJson(full.abilities),
-        workActivities: toJson(full.workActivities),
-        workContext: toJson(full.workContext),
-        relatedOccs: toJson(full.relatedOccs),
-        jobZone: full.jobZone ?? null,
+        title: occ.t,
+        description: occ.d || null,
+        tasks: toJson(tasks),
+        dwas: toJson(dwas),
+        toolsTech: toJson(toolsTech),
+        knowledge: toJson(knowledge),
+        skills: toJson(skills),
+        abilities: toJson(abilities),
+        workActivities: toJson(workActivities),
+        workContext: toJson(workContext),
+        relatedOccs: toJson(relatedOccs),
+        jobZone: occ.jz ?? null,
       },
       update: {
-        title: full.title,
-        description: full.description,
-        tasks: toJson(full.tasks),
-        dwas: toJson(full.dwas),
-        toolsTech: toJson(full.toolsTech),
-        knowledge: toJson(full.knowledge),
-        skills: toJson(full.skills),
-        abilities: toJson(full.abilities),
-        workActivities: toJson(full.workActivities),
-        workContext: toJson(full.workContext),
-        relatedOccs: toJson(full.relatedOccs),
-        jobZone: full.jobZone ?? null,
+        title: occ.t,
+        description: occ.d || null,
+        tasks: toJson(tasks),
+        dwas: toJson(dwas),
+        toolsTech: toJson(toolsTech),
+        knowledge: toJson(knowledge),
+        skills: toJson(skills),
+        abilities: toJson(abilities),
+        workActivities: toJson(workActivities),
+        workContext: toJson(workContext),
+        relatedOccs: toJson(relatedOccs),
+        jobZone: occ.jz ?? null,
       },
     });
 
