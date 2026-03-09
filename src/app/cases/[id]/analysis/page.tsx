@@ -189,7 +189,7 @@ export default function AnalysisPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Analysis</h1>
@@ -212,7 +212,7 @@ export default function AnalysisPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={createAnalysis} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="name">Analysis Name</Label>
                   <Input id="name" name="name" placeholder="Optional name" />
@@ -238,7 +238,7 @@ export default function AnalysisPage() {
                   </p>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="priorEarnings">
                     Prior Earnings (annual)
@@ -441,6 +441,7 @@ export default function AnalysisPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -505,6 +506,7 @@ export default function AnalysisPage() {
                       ))}
                   </TableBody>
                 </Table>
+                </div>
               </CardContent>
             </Card>
           )}

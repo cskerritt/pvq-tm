@@ -1003,6 +1003,80 @@ function getTargetStrengthLevel(targetOnet: string): number {
   return strengthByGroup[prefix] ?? 1;
 }
 
+/** Wage ranges by SOC major group prefix (annual $) — based on BLS OEWS data */
+const WAGE_RANGES_BY_SOC: Record<string, { median: [number, number]; spread: number }> = {
+  "11": { median: [80000, 150000], spread: 0.55 }, // Management
+  "13": { median: [55000, 95000],  spread: 0.50 }, // Business & Financial
+  "15": { median: [65000, 130000], spread: 0.45 }, // Computer & Math
+  "17": { median: [60000, 110000], spread: 0.45 }, // Architecture & Engineering
+  "19": { median: [55000, 100000], spread: 0.50 }, // Life/Physical/Social Science
+  "21": { median: [35000, 60000],  spread: 0.40 }, // Community & Social Service
+  "23": { median: [55000, 130000], spread: 0.55 }, // Legal
+  "25": { median: [40000, 70000],  spread: 0.35 }, // Education
+  "27": { median: [35000, 75000],  spread: 0.55 }, // Arts/Design/Entertainment
+  "29": { median: [45000, 90000],  spread: 0.45 }, // Healthcare Practitioners
+  "31": { median: [25000, 40000],  spread: 0.30 }, // Healthcare Support
+  "33": { median: [35000, 65000],  spread: 0.35 }, // Protective Service
+  "35": { median: [22000, 35000],  spread: 0.30 }, // Food Preparation
+  "37": { median: [24000, 38000],  spread: 0.30 }, // Cleaning & Maintenance
+  "39": { median: [24000, 40000],  spread: 0.35 }, // Personal Care
+  "41": { median: [25000, 65000],  spread: 0.55 }, // Sales
+  "43": { median: [30000, 50000],  spread: 0.35 }, // Office & Admin
+  "45": { median: [25000, 40000],  spread: 0.35 }, // Farming/Fishing/Forestry
+  "47": { median: [35000, 65000],  spread: 0.35 }, // Construction
+  "49": { median: [38000, 62000],  spread: 0.35 }, // Installation/Maintenance/Repair
+  "51": { median: [28000, 50000],  spread: 0.35 }, // Production
+  "53": { median: [28000, 50000],  spread: 0.40 }, // Transportation/Material Moving
+};
+
+/** Generate realistic OEWS wage data for a target occupation */
+function generateOEWSWageData(targetOnet: string): {
+  employment: number;
+  medianWage: number;
+  meanWage: number;
+  pct10: number;
+  pct25: number;
+  pct75: number;
+  pct90: number;
+  openingsAnnual: number;
+  changePct: number;
+} {
+  const prefix = targetOnet.substring(0, 2);
+  const range = WAGE_RANGES_BY_SOC[prefix] ?? { median: [30000, 55000], spread: 0.40 };
+
+  // Generate median wage within the SOC group's typical range
+  const medianWage = randInt(range.median[0], range.median[1]);
+
+  // Mean is typically 5-15% higher than median (right-skewed distribution)
+  const meanWage = Math.round(medianWage * (1 + Math.random() * 0.10 + 0.05));
+
+  // Percentiles based on spread factor
+  const spread = range.spread;
+  const pct10 = Math.round(medianWage * (1 - spread * 0.8));
+  const pct25 = Math.round(medianWage * (1 - spread * 0.4));
+  const pct75 = Math.round(medianWage * (1 + spread * 0.4));
+  const pct90 = Math.round(medianWage * (1 + spread * 0.8));
+
+  // Employment: varies widely — office/healthcare large, niche trades small
+  const empBase: Record<string, [number, number]> = {
+    "11": [15000, 80000], "13": [20000, 120000], "15": [30000, 200000],
+    "25": [50000, 200000], "29": [30000, 150000], "31": [40000, 200000],
+    "35": [100000, 400000], "41": [50000, 300000], "43": [80000, 400000],
+    "47": [20000, 100000], "49": [15000, 80000], "51": [20000, 120000],
+    "53": [30000, 200000],
+  };
+  const empRange = empBase[prefix] ?? [10000, 80000];
+  const employment = randInt(empRange[0], empRange[1]);
+
+  // Projected openings: roughly 3-8% of employment annually
+  const openingsAnnual = Math.round(employment * (0.03 + Math.random() * 0.05));
+
+  // Projected growth: -2% to +12% (most occupations grow slowly)
+  const changePct = Math.round((Math.random() * 14 - 2) * 10) / 10;
+
+  return { employment, medianWage, meanWage, pct10, pct25, pct75, pct90, openingsAnnual, changePct };
+}
+
 /** Compute a realistic PVQ score based on case characteristics.
  *  Follows VE methodology: SVP gate → TFQ hard gate → composite scoring */
 function computeRealisticPVQ(
@@ -1418,11 +1492,13 @@ export async function POST(req: NextRequest) {
             svp: targetSvp,
             stq: scores.stq,
             stqDetails: {
-              taskDwaOverlap: Math.round(scores.stq * 0.35 * 100) / 100,
-              wfMpsmsOverlap: Math.round(scores.stq * 0.25 * 100) / 100,
-              toolsOverlap: Math.round(scores.stq * 0.20 * 100) / 100,
-              materialsOverlap: Math.round(scores.stq * 0.10 * 100) / 100,
-              credentialOverlap: Math.round(scores.stq * 0.10 * 100) / 100,
+              components: {
+                taskDwaOverlap: Math.round(scores.stq * 0.35 * 100) / 100,
+                wfMpsmsOverlap: Math.round(scores.stq * 0.25 * 100) / 100,
+                toolsOverlap: Math.round(scores.stq * 0.20 * 100) / 100,
+                materialsOverlap: Math.round(scores.stq * 0.10 * 100) / 100,
+                credentialOverlap: Math.round(scores.stq * 0.10 * 100) / 100,
+              },
             },
             tfq: scores.tfq,
             tfqDetails: {
@@ -1434,18 +1510,25 @@ export async function POST(req: NextRequest) {
             },
             vaq: scores.vaq,
             vaqDetails: {
-              tools: Math.round(scores.vaq + randInt(-15, 15)),
-              workProcesses: Math.round(scores.vaq + randInt(-10, 10)),
-              workSetting: Math.round(scores.vaq + randInt(-20, 20)),
-              industry: Math.round(scores.vaq + randInt(-15, 15)),
+              adjustment: {
+                tools: Math.round(scores.vaq + randInt(-15, 15)),
+                workProcesses: Math.round(scores.vaq + randInt(-10, 10)),
+                workSetting: Math.round(scores.vaq + randInt(-20, 20)),
+                industry: Math.round(scores.vaq + randInt(-15, 15)),
+              },
               autoEstimated: true,
             },
             lmq: scores.lmq,
-            lmqDetails: {
-              employmentScore: randInt(50, 100),
-              wageScore: randInt(30, 100),
-              projectionsScore: randInt(35, 85),
-            },
+            lmqDetails: (() => {
+              const oewsData = generateOEWSWageData(targetCodes[t]);
+              return {
+                score: scores.lmq,
+                employmentScore: randInt(50, 100),
+                wageScore: randInt(30, 100),
+                projectionsScore: randInt(35, 85),
+                details: oewsData,
+              };
+            })(),
             pvq: scores.pvq,
             excluded: scores.excluded,
             exclusionReason: scores.exclusionReason,

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -10,6 +11,8 @@ import {
   FileText,
   BookOpen,
   HelpCircle,
+  Menu,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -24,13 +27,10 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const [open, setOpen] = useState(false);
 
-  return (
-    <aside className="flex h-screen w-64 flex-col border-r bg-muted/30">
-      <div className="flex h-14 items-center border-b px-4">
-        <FileText className="mr-2 h-5 w-5 text-primary" />
-        <span className="text-lg font-semibold">PVQ-TM</span>
-      </div>
+  const navContent = (
+    <>
       <nav className="flex-1 space-y-1 p-2">
         {navItems.map((item) => {
           const active =
@@ -41,6 +41,7 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
+              onClick={() => setOpen(false)}
               className={cn(
                 "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                 active
@@ -59,6 +60,63 @@ export function Sidebar() {
         <br />
         Transferability Method
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile top bar */}
+      <div className="sticky top-0 z-40 flex h-14 items-center border-b bg-background px-4 md:hidden">
+        <button
+          onClick={() => setOpen(true)}
+          className="mr-3 rounded-md p-1.5 hover:bg-muted"
+          aria-label="Open menu"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        <FileText className="mr-2 h-5 w-5 text-primary" />
+        <span className="text-lg font-semibold">PVQ-TM</span>
+      </div>
+
+      {/* Mobile drawer overlay */}
+      {open && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 md:hidden"
+          onClick={() => setOpen(false)}
+        />
+      )}
+
+      {/* Mobile drawer */}
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r bg-background transition-transform duration-200 ease-in-out md:hidden",
+          open ? "translate-x-0" : "-translate-x-full"
+        )}
+      >
+        <div className="flex h-14 items-center justify-between border-b px-4">
+          <div className="flex items-center">
+            <FileText className="mr-2 h-5 w-5 text-primary" />
+            <span className="text-lg font-semibold">PVQ-TM</span>
+          </div>
+          <button
+            onClick={() => setOpen(false)}
+            className="rounded-md p-1.5 hover:bg-muted"
+            aria-label="Close menu"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        {navContent}
+      </aside>
+
+      {/* Desktop sidebar */}
+      <aside className="hidden md:flex h-screen w-64 flex-col border-r bg-muted/30">
+        <div className="flex h-14 items-center border-b px-4">
+          <FileText className="mr-2 h-5 w-5 text-primary" />
+          <span className="text-lg font-semibold">PVQ-TM</span>
+        </div>
+        {navContent}
+      </aside>
+    </>
   );
 }

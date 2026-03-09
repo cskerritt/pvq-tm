@@ -165,8 +165,8 @@ export default function ResultsPage() {
   const excluded = selected.targetOccupations.filter((t) => t.excluded);
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Analysis Results</h1>
           <p className="text-muted-foreground">
@@ -206,7 +206,7 @@ export default function ResultsPage() {
       )}
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Total Candidates</CardTitle>
@@ -305,7 +305,7 @@ export default function ResultsPage() {
                     <TableRow>
                       <TableCell colSpan={11}>
                         <div className="p-4 bg-muted/30 rounded-md space-y-4">
-                          <div className="grid grid-cols-4 gap-4 text-sm">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 text-sm">
                             {/* STQ Details */}
                             <div>
                               <p className="font-medium mb-2">STQ Components</p>
@@ -501,7 +501,7 @@ export default function ResultsPage() {
               const avgWage = wages.reduce((a, b) => a + b, 0) / wages.length;
 
               return (
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-4 pt-2">
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4 pt-2">
                   <div className="rounded-md border p-3 text-center">
                     <p className="text-xs text-muted-foreground">Lowest Median</p>
                     <p className="text-lg font-bold">{formatUSD(minWage)}</p>
@@ -545,7 +545,7 @@ export default function ResultsPage() {
                   <p className="text-xs font-medium text-muted-foreground">Median Wage Comparison</p>
                   {wageData.map((w) => (
                     <div key={w.title} className="flex items-center gap-3">
-                      <span className="text-xs w-44 truncate text-right" title={w.title}>
+                      <span className="text-xs w-24 sm:w-44 truncate text-right" title={w.title}>
                         {w.title}
                       </span>
                       <div className="flex-1 relative h-6 bg-muted/50 rounded overflow-hidden">
@@ -561,7 +561,7 @@ export default function ResultsPage() {
                           />
                         )}
                       </div>
-                      <span className="text-xs font-mono w-20 text-right">
+                      <span className="text-xs font-mono w-16 sm:w-20 text-right">
                         {formatUSD(w.median)}
                       </span>
                     </div>
@@ -588,6 +588,7 @@ export default function ResultsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -610,6 +611,7 @@ export default function ResultsPage() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -624,7 +626,7 @@ export default function ResultsPage() {
             PVQ = 0.45 &times; STQ + 0.25 &times; TFQ + 0.15 &times; VAQ + 0.15 &times; LMQ
           </p>
           <Separator />
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             <div>
               <p><strong>STQ</strong> (Skill Transfer Quotient): Task/DWA overlap, WF/MPSMS similarity, tools, materials, credentials</p>
               <p><strong>TFQ</strong> (Trait Feasibility Quotient): 24-trait post-profile vs occupation demands</p>
@@ -635,7 +637,7 @@ export default function ResultsPage() {
             </div>
           </div>
           <Separator />
-          <div className="grid grid-cols-4 gap-4 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 text-xs">
             <div><Badge className={getGradeColor("A")} variant="outline">A</Badge> High confidence, complete data</div>
             <div><Badge className={getGradeColor("B")} variant="outline">B</Badge> Good confidence, minor gaps</div>
             <div><Badge className={getGradeColor("C")} variant="outline">C</Badge> Moderate confidence, some gaps</div>

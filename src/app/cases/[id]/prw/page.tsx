@@ -178,8 +178,8 @@ export default function PRWPage() {
     : null;
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Past Relevant Work</h1>
           <p className="text-muted-foreground">
@@ -192,7 +192,7 @@ export default function PRWPage() {
             <Plus className="mr-2 h-4 w-4" />
             Add PRW
           </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
                 {editingId ? "Edit Past Relevant Work" : "Add Past Relevant Work"}
@@ -237,7 +237,7 @@ export default function PRWPage() {
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="jobTitle">Job Title *</Label>
                   <Input
@@ -253,7 +253,7 @@ export default function PRWPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="dotCode">DOT Code</Label>
                   <Input id="dotCode" name="dotCode" placeholder="000.000-000" defaultValue={editingEntry?.dotCode ?? ""} />
@@ -284,7 +284,7 @@ export default function PRWPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="skillLevel">Skill Level</Label>
                   <Select name="skillLevel" defaultValue={editingEntry?.skillLevel ?? ""}>
@@ -319,7 +319,7 @@ export default function PRWPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="startDate">Start Date</Label>
                   <Input id="startDate" name="startDate" type="date" defaultValue={editingEntry?.startDate?.split("T")[0] ?? ""} />
@@ -364,7 +364,7 @@ export default function PRWPage() {
           {entries.map((e) => (
             <Card key={e.id}>
               <CardContent className="py-4">
-                <div className="flex items-start justify-between">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <p className="font-medium">{e.jobTitle}</p>
@@ -392,7 +392,7 @@ export default function PRWPage() {
                       </p>
                     )}
                   </div>
-                  <div className="flex gap-2 items-center ml-4">
+                  <div className="flex flex-wrap gap-2 items-center">
                     {e.svp !== null && <Badge variant="outline">SVP {e.svp}</Badge>}
                     {e.strengthLevel && <Badge variant="secondary">{e.strengthLevel}</Badge>}
                     {e.skillLevel && <Badge variant="secondary">{e.skillLevel}</Badge>}

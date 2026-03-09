@@ -40,7 +40,7 @@ export default function NewCasePage() {
   }
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
+    <div className="p-4 md:p-6 max-w-2xl mx-auto">
       <h1 className="text-2xl font-bold mb-6">New Case</h1>
       <Card>
         <CardHeader>
@@ -48,7 +48,7 @@ export default function NewCasePage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div className="space-y-2">
                 <Label htmlFor="clientName">Client Name *</Label>
                 <Input id="clientName" name="clientName" required />
@@ -58,7 +58,7 @@ export default function NewCasePage() {
                 <Input id="clientDOB" name="clientDOB" type="date" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div className="space-y-2">
                 <Label htmlFor="evaluatorName">Evaluator Name</Label>
                 <Input id="evaluatorName" name="evaluatorName" />
@@ -68,7 +68,7 @@ export default function NewCasePage() {
                 <Input id="referralSource" name="referralSource" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div className="space-y-2">
                 <Label htmlFor="dateOfInjury">Date of Injury</Label>
                 <Input id="dateOfInjury" name="dateOfInjury" type="date" />

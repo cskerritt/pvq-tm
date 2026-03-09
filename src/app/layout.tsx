@@ -28,11 +28,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <TooltipProvider>
-          <div className="flex h-screen">
+          <div className="flex min-h-[100dvh] flex-col md:flex-row md:h-screen">
             <Sidebar />
             <main className="flex-1 overflow-auto">{children}</main>
           </div>

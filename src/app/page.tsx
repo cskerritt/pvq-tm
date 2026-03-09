@@ -109,8 +109,8 @@ export default function Dashboard() {
   }, []);
 
   return (
-    <div className="p-6 space-y-8">
-      <div className="flex items-center justify-between">
+    <div className="p-4 md:p-6 space-y-6 md:space-y-8">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">PVQ-TM Dashboard</h1>
           <p className="text-muted-foreground">
@@ -126,7 +126,7 @@ export default function Dashboard() {
       </div>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Total Cases</CardTitle>
@@ -296,7 +296,7 @@ export default function Dashboard() {
                 <Link
                   key={c.id}
                   href={`/cases/${c.id}`}
-                  className="flex items-center justify-between rounded-md border p-3 hover:bg-muted/50 transition-colors"
+                  className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-md border p-3 hover:bg-muted/50 transition-colors"
                 >
                   <div>
                     <span className="font-medium">{c.clientName}</span>

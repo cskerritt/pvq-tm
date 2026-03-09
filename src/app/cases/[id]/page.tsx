@@ -160,9 +160,9 @@ export default function CaseDetailPage() {
   ];
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">{caseData.clientName}</h1>
           <div className="flex flex-wrap gap-x-4 text-sm text-muted-foreground mt-1">

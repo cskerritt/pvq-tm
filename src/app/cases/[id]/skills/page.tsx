@@ -142,8 +142,8 @@ export default function SkillsPage() {
   const editingSkill = editingId ? skills.find((s) => s.id === editingId) : null;
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Acquired Skill Inventory</h1>
           <p className="text-muted-foreground">
@@ -156,7 +156,7 @@ export default function SkillsPage() {
             <Plus className="mr-2 h-4 w-4" />
             Add Skill
           </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingId ? "Edit Acquired Skill" : "Add Acquired Skill"}</DialogTitle>
             </DialogHeader>
@@ -177,7 +177,7 @@ export default function SkillsPage() {
                 </Select>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="actionVerb">Action Verb *</Label>
                   <Input
@@ -210,7 +210,7 @@ export default function SkillsPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="toolsSoftware">Tools / Software</Label>
                   <Input
@@ -231,7 +231,7 @@ export default function SkillsPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                 <div className="space-y-2">
                   <Label>SVP Level</Label>
                   <Select name="svpLevel" defaultValue={editingSkill?.svpLevel?.toString() ?? ""}>
@@ -274,7 +274,7 @@ export default function SkillsPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div className="space-y-2">
                   <Label>Performance Mode</Label>
                   <Select name="performanceMode" defaultValue={editingSkill?.performanceMode ?? ""}>
@@ -352,6 +352,7 @@ export default function SkillsPage() {
       ) : skills.length > 0 ? (
         <Card>
           <CardContent className="pt-6">
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -402,6 +403,7 @@ export default function SkillsPage() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           </CardContent>
         </Card>
       ) : null}
@@ -411,7 +413,7 @@ export default function SkillsPage() {
           <CardHeader>
             <CardTitle className="text-sm">Summary</CardTitle>
           </CardHeader>
-          <CardContent className="flex gap-4">
+          <CardContent className="flex flex-wrap gap-3">
             <Badge variant="outline">{skills.length} total skills</Badge>
             <Badge variant="default">{skills.filter((s) => s.isTransferable).length} transferable</Badge>
             <Badge variant="secondary">{skills.filter((s) => !s.isTransferable).length} non-transferable</Badge>
