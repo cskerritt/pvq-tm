@@ -81,6 +81,19 @@ interface OccSearchResult {
   cached?: boolean;
 }
 
+interface CombinedSearchResult {
+  dotCode: string | null;
+  onetCode: string | null;
+  title: string;
+  svp: number | null;
+  strength: string | null;
+  skillLevel: string | null;
+  gedR: number | null;
+  gedM: number | null;
+  gedL: number | null;
+  source: string; // "DOT", "O*NET", or "DOT+O*NET"
+}
+
 interface DOTEntry {
   dotCode: string;
   title: string;
@@ -191,6 +204,7 @@ export default function PRWPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<OccSearchResult[]>([]);
+  const [combinedResults, setCombinedResults] = useState<CombinedSearchResult[]>([]);
   const [selectedOcc, setSelectedOcc] = useState<OccSearchResult | null>(null);
   const [searching, setSearching] = useState(false);
   const [dotEntries, setDotEntries] = useState<DOTEntry[]>([]);
@@ -255,18 +269,30 @@ export default function PRWPage() {
   async function searchOccs() {
     if (!searchQuery.trim()) return;
     setSearching(true);
+    setCombinedResults([]);
+    setSearchResults([]);
     try {
+      // Use combined search that searches both O*NET and DOT databases
       const res = await fetch(
-        `/api/occupations/search?q=${encodeURIComponent(searchQuery)}`
+        `/api/occupations/combined-search?q=${encodeURIComponent(searchQuery)}`
       );
-      const data = await res.json();
-      const merged = [...(data.onet ?? []), ...(data.local ?? [])];
-      const seen = new Set<string>();
-      setSearchResults(merged.filter((r: OccSearchResult) => {
-        if (seen.has(r.code)) return false;
-        seen.add(r.code);
-        return true;
-      }));
+      if (res.ok) {
+        const data = await res.json();
+        setCombinedResults(data.results ?? []);
+      } else {
+        // Fallback to old O*NET-only search
+        const res2 = await fetch(
+          `/api/occupations/search?q=${encodeURIComponent(searchQuery)}`
+        );
+        const data2 = await res2.json();
+        const merged = [...(data2.onet ?? []), ...(data2.local ?? [])];
+        const seen = new Set<string>();
+        setSearchResults(merged.filter((r: OccSearchResult) => {
+          if (seen.has(r.code)) return false;
+          seen.add(r.code);
+          return true;
+        }));
+      }
     } catch {
       toast.error("Search failed");
     }
@@ -362,6 +388,7 @@ export default function PRWPage() {
   function handleSelectOcc(occ: OccSearchResult) {
     setSelectedOcc(occ);
     setSearchResults([]);
+    setCombinedResults([]);
     setGeneratedDuties("");
     setAutoFillSource(null);
     setAutoFillWages(null);
@@ -369,6 +396,47 @@ export default function PRWPage() {
     setFormJobTitle(occ.title);
     setFormOnetCode(occ.code);
     lookupOccupationData(occ.code);
+  }
+
+  function handleSelectCombined(result: CombinedSearchResult) {
+    setCombinedResults([]);
+    setSearchResults([]);
+    setGeneratedDuties("");
+
+    // Set job title
+    setFormJobTitle(result.title);
+
+    // Set codes
+    if (result.onetCode) setFormOnetCode(result.onetCode);
+    if (result.dotCode) setFormDotCode(result.dotCode);
+
+    // Set DOT data directly if available (100% accurate from DOT)
+    if (result.svp !== null) setFormSvp(String(result.svp));
+    if (result.strength) setFormStrength(result.strength);
+    if (result.skillLevel) setFormSkillLevel(result.skillLevel);
+
+    // Set selected occupation for AI duties and skills generation
+    if (result.onetCode) {
+      setSelectedOcc({ code: result.onetCode, title: result.title });
+    } else {
+      setSelectedOcc({ code: result.dotCode ?? "", title: result.title });
+    }
+
+    setAutoFillSource(result.source);
+    setAutoFillWages(null);
+
+    // If we have an O*NET code, also look up wages
+    if (result.onetCode) {
+      lookupOccupationData(result.onetCode);
+    }
+
+    toast.success(
+      result.source === "DOT+O*NET"
+        ? "Auto-filled from DOT + O*NET (both codes populated)"
+        : result.source === "DOT"
+          ? "Auto-filled from DOT database (100% accurate)"
+          : "Auto-filled from O*NET"
+    );
   }
 
   async function generateDutiesWithAI() {
@@ -481,6 +549,7 @@ export default function PRWPage() {
     setDotEntries([]);
     setSearchQuery("");
     setSearchResults([]);
+    setCombinedResults([]);
     setGeneratedDuties("");
     setAutoFillSource(null);
     setAutoFillWages(null);
@@ -669,12 +738,12 @@ export default function PRWPage() {
               </DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* O*NET Search */}
+              {/* Keyword Search (DOT + O*NET) */}
               <div className="space-y-2">
-                <Label>O*NET Occupation Search</Label>
+                <Label>Occupation Search (DOT + O*NET)</Label>
                 <div className="flex gap-2">
                   <Input
-                    placeholder="Search occupations (e.g., carpenter, nurse, cashier)..."
+                    placeholder="Search by job title keyword (e.g., cashier, carpenter, nurse)..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     onKeyDown={(e) =>
@@ -685,7 +754,42 @@ export default function PRWPage() {
                     {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                   </Button>
                 </div>
-                {searchResults.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Searches both DOT (12,700+ titles) and O*NET databases. DOT data provides accurate SVP, strength, and GED levels.
+                </p>
+
+                {/* Combined search results */}
+                {combinedResults.length > 0 && (
+                  <div className="max-h-60 overflow-y-auto border rounded-md">
+                    {combinedResults.map((r, i) => (
+                      <button
+                        key={`${r.dotCode ?? ""}-${r.onetCode ?? ""}-${i}`}
+                        type="button"
+                        onClick={() => handleSelectCombined(r)}
+                        className="w-full text-left px-3 py-2 hover:bg-muted text-sm border-b last:border-0"
+                      >
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium">{r.title}</span>
+                          <Badge
+                            variant={r.source === "DOT+O*NET" ? "default" : r.source === "DOT" ? "secondary" : "outline"}
+                            className="text-xs"
+                          >
+                            {r.source}
+                          </Badge>
+                        </div>
+                        <div className="flex gap-2 mt-1 text-xs text-muted-foreground">
+                          {r.dotCode && <span>DOT: {r.dotCode}</span>}
+                          {r.onetCode && <span>O*NET: {r.onetCode}</span>}
+                          {r.svp !== null && <span>SVP: {r.svp}</span>}
+                          {r.strength && <span>Str: {r.strength}</span>}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Fallback: old O*NET-only results */}
+                {searchResults.length > 0 && combinedResults.length === 0 && (
                   <div className="max-h-40 overflow-y-auto border rounded-md">
                     {searchResults.map((r) => (
                       <button
@@ -701,6 +805,7 @@ export default function PRWPage() {
                     ))}
                   </div>
                 )}
+
                 {selectedOcc && (
                   <Badge variant="outline" className="text-sm">
                     Selected: {selectedOcc.code} — {selectedOcc.title}
