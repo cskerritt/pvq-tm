@@ -46,10 +46,10 @@ export async function GET(req: NextRequest) {
         orderBy: { title: "asc" },
       }),
 
-      // 2. Search O*NET API (remote)
-      searchOccupations(query, 1, 15).catch(() => ({ occupation: [] as { code: string; title: string }[], total: 0 })),
+      // 2. Search O*NET API (remote) — fetch up to 50 results
+      searchOccupations(query, 1, 50).catch(() => ({ occupation: [] as { code: string; title: string }[], total: 0 })),
 
-      // 3. Search cached O*NET (local)
+      // 3. Search cached O*NET (local, 1,020 occupations)
       prisma.occupationONET.findMany({
         where: {
           OR: [
@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
           ],
         },
         select: { id: true, title: true, jobZone: true },
-        take: 10,
+        take: 50,
       }),
     ]);
 

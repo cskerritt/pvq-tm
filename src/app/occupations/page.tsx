@@ -42,11 +42,18 @@ export default function OccupationsPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Occupation Browser</h1>
-        <p className="text-muted-foreground">
-          Search O*NET occupations by title, DOT code, or keyword
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Occupation Browser</h1>
+          <p className="text-muted-foreground">
+            Search O*NET occupations by title, DOT code, or keyword
+          </p>
+        </div>
+        <Link href="/occupations/crosswalk">
+          <Button variant="outline" size="sm">
+            DOT–O*NET Crosswalk
+          </Button>
+        </Link>
       </div>
 
       <div className="flex gap-2">
