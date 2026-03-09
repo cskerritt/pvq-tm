@@ -11,9 +11,10 @@ import { mapORSToTraits, TRAIT_KEYS, type TraitKey } from "@/lib/engine/traits";
  * demand across all PRW jobs is used (the work history represents
  * the highest demands the worker has demonstrated).
  *
- * Data sources:
- * - DOT: reasoning, math, language, strength (from PRW → dotOcc relation)
- * - ORS: ~15 physical/environmental traits (from OccupationORS by O*NET code)
+ * Data sources (priority chain):
+ * 1. DOT direct: PRW has dotCode → dotOcc relation → GED + strength
+ * 2. DOT via crosswalk: PRW has onetSocCode → DOTONETCrosswalk → DOT data
+ * 3. ORS: PRW has onetSocCode → OccupationORS → physical/environmental traits
  */
 export async function POST(
   req: NextRequest,
@@ -35,7 +36,7 @@ export async function POST(
       );
     }
 
-    // 2. Collect unique O*NET SOC codes for ORS lookup
+    // 2. Collect unique O*NET SOC codes for ORS + crosswalk lookup
     const onetCodes = [
       ...new Set(
         prwEntries
@@ -45,27 +46,66 @@ export async function POST(
     ];
 
     // Fetch ORS data for all relevant O*NET codes
-    const orsRecords = onetCodes.length > 0
-      ? await prisma.occupationORS.findMany({
-          where: { onetSocCode: { in: onetCodes } },
-        })
-      : [];
+    const orsRecords =
+      onetCodes.length > 0
+        ? await prisma.occupationORS.findMany({
+            where: { onetSocCode: { in: onetCodes } },
+          })
+        : [];
 
     const orsMap = new Map(orsRecords.map((r) => [r.onetSocCode, r]));
+
+    // For PRW entries without a direct dotCode, look up DOT via crosswalk
+    const prwNeedingCrosswalk = prwEntries.filter(
+      (p) => !p.dotOcc && p.onetSocCode
+    );
+    const crosswalkOnetCodes = [
+      ...new Set(prwNeedingCrosswalk.map((p) => p.onetSocCode!)),
+    ];
+
+    const crosswalkEntries =
+      crosswalkOnetCodes.length > 0
+        ? await prisma.dOTONETCrosswalk.findMany({
+            where: { onetSocCode: { in: crosswalkOnetCodes } },
+            include: { dotOcc: true },
+          })
+        : [];
+
+    // Build a map: onetSocCode → first matching DOT occupation
+    const crosswalkDotMap = new Map<
+      string,
+      { gedR: number; gedM: number; gedL: number; strength: string }
+    >();
+    for (const cw of crosswalkEntries) {
+      if (!crosswalkDotMap.has(cw.onetSocCode) && cw.dotOcc) {
+        crosswalkDotMap.set(cw.onetSocCode, {
+          gedR: cw.dotOcc.gedR,
+          gedM: cw.dotOcc.gedM,
+          gedL: cw.dotOcc.gedL,
+          strength: cw.dotOcc.strength,
+        });
+      }
+    }
 
     // 3. Build trait vectors for each PRW entry and aggregate (max per trait)
     const aggregated: Partial<Record<TraitKey, number>> = {};
     let filledCount = 0;
     const jobsUsed = prwEntries.length;
+    let dotSourceCount = 0;
 
     for (const prw of prwEntries) {
       // DOT traits (reasoning, math, language, strength)
-      if (prw.dotOcc) {
+      // Priority: direct dotOcc → crosswalk lookup
+      const dotData =
+        prw.dotOcc ??
+        (prw.onetSocCode ? crosswalkDotMap.get(prw.onetSocCode) : null);
+
+      if (dotData) {
         const { demands: dotDemands } = buildDOTDemandVector({
-          gedR: prw.dotOcc.gedR,
-          gedM: prw.dotOcc.gedM,
-          gedL: prw.dotOcc.gedL,
-          strength: prw.dotOcc.strength,
+          gedR: dotData.gedR,
+          gedM: dotData.gedM,
+          gedL: dotData.gedL,
+          strength: dotData.strength,
         });
 
         for (const key of TRAIT_KEYS) {
@@ -74,14 +114,14 @@ export async function POST(
             aggregated[key] = Math.max(aggregated[key] ?? 0, val);
           }
         }
+        dotSourceCount++;
       }
 
       // ORS traits (physical demands + environmental conditions)
       if (prw.onetSocCode) {
-        // Try the full code first, then the 6-digit base code
+        // Try the full code first, then the base .00 code
         let ors = orsMap.get(prw.onetSocCode);
         if (!ors) {
-          // Try base SOC code (XX-XXXX) without the .XX suffix
           const baseSoc = prw.onetSocCode.replace(/\.\d+$/, ".00");
           if (baseSoc !== prw.onetSocCode) {
             ors = orsMap.get(baseSoc);
@@ -90,8 +130,14 @@ export async function POST(
 
         if (ors) {
           const orsTraits = mapORSToTraits(
-            ors.physicalDemands as Record<string, { t: string; v: string | number }[]> | null,
-            ors.envConditions as Record<string, { t: string; v: string | number }[]> | null
+            ors.physicalDemands as Record<
+              string,
+              { t: string; v: string | number }[]
+            > | null,
+            ors.envConditions as Record<
+              string,
+              { t: string; v: string | number }[]
+            > | null
           );
 
           for (const [key, val] of Object.entries(orsTraits)) {
@@ -125,6 +171,7 @@ export async function POST(
         filledCount,
         totalTraits: TRAIT_KEYS.length,
         jobsAnalyzed: jobsUsed,
+        dotSourceCount,
         orsAvailable: orsRecords.length,
       },
     });
