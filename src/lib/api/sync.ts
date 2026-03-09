@@ -9,7 +9,18 @@
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma";
 import { browseAllOccupations, getFullOccupation } from "./onet";
-import { fetchBLSSeries, buildOEWSSeriesId } from "./bls";
+
+/** OEWS wage data structure (mirrors data-loaders.ts — inline to avoid Edge Runtime warnings) */
+interface OEWSOccupationData {
+  t: string;
+  e: number | null;
+  m: number | null;
+  md: number | null;
+  p10: number | null;
+  p25: number | null;
+  p75: number | null;
+  p90: number | null;
+}
 
 function toJson(val: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(val ?? []));
@@ -232,25 +243,14 @@ export async function syncSingleOccupation(
 }
 
 /**
- * Maximum number of BLS API calls per OEWS sync run.
- * Each call covers 7 occupations (49 series < 50 max per request).
- * At 100 calls/run → 700 occupations per day.
- * Full coverage of ~1,020 occupations in ~2 daily runs.
- * BLS allows 500 queries/day, so 100 leaves headroom for ORS and retries.
- */
-const MAX_BLS_CALLS_PER_OEWS_SYNC = 100;
-
-/**
- * Sync OEWS (wage & employment) data from BLS for cached O*NET occupations.
+ * Sync OEWS (wage & employment) data from local BLS dataset.
  *
- * Uses an incremental strategy to stay within BLS daily API limits:
- * 1. Prioritises occupations with NO wage data at all (new occupations)
- * 2. Then refreshes occupations with the OLDEST data
- * 3. Processes at most MAX_BLS_CALLS_PER_OEWS_SYNC batches per run (~700 occupations)
- * 4. Detects daily BLS limit and stops early
+ * Uses the complete OEWS May 2024 dataset (Excel export from BLS) which has been
+ * converted to a JSON file at src/data/oews-data.json. This contains
+ * 831 detailed occupations with employment, mean wage, median wage,
+ * and percentile wage data (10th, 25th, 75th, 90th).
  *
- * Over 2 daily runs, all ~1,020 occupations get coverage.
- * Monthly refresh cycle keeps everything current.
+ * No BLS API calls needed — all data is local.
  */
 export async function syncOEWS(): Promise<{ synced: number; errors: number }> {
   const log = await prisma.dataSyncLog.create({
@@ -279,209 +279,90 @@ export async function syncOEWS(): Promise<{ synced: number; errors: number }> {
       return { synced: 0, errors: 0 };
     }
 
-    // Get existing wage data with timestamps so we can prioritise
-    const existingWages = await prisma.occupationWages.findMany({
-      select: { onetSocCode: true, year: true, createdAt: true },
-      orderBy: { createdAt: "asc" }, // oldest first
-    });
+    // Load OEWS data from bundled JSON file
+    console.log("[syncOEWS] Loading OEWS data from local dataset...");
+    const { loadOEWSData } = await import("@/lib/data-loaders");
+    const oewsData = await loadOEWSData();
 
-    // Build a map: onetSocCode → { year, createdAt }
-    const wageDataMap = new Map<string, { year: number; createdAt: Date }>();
-    for (const w of existingWages) {
-      // Keep the most recent record per occupation
-      const existing = wageDataMap.get(w.onetSocCode);
-      if (!existing || w.year > existing.year) {
-        wageDataMap.set(w.onetSocCode, { year: w.year, createdAt: w.createdAt });
-      }
+    const oewsSocCodes = Object.keys(oewsData);
+    console.log(`[syncOEWS] Loaded ${oewsSocCodes.length} occupations from OEWS dataset`);
+
+    // Build a lookup map: SOC base code (e.g., "11-1021") → OEWS data
+    const oewsLookup = new Map<string, OEWSOccupationData>();
+    for (const [socCode, data] of Object.entries(oewsData)) {
+      oewsLookup.set(socCode, data);
     }
 
-    // Split occupations into two groups: no data, and has data (sorted oldest first)
-    const noData: typeof occupations = [];
-    const hasData: { occ: (typeof occupations)[0]; createdAt: Date }[] = [];
+    console.log(`[syncOEWS] Matching against ${occupations.length} O*NET occupations...`);
+
+    let matched = 0;
+    let unmatched = 0;
+    const year = 2024; // OEWS May 2024 dataset
 
     for (const occ of occupations) {
-      const existing = wageDataMap.get(occ.id);
-      if (!existing) {
-        noData.push(occ);
-      } else {
-        hasData.push({ occ, createdAt: existing.createdAt });
-      }
-    }
-
-    // Sort hasData by oldest createdAt first (prioritise stale data for refresh)
-    hasData.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
-
-    // Combine: no-data occupations first, then oldest-data occupations
-    const prioritised = [
-      ...noData,
-      ...hasData.map((h) => h.occ),
-    ];
-
-    // Cap how many we process this run
-    const maxOccupations = MAX_BLS_CALLS_PER_OEWS_SYNC * 7; // 7 occupations per BLS call
-    const toProcess = prioritised.slice(0, maxOccupations);
-
-    console.log(
-      `[syncOEWS] Total: ${occupations.length} occupations. ` +
-      `${noData.length} missing data, ${hasData.length} have data. ` +
-      `Processing ${toProcess.length} this run (max ${maxOccupations}).`
-    );
-
-    if (toProcess.length === 0) {
-      await prisma.dataSyncLog.update({
-        where: { id: log.id },
-        data: { status: "completed", recordsUpdated: 0, completedAt: new Date() },
-      });
-      return { synced: 0, errors: 0 };
-    }
-
-    // Data type codes we fetch for each occupation
-    const dataTypes = ["01", "04", "11", "12", "13", "14", "15"] as const;
-
-    // Batch occupations: 7 per BLS API call (7 × 7 = 49 series < 50 max)
-    const batchSize = 7;
-    let dailyLimitHit = false;
-    let apiCallsMade = 0;
-
-    for (let i = 0; i < toProcess.length; i += batchSize) {
-      if (dailyLimitHit) break;
-      if (apiCallsMade >= MAX_BLS_CALLS_PER_OEWS_SYNC) {
-        console.log(
-          `[syncOEWS] Reached daily budget of ${MAX_BLS_CALLS_PER_OEWS_SYNC} API calls. ` +
-          `Remaining occupations will be synced in the next run.`
-        );
-        break;
-      }
-
-      const batch = toProcess.slice(i, i + batchSize);
-
       try {
-        // Build all series IDs for this batch
-        const seriesIds: string[] = [];
-        const seriesOccMap: Record<string, { onetId: string; dataType: string }> = {};
+        // Extract base SOC code: "11-1021.00" → "11-1021"
+        const baseCode = occ.id.replace(/\.\d+$/, "");
+        const oewsOcc = oewsLookup.get(baseCode);
 
-        for (const occ of batch) {
-          const socCode = occ.id.replace(/\.\d+$/, "");
-          for (const dt of dataTypes) {
-            const sid = buildOEWSSeriesId(socCode, dt);
-            seriesIds.push(sid);
-            seriesOccMap[sid] = { onetId: occ.id, dataType: dt };
-          }
-        }
+        if (oewsOcc) {
+          matched++;
+          const employment = oewsOcc.e !== null ? Math.round(oewsOcc.e) : null;
 
-        // Single BLS API call for the whole batch
-        const response = await fetchBLSSeries(seriesIds);
-        apiCallsMade++;
-
-        if (response.status !== "REQUEST_SUCCEEDED" || !response.Results?.series?.length) {
-          errors += batch.length;
-          continue;
-        }
-
-        // Parse response and group by occupation
-        const occData: Record<string, Record<string, number | null>> = {};
-
-        for (const series of response.Results.series) {
-          const mapping = seriesOccMap[series.seriesID];
-          if (!mapping) continue;
-
-          if (!occData[mapping.onetId]) occData[mapping.onetId] = {};
-
-          const latestValue = series.data?.[0]?.value;
-          const val = latestValue ? parseFloat(latestValue) : null;
-          occData[mapping.onetId][mapping.dataType] = isNaN(val!) ? null : val;
-
-          // Capture year from employment series
-          if (mapping.dataType === "01" && series.data?.[0]?.year) {
-            occData[mapping.onetId]["_year"] = parseInt(series.data[0].year);
-          }
-        }
-
-        // Upsert each occupation's wage data
-        for (const occ of batch) {
-          const data = occData[occ.id];
-          if (!data) continue;
-
-          const year = (data["_year"] as number) || new Date().getFullYear();
-          const employment = data["01"] !== null && data["01"] !== undefined ? Math.round(data["01"]) : null;
-
-          try {
-            await prisma.occupationWages.upsert({
-              where: {
-                onetSocCode_areaType_areaCode_year: {
-                  onetSocCode: occ.id,
-                  areaType: "national",
-                  areaCode: "0000000",
-                  year,
-                },
-              },
-              create: {
+          await prisma.occupationWages.upsert({
+            where: {
+              onetSocCode_areaType_areaCode_year: {
                 onetSocCode: occ.id,
                 areaType: "national",
                 areaCode: "0000000",
-                areaName: "National",
-                employment,
-                meanWage: data["04"] ?? null,
-                medianWage: data["13"] ?? null,
-                pct10: data["11"] ?? null,
-                pct25: data["12"] ?? null,
-                pct75: data["14"] ?? null,
-                pct90: data["15"] ?? null,
                 year,
               },
-              update: {
-                areaName: "National",
-                employment,
-                meanWage: data["04"] ?? null,
-                medianWage: data["13"] ?? null,
-                pct10: data["11"] ?? null,
-                pct25: data["12"] ?? null,
-                pct75: data["14"] ?? null,
-                pct90: data["15"] ?? null,
-              },
-            });
-            synced++;
-          } catch (e) {
-            errors++;
-            console.error(`[syncOEWS] Failed to upsert ${occ.id}:`, e);
-          }
+            },
+            create: {
+              onetSocCode: occ.id,
+              areaType: "national",
+              areaCode: "0000000",
+              areaName: "National",
+              employment,
+              meanWage: oewsOcc.m,
+              medianWage: oewsOcc.md,
+              pct10: oewsOcc.p10,
+              pct25: oewsOcc.p25,
+              pct75: oewsOcc.p75,
+              pct90: oewsOcc.p90,
+              year,
+            },
+            update: {
+              areaName: "National",
+              employment,
+              meanWage: oewsOcc.m,
+              medianWage: oewsOcc.md,
+              pct10: oewsOcc.p10,
+              pct25: oewsOcc.p25,
+              pct75: oewsOcc.p75,
+              pct90: oewsOcc.p90,
+            },
+          });
+          synced++;
+        } else {
+          unmatched++;
         }
       } catch (e) {
-        const errMsg = String(e);
-        if (errMsg.includes("daily") || errMsg.includes("threshold")) {
-          console.log("[syncOEWS] BLS daily limit reached, stopping early. Will resume tomorrow.");
-          dailyLimitHit = true;
-        } else {
-          errors += batch.length;
-          console.error(`[syncOEWS] Batch failed:`, e);
-        }
-      }
-
-      // BLS rate limit: conservative 1.5s between batches to avoid 429 errors
-      await new Promise((r) => setTimeout(r, 1500));
-
-      // Progress logging every 10 API calls (~70 occupations)
-      if (apiCallsMade % 10 === 0 || i + batchSize >= toProcess.length) {
-        console.log(
-          `[syncOEWS] Progress: ${apiCallsMade}/${MAX_BLS_CALLS_PER_OEWS_SYNC} API calls, ` +
-          `${synced} synced, ${errors} errors`
-        );
+        errors++;
+        console.error(`[syncOEWS] Failed to upsert ${occ.id}:`, e);
       }
     }
 
-    const remaining = prioritised.length - Math.min(toProcess.length, apiCallsMade * batchSize);
-    if (remaining > 0) {
-      console.log(
-        `[syncOEWS] ${remaining} occupations remaining — will be synced in next daily run.`
-      );
-    }
+    console.log(
+      `[syncOEWS] Done: ${matched} matched, ${unmatched} unmatched, ${synced} synced, ${errors} errors`
+    );
 
     await prisma.dataSyncLog.update({
       where: { id: log.id },
       data: {
         status: "completed",
         recordsUpdated: synced,
-        version: `OEWS-${new Date().getFullYear()}`,
+        version: "OEWS-2024",
         completedAt: new Date(),
       },
     });
@@ -534,19 +415,8 @@ export async function syncORS(): Promise<{ synced: number; errors: number }> {
   try {
     // Load ORS data from bundled JSON file
     console.log("[syncORS] Loading ORS data from local dataset...");
-
-    // Dynamic import of the JSON file
-    const fs = await import("fs");
-    const path = await import("path");
-    const orsFilePath = path.join(process.cwd(), "src/data/ors-data.json");
-    const orsRaw = fs.readFileSync(orsFilePath, "utf-8");
-    const orsData: Record<string, {
-      n: string;
-      p: Record<string, { t: string; v: string }[]>;
-      e: Record<string, { t: string; v: string }[]>;
-      c: Record<string, { t: string; v: string }[]>;
-      d: Record<string, { t: string; v: string }[]>;
-    }> = JSON.parse(orsRaw);
+    const { loadORSData } = await import("@/lib/data-loaders");
+    const orsData = await loadORSData();
 
     const orsSocCodes = Object.keys(orsData);
     console.log(`[syncORS] Loaded ${orsSocCodes.length} occupations from ORS dataset`);
