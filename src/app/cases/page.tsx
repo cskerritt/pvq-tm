@@ -27,7 +27,7 @@ export default function CasesPage() {
   useEffect(() => {
     fetch("/api/cases")
       .then((r) => r.json())
-      .then(setCases)
+      .then((data) => setCases(Array.isArray(data) ? data : []))
       .catch(() => {
         toast.error("Failed to load data");
       })

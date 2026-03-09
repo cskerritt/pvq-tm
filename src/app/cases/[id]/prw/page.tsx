@@ -235,7 +235,8 @@ export default function PRWPage() {
   const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/cases/${caseId}/prw`);
-      const data = await res.json();
+      const raw = await res.json();
+      const data = Array.isArray(raw) ? raw : [];
       setEntries(data);
 
       // Fetch OEWS wage data for each unique O*NET code

@@ -74,8 +74,10 @@ export default function SkillsPage() {
         fetch(`/api/cases/${caseId}/skills`),
         fetch(`/api/cases/${caseId}/prw`),
       ]);
-      setSkills(await skillsRes.json());
-      setPrwList(await prwRes.json());
+      const skillsData = await skillsRes.json();
+      const prwData = await prwRes.json();
+      setSkills(Array.isArray(skillsData) ? skillsData : []);
+      setPrwList(Array.isArray(prwData) ? prwData : []);
     } catch {
       toast.error("Failed to load data");
     }

@@ -99,7 +99,7 @@ export default function Dashboard() {
       fetch("/api/admin/sync/status").then((r) => r.json()),
     ])
       .then(([c, s]) => {
-        setCases(c);
+        setCases(Array.isArray(c) ? c : []);
         setSyncStatus(Array.isArray(s) ? s : s.sources ?? []);
       })
       .catch(() => {

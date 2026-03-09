@@ -103,7 +103,8 @@ export default function ResultsPage() {
   const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/cases/${caseId}/analysis`);
-      const data = await res.json();
+      const raw = await res.json();
+      const data = Array.isArray(raw) ? raw : [];
       const completed = data.filter(
         (a: AnalysisResult) => a.status === "completed"
       );

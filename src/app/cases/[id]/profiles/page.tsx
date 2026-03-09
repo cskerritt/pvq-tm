@@ -79,7 +79,8 @@ export default function ProfilesPage() {
     let data: ProfileData[];
     try {
       const res = await fetch(`/api/cases/${caseId}/profiles`);
-      data = await res.json();
+      const raw = await res.json();
+      data = Array.isArray(raw) ? raw : [];
     } catch {
       toast.error("Failed to load data");
       return;

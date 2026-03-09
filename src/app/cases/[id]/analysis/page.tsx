@@ -114,7 +114,8 @@ export default function AnalysisPage() {
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/cases/${caseId}/analysis`);
-    const data = await res.json();
+    const raw = await res.json();
+    const data = Array.isArray(raw) ? raw : [];
     setAnalyses(data);
     if (data.length > 0 && !active) {
       setActive(data[0]);
