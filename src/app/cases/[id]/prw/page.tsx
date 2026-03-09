@@ -27,6 +27,18 @@ import { Plus, Search, Briefcase, Trash2, Pencil, ExternalLink, Loader2, Sparkle
 import { toast } from "sonner";
 import { CaseBreadcrumb } from "@/components/case-breadcrumb";
 
+interface WageInfo {
+  areaName: string;
+  year: number;
+  employment: number | null;
+  meanWage: number | null;
+  medianWage: number | null;
+  pct10: number | null;
+  pct25: number | null;
+  pct75: number | null;
+  pct90: number | null;
+}
+
 interface DOTOccData {
   id: string;
   title: string;
@@ -189,10 +201,46 @@ export default function PRWPage() {
   const [generatedDuties, setGeneratedDuties] = useState("");
   const [expandedPRW, setExpandedPRW] = useState<string | null>(null);
 
+  const [wageData, setWageData] = useState<Record<string, WageInfo>>({});
+
+  // Controlled form state for reliable auto-fill
+  const [formJobTitle, setFormJobTitle] = useState("");
+  const [formEmployer, setFormEmployer] = useState("");
+  const [formDotCode, setFormDotCode] = useState("");
+  const [formOnetCode, setFormOnetCode] = useState("");
+  const [formSvp, setFormSvp] = useState("");
+  const [formSkillLevel, setFormSkillLevel] = useState("");
+  const [formStrength, setFormStrength] = useState("");
+  const [formStartDate, setFormStartDate] = useState("");
+  const [formEndDate, setFormEndDate] = useState("");
+  const [formDurationMonths, setFormDurationMonths] = useState("");
+  const [formDuties, setFormDuties] = useState("");
+
   const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/cases/${caseId}/prw`);
-      setEntries(await res.json());
+      const data = await res.json();
+      setEntries(data);
+
+      // Fetch OEWS wage data for each unique O*NET code
+      const onetCodes = [...new Set(data.map((e: PRWEntry) => e.onetSocCode).filter(Boolean))] as string[];
+      const wages: Record<string, WageInfo> = {};
+      await Promise.all(
+        onetCodes.map(async (code) => {
+          try {
+            const wRes = await fetch(`/api/occupations/${encodeURIComponent(code)}`);
+            if (wRes.ok) {
+              const occData = await wRes.json();
+              if (occData.wages?.length > 0) {
+                wages[code] = occData.wages[0]; // Most recent year
+              }
+            }
+          } catch {
+            // Silent
+          }
+        })
+      );
+      setWageData(wages);
     } catch {
       toast.error("Failed to load data");
     }
@@ -232,7 +280,10 @@ export default function PRWPage() {
       const data = await res.json();
       if (data.dotEntries?.length > 0) {
         setDotEntries(data.dotEntries);
-        setSelectedDot(data.dotEntries[0]);
+        const first = data.dotEntries[0];
+        setSelectedDot(first);
+        // Auto-fill form fields from DOT data
+        applyDotToForm(first);
       }
     } catch {
       // DOT lookup failed silently
@@ -240,10 +291,46 @@ export default function PRWPage() {
     setLoadingDot(false);
   }
 
+  function applyDotToForm(dot: DOTEntry) {
+    setFormDotCode(dot.dotCode);
+    setFormSvp(String(dot.svp));
+    setFormSkillLevel(dot.skillLevel);
+    setFormStrength(dot.strength);
+  }
+
+  // Auto-calculate duration from dates
+  function calcDurationMonths(start: string, end: string): string {
+    if (!start || !end) return "";
+    const s = new Date(start);
+    const e = new Date(end);
+    if (isNaN(s.getTime()) || isNaN(e.getTime()) || e < s) return "";
+    const months =
+      (e.getFullYear() - s.getFullYear()) * 12 +
+      (e.getMonth() - s.getMonth());
+    return String(Math.max(1, months));
+  }
+
+  function handleStartDateChange(val: string) {
+    setFormStartDate(val);
+    if (val && formEndDate) {
+      setFormDurationMonths(calcDurationMonths(val, formEndDate));
+    }
+  }
+
+  function handleEndDateChange(val: string) {
+    setFormEndDate(val);
+    if (formStartDate && val) {
+      setFormDurationMonths(calcDurationMonths(formStartDate, val));
+    }
+  }
+
   function handleSelectOcc(occ: OccSearchResult) {
     setSelectedOcc(occ);
     setSearchResults([]);
     setGeneratedDuties("");
+    // Auto-fill job title and O*NET code
+    setFormJobTitle(occ.title);
+    setFormOnetCode(occ.code);
     lookupDOT(occ.code);
   }
 
@@ -272,6 +359,7 @@ export default function PRWPage() {
       const data = await res.json();
       if (data.description) {
         setGeneratedDuties(data.description);
+        setFormDuties(data.description);
         toast.success("Duties description generated!");
       } else {
         toast.error("AI could not generate duties");
@@ -333,6 +421,19 @@ export default function PRWPage() {
     );
     setDotEntries([]);
     setSelectedDot(null);
+    // Populate form state from existing entry
+    setFormJobTitle(entry.jobTitle ?? "");
+    setFormEmployer(entry.employer ?? "");
+    setFormDotCode(entry.dotCode ?? "");
+    setFormOnetCode(entry.onetSocCode ?? "");
+    setFormSvp(entry.svp !== null ? String(entry.svp) : "");
+    setFormSkillLevel(entry.skillLevel ?? "");
+    setFormStrength(entry.strengthLevel ?? "");
+    setFormStartDate(entry.startDate ? entry.startDate.split("T")[0] : "");
+    setFormEndDate(entry.endDate ? entry.endDate.split("T")[0] : "");
+    setFormDurationMonths(entry.durationMonths !== null ? String(entry.durationMonths) : "");
+    setFormDuties(entry.dutiesDescription ?? "");
+    setGeneratedDuties("");
     setDialogOpen(true);
   }
 
@@ -344,6 +445,18 @@ export default function PRWPage() {
     setSearchQuery("");
     setSearchResults([]);
     setGeneratedDuties("");
+    // Reset form state
+    setFormJobTitle("");
+    setFormEmployer("");
+    setFormDotCode("");
+    setFormOnetCode("");
+    setFormSvp("");
+    setFormSkillLevel("");
+    setFormStrength("");
+    setFormStartDate("");
+    setFormEndDate("");
+    setFormDurationMonths("");
+    setFormDuties("");
     setDialogOpen(true);
   }
 
@@ -407,23 +520,19 @@ export default function PRWPage() {
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSaving(true);
-    const form = new FormData(e.currentTarget);
-    const svpVal = form.get("svp");
     const data = {
       ...(editingId ? { id: editingId } : {}),
-      jobTitle: form.get("jobTitle"),
-      employer: form.get("employer") || null,
-      dotCode: form.get("dotCode") || null,
-      onetSocCode: selectedOcc?.code || form.get("onetSocCode") || null,
-      svp: svpVal ? parseInt(svpVal as string) : null,
-      skillLevel: form.get("skillLevel") || null,
-      strengthLevel: form.get("strengthLevel") || null,
-      startDate: form.get("startDate") || null,
-      endDate: form.get("endDate") || null,
-      durationMonths: form.get("durationMonths")
-        ? parseInt(form.get("durationMonths") as string)
-        : null,
-      dutiesDescription: form.get("dutiesDescription") || null,
+      jobTitle: formJobTitle,
+      employer: formEmployer || null,
+      dotCode: formDotCode || null,
+      onetSocCode: formOnetCode || selectedOcc?.code || null,
+      svp: formSvp ? parseInt(formSvp) : null,
+      skillLevel: formSkillLevel || null,
+      strengthLevel: formStrength || null,
+      startDate: formStartDate || null,
+      endDate: formEndDate || null,
+      durationMonths: formDurationMonths ? parseInt(formDurationMonths) : null,
+      dutiesDescription: formDuties || null,
     };
 
     try {
@@ -520,7 +629,7 @@ export default function PRWPage() {
                 {editingId ? "Edit Past Relevant Work" : "Add Past Relevant Work"}
               </DialogTitle>
             </DialogHeader>
-            <form key={editingId ?? "new"} onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4">
               {/* O*NET Search */}
               <div className="space-y-2">
                 <Label>O*NET Occupation Search</Label>
@@ -575,7 +684,7 @@ export default function PRWPage() {
                       <button
                         key={dot.dotCode}
                         type="button"
-                        onClick={() => setSelectedDot(dot)}
+                        onClick={() => { setSelectedDot(dot); applyDotToForm(dot); }}
                         className={`w-full text-left px-3 py-2 text-sm border-b last:border-0 transition-colors ${
                           selectedDot?.dotCode === dot.dotCode
                             ? "bg-primary/10 border-primary"
@@ -602,20 +711,60 @@ export default function PRWPage() {
                 </div>
               )}
 
+              {/* Auto-filled fields section */}
+              {(formDotCode || formSvp || formSkillLevel || formStrength) && (
+                <div className="rounded-md border border-green-200 bg-green-50/50 dark:bg-green-950/20 p-3 space-y-2">
+                  <p className="text-xs font-medium text-green-700 dark:text-green-400 flex items-center gap-1">
+                    <Sparkles className="h-3 w-3" />
+                    Auto-filled from DOT crosswalk — editable if needed
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                    {formDotCode && (
+                      <div>
+                        <span className="text-xs text-muted-foreground">DOT Code:</span>
+                        <p className="font-mono text-xs">{formDotCode}</p>
+                      </div>
+                    )}
+                    {formSvp && (
+                      <div>
+                        <span className="text-xs text-muted-foreground">SVP:</span>
+                        <p className="text-xs">{getSvpLabel(parseInt(formSvp))}</p>
+                      </div>
+                    )}
+                    {formSkillLevel && (
+                      <div>
+                        <span className="text-xs text-muted-foreground">Skill Level:</span>
+                        <p className="text-xs capitalize">{formSkillLevel}</p>
+                      </div>
+                    )}
+                    {formStrength && (
+                      <div>
+                        <span className="text-xs text-muted-foreground">Strength:</span>
+                        <p className="text-xs">{STRENGTH_MAP[formStrength] ?? formStrength}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="jobTitle">Job Title *</Label>
                   <Input
                     id="jobTitle"
-                    name="jobTitle"
                     required
-                    defaultValue={editingEntry?.jobTitle ?? selectedOcc?.title ?? ""}
-                    key={`title-${selectedOcc?.title ?? editingEntry?.jobTitle ?? ""}`}
+                    value={formJobTitle}
+                    onChange={(e) => setFormJobTitle(e.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="employer">Employer</Label>
-                  <Input id="employer" name="employer" defaultValue={editingEntry?.employer ?? ""} />
+                  <Input
+                    id="employer"
+                    value={formEmployer}
+                    onChange={(e) => setFormEmployer(e.target.value)}
+                    placeholder="Company name"
+                  />
                 </div>
               </div>
 
@@ -624,30 +773,29 @@ export default function PRWPage() {
                   <Label htmlFor="dotCode">DOT Code</Label>
                   <Input
                     id="dotCode"
-                    name="dotCode"
                     placeholder="000.000-000"
-                    defaultValue={editingEntry?.dotCode ?? selectedDot?.dotCode ?? ""}
-                    key={`dot-${selectedDot?.dotCode ?? editingEntry?.dotCode ?? ""}`}
+                    value={formDotCode}
+                    onChange={(e) => setFormDotCode(e.target.value)}
+                    className={formDotCode && selectedDot ? "border-green-300 bg-green-50/30 dark:bg-green-950/10" : ""}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="onetSocCode">O*NET Code</Label>
                   <Input
                     id="onetSocCode"
-                    name="onetSocCode"
-                    defaultValue={editingEntry?.onetSocCode ?? selectedOcc?.code ?? ""}
-                    key={`onet-${selectedOcc?.code ?? editingEntry?.onetSocCode ?? ""}`}
                     placeholder="00-0000.00"
+                    value={formOnetCode}
+                    onChange={(e) => setFormOnetCode(e.target.value)}
+                    className={formOnetCode && selectedOcc ? "border-green-300 bg-green-50/30 dark:bg-green-950/10" : ""}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="svp">SVP</Label>
                   <Select
-                    name="svp"
-                    defaultValue={selectedDot?.svp?.toString() ?? editingEntry?.svp?.toString() ?? ""}
-                    key={`svp-${selectedDot?.svp ?? editingEntry?.svp ?? ""}`}
+                    value={formSvp}
+                    onValueChange={(v) => setFormSvp(v ?? "")}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className={formSvp && selectedDot ? "border-green-300 bg-green-50/30 dark:bg-green-950/10" : ""}>
                       <SelectValue placeholder="Select" />
                     </SelectTrigger>
                     <SelectContent>
@@ -661,15 +809,14 @@ export default function PRWPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="skillLevel">Skill Level</Label>
                   <Select
-                    name="skillLevel"
-                    defaultValue={selectedDot?.skillLevel ?? editingEntry?.skillLevel ?? ""}
-                    key={`skill-${selectedDot?.skillLevel ?? editingEntry?.skillLevel ?? ""}`}
+                    value={formSkillLevel}
+                    onValueChange={(v) => setFormSkillLevel(v ?? "")}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className={formSkillLevel && selectedDot ? "border-green-300 bg-green-50/30 dark:bg-green-950/10" : ""}>
                       <SelectValue placeholder="Select" />
                     </SelectTrigger>
                     <SelectContent>
@@ -682,11 +829,10 @@ export default function PRWPage() {
                 <div className="space-y-2">
                   <Label htmlFor="strengthLevel">Strength</Label>
                   <Select
-                    name="strengthLevel"
-                    defaultValue={selectedDot?.strength ?? editingEntry?.strengthLevel ?? ""}
-                    key={`str-${selectedDot?.strength ?? editingEntry?.strengthLevel ?? ""}`}
+                    value={formStrength}
+                    onValueChange={(v) => setFormStrength(v ?? "")}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className={formStrength && selectedDot ? "border-green-300 bg-green-50/30 dark:bg-green-950/10" : ""}>
                       <SelectValue placeholder="Select" />
                     </SelectTrigger>
                     <SelectContent>
@@ -698,27 +844,44 @@ export default function PRWPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="durationMonths">Duration (months)</Label>
-                  <Input id="durationMonths" name="durationMonths" type="number" defaultValue={editingEntry?.durationMonths ?? ""} />
-                </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="startDate">Start Date</Label>
-                  <Input id="startDate" name="startDate" type="date" defaultValue={editingEntry?.startDate?.split("T")[0] ?? ""} />
+                  <Input
+                    id="startDate"
+                    type="date"
+                    value={formStartDate}
+                    onChange={(e) => handleStartDateChange(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="endDate">End Date</Label>
-                  <Input id="endDate" name="endDate" type="date" defaultValue={editingEntry?.endDate?.split("T")[0] ?? ""} />
+                  <Input
+                    id="endDate"
+                    type="date"
+                    value={formEndDate}
+                    onChange={(e) => handleEndDateChange(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="durationMonths">Duration (months)</Label>
+                  <Input
+                    id="durationMonths"
+                    type="number"
+                    value={formDurationMonths}
+                    onChange={(e) => setFormDurationMonths(e.target.value)}
+                    className={formStartDate && formEndDate && formDurationMonths ? "border-green-300 bg-green-50/30 dark:bg-green-950/10" : ""}
+                    placeholder="Auto-calculated from dates"
+                  />
                 </div>
               </div>
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="dutiesDescription">Duties Description</Label>
-                  {selectedOcc && !editingId && (
+                  {selectedOcc && (
                     <Button
                       type="button"
                       variant="outline"
@@ -737,10 +900,9 @@ export default function PRWPage() {
                 </div>
                 <Textarea
                   id="dutiesDescription"
-                  name="dutiesDescription"
                   rows={4}
-                  defaultValue={generatedDuties || editingEntry?.dutiesDescription || ""}
-                  key={`duties-${generatedDuties ? "ai" : editingEntry?.id ?? "new"}`}
+                  value={formDuties}
+                  onChange={(e) => setFormDuties(e.target.value)}
                   placeholder="Describe the primary duties, tools used, and work environment..."
                 />
                 {generatedDuties && (
@@ -978,6 +1140,46 @@ export default function PRWPage() {
                         No DOT crosswalk data linked. Edit this entry and select an O*NET occupation to auto-lookup DOT data.
                       </p>
                     )}
+
+                    {/* OEWS Wage Data */}
+                    {e.onetSocCode && wageData[e.onetSocCode] && (() => {
+                      const w = wageData[e.onetSocCode];
+                      const fmt = (v: number | null) => v !== null ? `$${v.toLocaleString()}` : "—";
+                      const fmtN = (v: number | null) => v !== null ? v.toLocaleString() : "—";
+                      return (
+                        <div className="pt-3 border-t">
+                          <p className="text-xs text-muted-foreground mb-2 font-medium flex items-center gap-1">
+                            <span className="text-green-600">$</span>
+                            OEWS Wage Data ({w.areaName}, {w.year})
+                          </p>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                            <div>
+                              <p className="text-xs text-muted-foreground">Employment</p>
+                              <p className="font-medium">{fmtN(w.employment)}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">Median Wage</p>
+                              <p className="font-medium text-green-700">{fmt(w.medianWage)}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">Mean Wage</p>
+                              <p className="font-medium">{fmt(w.meanWage)}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">Wage Range</p>
+                              <p className="font-mono text-xs">{fmt(w.pct10)} – {fmt(w.pct90)}</p>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            <Badge variant="outline" className="text-xs">10th: {fmt(w.pct10)}</Badge>
+                            <Badge variant="outline" className="text-xs">25th: {fmt(w.pct25)}</Badge>
+                            <Badge variant="secondary" className="text-xs font-semibold">50th: {fmt(w.medianWage)}</Badge>
+                            <Badge variant="outline" className="text-xs">75th: {fmt(w.pct75)}</Badge>
+                            <Badge variant="outline" className="text-xs">90th: {fmt(w.pct90)}</Badge>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </CardContent>
