@@ -43,3 +43,26 @@ export async function loadOEWSData(): Promise<Record<string, OEWSOccupationData>
   const data = await import("@/data/oews-data.json");
   return data.default as unknown as Record<string, OEWSOccupationData>;
 }
+
+export interface DOTOccupationData {
+  t: string;       // title
+  s: number;       // SVP (1-9)
+  str: string;     // strength level (S, L, M, H, V)
+  r: number;       // GED Reasoning (1-6)
+  m: number;       // GED Math (1-6)
+  l: number;       // GED Language (1-6)
+  ind?: string;    // industry designation
+  dlu?: string;    // date of last update
+  dpt?: { data: number; people: number; things: number };
+  goe?: string;    // GOE code
+  xw?: string;     // O*NET crosswalk code (old format)
+}
+
+/**
+ * Load DOT dataset from bundled JSON.
+ * Returns a map of DOT code (format "XXX.XXX-XXX") → DOT occupation data.
+ */
+export async function loadDOTData(): Promise<Record<string, DOTOccupationData>> {
+  const data = await import("@/data/dot-data.json");
+  return data.default as unknown as Record<string, DOTOccupationData>;
+}

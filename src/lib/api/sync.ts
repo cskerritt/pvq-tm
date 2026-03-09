@@ -26,7 +26,7 @@ function toJson(val: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(val ?? []));
 }
 
-export type SyncSource = "ONET" | "ORS" | "OEWS" | "PROJECTIONS";
+export type SyncSource = "ONET" | "ORS" | "OEWS" | "PROJECTIONS" | "DOT" | "CROSSWALK";
 
 export interface SyncStatus {
   source: SyncSource;
@@ -48,7 +48,7 @@ export function getSyncLock(): boolean {
  * Get sync status for all data sources.
  */
 export async function getSyncStatus(): Promise<SyncStatus[]> {
-  const sources: SyncSource[] = ["ONET", "ORS", "OEWS", "PROJECTIONS"];
+  const sources: SyncSource[] = ["ONET", "ORS", "OEWS", "PROJECTIONS", "DOT", "CROSSWALK"];
   const statuses: SyncStatus[] = [];
 
   // Get total O*NET occupations once (used as denominator for coverage)
@@ -73,6 +73,12 @@ export async function getSyncStatus(): Promise<SyncStatus[]> {
         break;
       case "PROJECTIONS":
         recordCount = await prisma.occupationProjections.count();
+        break;
+      case "DOT":
+        recordCount = await prisma.occupationDOT.count();
+        break;
+      case "CROSSWALK":
+        recordCount = await prisma.dOTONETCrosswalk.count();
         break;
     }
 
@@ -616,8 +622,347 @@ export async function syncProjections(): Promise<{ synced: number; errors: numbe
 }
 
 /**
- * Run all syncs in order: ONET -> OEWS -> ORS -> PROJECTIONS.
+ * Sync DOT (Dictionary of Occupational Titles) data from local dataset.
+ *
+ * Uses the complete DOT dataset (12,726 occupations) scraped from occupationalinfo.org
+ * and converted to a compact JSON file at src/data/dot-data.json.
+ * Each entry contains DOT code, title, SVP, strength, GED levels, and worker functions.
+ *
+ * No external API calls needed — all data is local.
+ */
+export async function syncDOT(): Promise<{ synced: number; errors: number }> {
+  const log = await prisma.dataSyncLog.create({
+    data: {
+      source: "DOT",
+      status: "started",
+      startedAt: new Date(),
+    },
+  });
+
+  let synced = 0;
+  let errors = 0;
+
+  try {
+    console.log("[syncDOT] Loading DOT data from local dataset...");
+    const { loadDOTData } = await import("@/lib/data-loaders");
+    const dotData = await loadDOTData();
+
+    const dotCodes = Object.keys(dotData);
+    console.log(`[syncDOT] Loaded ${dotCodes.length} DOT occupations`);
+
+    // Process in batches of 100
+    const batchSize = 100;
+    for (let i = 0; i < dotCodes.length; i += batchSize) {
+      const batch = dotCodes.slice(i, i + batchSize);
+
+      await Promise.all(
+        batch.map(async (dotCode) => {
+          const occ = dotData[dotCode];
+          try {
+            // Build aptitudes object from DPT and GOE
+            const aptitudes: Record<string, unknown> = {};
+            if (occ.dpt) aptitudes.workerFunctions = occ.dpt;
+            if (occ.goe) aptitudes.goe = occ.goe;
+
+            const physicalDemands: Record<string, unknown> = {
+              strength: occ.str,
+            };
+
+            await prisma.occupationDOT.upsert({
+              where: { id: dotCode },
+              create: {
+                id: dotCode,
+                title: occ.t,
+                industryDesig: occ.ind || null,
+                svp: occ.s,
+                strength: occ.str,
+                gedR: occ.r,
+                gedM: occ.m,
+                gedL: occ.l,
+                aptitudes: toJson(aptitudes),
+                temperaments: [],
+                interests: [],
+                physicalDemands: toJson(physicalDemands),
+                envConditions: toJson({}),
+                workFields: [],
+                mpsms: [],
+                dlu: occ.dlu || null,
+              },
+              update: {
+                title: occ.t,
+                industryDesig: occ.ind || null,
+                svp: occ.s,
+                strength: occ.str,
+                gedR: occ.r,
+                gedM: occ.m,
+                gedL: occ.l,
+                aptitudes: toJson(aptitudes),
+                physicalDemands: toJson(physicalDemands),
+                dlu: occ.dlu || null,
+              },
+            });
+            synced++;
+          } catch (e) {
+            errors++;
+            if (errors <= 5) {
+              console.error(`[syncDOT] Failed for ${dotCode}:`, e);
+            }
+          }
+        })
+      );
+
+      if ((i + batchSize) % 1000 === 0 || i + batchSize >= dotCodes.length) {
+        console.log(
+          `[syncDOT] Progress: ${Math.min(i + batchSize, dotCodes.length)}/${dotCodes.length} — ${synced} synced, ${errors} errors`
+        );
+      }
+    }
+
+    console.log(`[syncDOT] Done: ${synced} synced, ${errors} errors`);
+
+    await prisma.dataSyncLog.update({
+      where: { id: log.id },
+      data: {
+        status: "completed",
+        recordsUpdated: synced,
+        version: "DOT-4th-Ed",
+        completedAt: new Date(),
+      },
+    });
+  } catch (e) {
+    await prisma.dataSyncLog.update({
+      where: { id: log.id },
+      data: {
+        status: "failed",
+        error: String(e),
+        recordsUpdated: synced,
+        completedAt: new Date(),
+      },
+    });
+  }
+
+  return { synced, errors };
+}
+
+/**
+ * Build DOT→O*NET crosswalk by matching DOT occupation titles to O*NET occupations.
+ *
+ * Matching strategy (in priority order):
+ * 1. Exact title match (normalized)
+ * 2. DOT title is substring of O*NET title or vice versa
+ * 3. High word overlap (≥30% of significant words match, minimum 2 words)
+ *
+ * Requires both DOT and O*NET data to be synced first.
+ */
+export async function syncCrosswalk(): Promise<{ synced: number; errors: number }> {
+  const log = await prisma.dataSyncLog.create({
+    data: {
+      source: "CROSSWALK",
+      status: "started",
+      startedAt: new Date(),
+    },
+  });
+
+  let synced = 0;
+  let errors = 0;
+
+  // Common words to ignore when matching
+  const STOP_WORDS = new Set([
+    "and", "the", "for", "all", "any", "not", "nor", "but", "yet",
+    "other", "except", "general", "special", "first", "second", "third",
+    "chief", "head", "lead", "senior", "junior", "apprentice", "helper",
+    "worker", "operator", "supervisor", "manager", "director", "assistant",
+    "aide", "attendant", "clerk", "technician", "specialist",
+  ]);
+
+  function normalizeTitle(title: string): string {
+    return title
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function getSignificantWords(title: string): string[] {
+    return normalizeTitle(title)
+      .split(/\s+/)
+      .filter((w) => w.length >= 3 && !STOP_WORDS.has(w));
+  }
+
+  try {
+    // Get all O*NET occupations
+    const onetOccs = await prisma.occupationONET.findMany({
+      select: { id: true, title: true },
+    });
+
+    // Get all DOT occupations
+    const dotOccs = await prisma.occupationDOT.findMany({
+      select: { id: true, title: true },
+    });
+
+    if (onetOccs.length === 0 || dotOccs.length === 0) {
+      console.log("[syncCrosswalk] Need both O*NET and DOT data. Sync those first.");
+      await prisma.dataSyncLog.update({
+        where: { id: log.id },
+        data: { status: "completed", recordsUpdated: 0, completedAt: new Date() },
+      });
+      return { synced: 0, errors: 0 };
+    }
+
+    console.log(`[syncCrosswalk] Matching ${dotOccs.length} DOT → ${onetOccs.length} O*NET occupations...`);
+
+    // Clear existing crosswalk
+    await prisma.dOTONETCrosswalk.deleteMany({});
+
+    // Build word index for O*NET for fast lookups
+    const onetByWord = new Map<string, Set<number>>();
+    for (let i = 0; i < onetOccs.length; i++) {
+      const words = getSignificantWords(onetOccs[i].title);
+      for (const word of words) {
+        if (!onetByWord.has(word)) onetByWord.set(word, new Set());
+        onetByWord.get(word)!.add(i);
+      }
+    }
+
+    // Match each DOT occupation to best O*NET occupation
+    const crosswalkEntries: { dotCode: string; onetSocCode: string }[] = [];
+    let matched = 0;
+    let unmatched = 0;
+
+    for (const dot of dotOccs) {
+      const dotNorm = normalizeTitle(dot.title);
+      const dotWords = getSignificantWords(dot.title);
+
+      // Get candidate O*NET indices using word index
+      const candidateIndices = new Set<number>();
+      for (const word of dotWords) {
+        const indices = onetByWord.get(word);
+        if (indices) {
+          for (const idx of indices) candidateIndices.add(idx);
+        }
+      }
+
+      // Score each candidate
+      let bestIdx = -1;
+      let bestScore = 0;
+
+      for (const idx of candidateIndices) {
+        const onetNorm = normalizeTitle(onetOccs[idx].title);
+
+        // Exact match
+        if (dotNorm === onetNorm) {
+          bestIdx = idx;
+          bestScore = 1.0;
+          break;
+        }
+
+        // Substring containment
+        if (dotNorm.includes(onetNorm) || onetNorm.includes(dotNorm)) {
+          if (0.9 > bestScore) {
+            bestIdx = idx;
+            bestScore = 0.9;
+          }
+          continue;
+        }
+
+        // Word overlap
+        const onetWords = new Set(getSignificantWords(onetOccs[idx].title));
+        let wordMatches = 0;
+        for (const w of dotWords) {
+          if (onetWords.has(w)) wordMatches++;
+        }
+        if (wordMatches >= 2) {
+          const totalUnique = new Set([...dotWords, ...onetWords]).size;
+          const score = wordMatches / totalUnique;
+          if (score > bestScore) {
+            bestScore = score;
+            bestIdx = idx;
+          }
+        }
+      }
+
+      // Also try substring match against all O*NET if no good word match
+      if (bestScore < 0.4) {
+        for (let j = 0; j < onetOccs.length; j++) {
+          const onetNorm = normalizeTitle(onetOccs[j].title);
+          if (dotNorm.includes(onetNorm) || onetNorm.includes(dotNorm)) {
+            bestIdx = j;
+            bestScore = 0.9;
+            break;
+          }
+        }
+      }
+
+      if (bestIdx >= 0 && bestScore >= 0.3) {
+        matched++;
+        crosswalkEntries.push({
+          dotCode: dot.id,
+          onetSocCode: onetOccs[bestIdx].id,
+        });
+      } else {
+        unmatched++;
+      }
+    }
+
+    console.log(`[syncCrosswalk] Matched: ${matched}, Unmatched: ${unmatched}`);
+    console.log(`[syncCrosswalk] Inserting ${crosswalkEntries.length} crosswalk entries...`);
+
+    // Batch insert
+    const batchSize = 500;
+    for (let i = 0; i < crosswalkEntries.length; i += batchSize) {
+      const batch = crosswalkEntries.slice(i, i + batchSize);
+      try {
+        await prisma.dOTONETCrosswalk.createMany({
+          data: batch,
+          skipDuplicates: true,
+        });
+        synced += batch.length;
+      } catch {
+        // Fall back to individual inserts
+        for (const entry of batch) {
+          try {
+            await prisma.dOTONETCrosswalk.create({ data: entry });
+            synced++;
+          } catch {
+            errors++;
+          }
+        }
+      }
+    }
+
+    const uniqueOnet = new Set(crosswalkEntries.map((e) => e.onetSocCode));
+    console.log(
+      `[syncCrosswalk] Done: ${synced} crosswalk entries, linking to ${uniqueOnet.size} O*NET occupations`
+    );
+
+    await prisma.dataSyncLog.update({
+      where: { id: log.id },
+      data: {
+        status: "completed",
+        recordsUpdated: synced,
+        version: "DOT-ONET-XW",
+        completedAt: new Date(),
+      },
+    });
+  } catch (e) {
+    await prisma.dataSyncLog.update({
+      where: { id: log.id },
+      data: {
+        status: "failed",
+        error: String(e),
+        recordsUpdated: synced,
+        completedAt: new Date(),
+      },
+    });
+  }
+
+  return { synced, errors };
+}
+
+/**
+ * Run all syncs in order: ONET -> OEWS -> ORS -> PROJECTIONS -> DOT -> CROSSWALK.
  * OEWS/ORS/PROJECTIONS depend on ONET data being present.
+ * CROSSWALK depends on both ONET and DOT data being present.
  * Uses a global lock to prevent concurrent syncs.
  */
 export async function syncAll(): Promise<Record<SyncSource, { synced: number; errors: number }>> {
@@ -628,6 +973,8 @@ export async function syncAll(): Promise<Record<SyncSource, { synced: number; er
       ORS: { synced: 0, errors: 0 },
       OEWS: { synced: 0, errors: 0 },
       PROJECTIONS: { synced: 0, errors: 0 },
+      DOT: { synced: 0, errors: 0 },
+      CROSSWALK: { synced: 0, errors: 0 },
     };
   }
 
@@ -641,6 +988,8 @@ export async function syncAll(): Promise<Record<SyncSource, { synced: number; er
     ORS: { synced: 0, errors: 0 },
     OEWS: { synced: 0, errors: 0 },
     PROJECTIONS: { synced: 0, errors: 0 },
+    DOT: { synced: 0, errors: 0 },
+    CROSSWALK: { synced: 0, errors: 0 },
   };
 
   try {
@@ -649,7 +998,7 @@ export async function syncAll(): Promise<Record<SyncSource, { synced: number; er
     results.ONET = await syncONET();
     console.log(`[syncAll] O*NET: ${results.ONET.synced} synced, ${results.ONET.errors} errors`);
 
-    // 2. Sync OEWS (wages/employment) — batched for efficiency
+    // 2. Sync OEWS (wages/employment)
     console.log("[syncAll] Syncing OEWS wage data...");
     results.OEWS = await syncOEWS();
     console.log(`[syncAll] OEWS: ${results.OEWS.synced} synced, ${results.OEWS.errors} errors`);
@@ -663,6 +1012,16 @@ export async function syncAll(): Promise<Record<SyncSource, { synced: number; er
     console.log("[syncAll] Syncing projections...");
     results.PROJECTIONS = await syncProjections();
     console.log(`[syncAll] Projections: ${results.PROJECTIONS.synced} synced, ${results.PROJECTIONS.errors} errors`);
+
+    // 5. Sync DOT occupations
+    console.log("[syncAll] Syncing DOT data...");
+    results.DOT = await syncDOT();
+    console.log(`[syncAll] DOT: ${results.DOT.synced} synced, ${results.DOT.errors} errors`);
+
+    // 6. Build DOT→O*NET crosswalk (depends on both ONET and DOT)
+    console.log("[syncAll] Building DOT→O*NET crosswalk...");
+    results.CROSSWALK = await syncCrosswalk();
+    console.log(`[syncAll] Crosswalk: ${results.CROSSWALK.synced} synced, ${results.CROSSWALK.errors} errors`);
 
     const elapsed = ((Date.now() - startTime) / 1000 / 60).toFixed(1);
     console.log(`[syncAll] Full sync complete in ${elapsed} minutes.`);
