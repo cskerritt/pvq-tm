@@ -156,3 +156,22 @@ export async function loadONETFullData(): Promise<Record<string, ONETFullOccupat
   const data = await import("@/data/onet-full.json");
   return data.default as unknown as Record<string, ONETFullOccupationData>;
 }
+
+export interface BLSProjectionsData {
+  t: string;        // title
+  be: number | null; // base year employment (2024)
+  pe: number | null; // projected year employment (2034)
+  cn: number | null; // employment change, numeric
+  cp: number | null; // employment change, percent
+  oa: number | null; // annual openings (avg 2024-34)
+}
+
+/**
+ * Load BLS Employment Projections 2024-2034 from bundled JSON.
+ * Source: BLS Table 1.10 "Occupational projections and worker characteristics"
+ * Returns a map of SOC code (format "XX-XXXX") → projections data.
+ */
+export async function loadBLSProjectionsData(): Promise<Record<string, BLSProjectionsData>> {
+  const data = await import("@/data/bls-projections.json");
+  return data.default as unknown as Record<string, BLSProjectionsData>;
+}

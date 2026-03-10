@@ -651,11 +651,28 @@ export async function syncORS(): Promise<{ synced: number; errors: number }> {
   return { synced, errors };
 }
 
+/** BLS projections data structure (mirrors data-loaders.ts) */
+interface BLSProjectionsData {
+  t: string;        // title
+  be: number | null; // base year employment (2024)
+  pe: number | null; // projected year employment (2034)
+  cn: number | null; // employment change, numeric
+  cp: number | null; // employment change, percent
+  oa: number | null; // annual openings (avg 2024-34)
+}
+
 /**
- * Sync employment projections.
- * BLS Employment Projections are published as static tables, not via the timeseries API.
- * We create projection records based on current employment data and national growth rates.
- * This provides a reasonable baseline for labor market viability scoring.
+ * Sync employment projections from real BLS 2024-2034 data.
+ *
+ * Source: BLS Table 1.10 "Occupational projections and worker characteristics"
+ * (https://www.bls.gov/emp/tables/occupational-projections-and-characteristics.htm)
+ *
+ * BLS uses 7-char SOC codes ("XX-XXXX"), while O*NET uses "XX-XXXX.XX".
+ * We store socCode in "XX-XXXX" format to match the compute route lookup.
+ *
+ * For O*NET codes that don't directly match a BLS SOC code, we apply
+ * the same OEWS_SOC_CROSSWALK used for wage data, since BLS projections
+ * use the same SOC structure as OEWS.
  */
 export async function syncProjections(): Promise<{ synced: number; errors: number }> {
   const log = await prisma.dataSyncLog.create({
@@ -670,6 +687,17 @@ export async function syncProjections(): Promise<{ synced: number; errors: numbe
   let errors = 0;
 
   try {
+    // Clean up old synthetic projection records (used wrong SOC format / synthetic data)
+    const deleted = await prisma.occupationProjections.deleteMany({});
+    console.log(`[syncProjections] Cleared ${deleted.count} old projection records`);
+
+    // Load real BLS projections data from bundled JSON
+    const blsModule = await import("@/data/bls-projections.json");
+    const blsData = blsModule.default as unknown as Record<string, BLSProjectionsData>;
+    const blsCount = Object.keys(blsData).length;
+    console.log(`[syncProjections] Loaded ${blsCount} BLS projections (2024-2034)`);
+
+    // Load O*NET occupations to map to BLS SOC codes
     const occupations = await prisma.occupationONET.findMany({
       select: { id: true, title: true },
     });
@@ -683,68 +711,91 @@ export async function syncProjections(): Promise<{ synced: number; errors: numbe
       return { synced: 0, errors: 0 };
     }
 
-    console.log(`[syncProjections] Generating projections for ${occupations.length} occupations...`);
+    console.log(`[syncProjections] Matching ${occupations.length} O*NET occupations to BLS projections...`);
+
+    let directMatch = 0;
+    let crosswalkMatch = 0;
+    let baseMatch = 0;
+    let noMatch = 0;
 
     for (const occ of occupations) {
       try {
-        // Check if we have wage data with employment for this occupation
-        const wageData = await prisma.occupationWages.findFirst({
-          where: { onetSocCode: occ.id, employment: { not: null } },
-          orderBy: { year: "desc" },
-        });
+        // Normalize O*NET code "XX-XXXX.XX" → "XX-XXXX"
+        const baseSoc = occ.id.replace(/\.\d+$/, "");
 
-        if (wageData && wageData.employment) {
-          const currentYear = new Date().getFullYear();
-          const projYear = currentYear + 10;
-          // Use a conservative 3% total growth estimate as baseline
-          const projEmployment = Math.round(wageData.employment * 1.03);
-          const changeN = projEmployment - wageData.employment;
-          const changePct = (changeN / wageData.employment) * 100;
-          // Estimate annual openings as ~10% of employment (replacement + growth)
-          const openingsAnnual = Math.round(wageData.employment * 0.10);
+        // Priority chain for BLS lookup:
+        // 1. Direct match on base SOC code
+        // 2. Crosswalk lookup (for restructured SOC codes)
+        // 3. Base .00 code (for O*NET specializations under same SOC)
+        let bls = blsData[baseSoc];
+        let matchType = "direct";
 
-          await prisma.occupationProjections.upsert({
-            where: {
-              socCode_baseYear_projYear: {
-                socCode: occ.id,
-                baseYear: currentYear,
-                projYear: projYear,
-              },
-            },
-            create: {
-              socCode: occ.id,
-              title: occ.title,
-              baseYear: currentYear,
-              projYear: projYear,
-              baseEmployment: wageData.employment,
-              projEmployment: projEmployment,
-              changeN: changeN,
-              changePct: changePct,
-              openingsAnnual: openingsAnnual,
-            },
-            update: {
-              title: occ.title,
-              baseEmployment: wageData.employment,
-              projEmployment: projEmployment,
-              changeN: changeN,
-              changePct: changePct,
-              openingsAnnual: openingsAnnual,
-            },
-          });
-          synced++;
+        if (!bls) {
+          const crosswalked = OEWS_SOC_CROSSWALK[baseSoc];
+          if (crosswalked) {
+            bls = blsData[crosswalked];
+            matchType = "crosswalk";
+          }
         }
+
+        if (!bls) {
+          // Try parent SOC (e.g., "29-1141" for "29-1141.01")
+          // Already handled by baseSoc above — skip
+          noMatch++;
+          continue;
+        }
+
+        if (matchType === "direct") directMatch++;
+        else if (matchType === "crosswalk") crosswalkMatch++;
+        else baseMatch++;
+
+        // Store with "XX-XXXX" format SOC code (matches compute route lookup)
+        const socCode = baseSoc;
+
+        await prisma.occupationProjections.upsert({
+          where: {
+            socCode_baseYear_projYear: {
+              socCode,
+              baseYear: 2024,
+              projYear: 2034,
+            },
+          },
+          create: {
+            socCode,
+            title: bls.t,
+            baseYear: 2024,
+            projYear: 2034,
+            baseEmployment: bls.be,
+            projEmployment: bls.pe,
+            changeN: bls.cn,
+            changePct: bls.cp,
+            openingsAnnual: bls.oa,
+          },
+          update: {
+            title: bls.t,
+            baseEmployment: bls.be,
+            projEmployment: bls.pe,
+            changeN: bls.cn,
+            changePct: bls.cp,
+            openingsAnnual: bls.oa,
+          },
+        });
+        synced++;
       } catch (e) {
         errors++;
         console.error(`[syncProjections] Failed for ${occ.id}:`, e);
       }
     }
 
+    console.log(`[syncProjections] Results: ${synced} synced, ${errors} errors`);
+    console.log(`  Direct matches: ${directMatch}, Crosswalk: ${crosswalkMatch}, Base: ${baseMatch}, No match: ${noMatch}`);
+
     await prisma.dataSyncLog.update({
       where: { id: log.id },
       data: {
         status: "completed",
         recordsUpdated: synced,
-        version: `EP-${new Date().getFullYear()}`,
+        version: "EP-2024-34",
         completedAt: new Date(),
       },
     });

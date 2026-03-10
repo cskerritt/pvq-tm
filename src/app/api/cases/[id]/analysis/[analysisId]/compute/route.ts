@@ -276,7 +276,7 @@ export async function POST(
     });
     const projections = await prisma.occupationProjections.findFirst({
       where: {
-        socCode: target.onetSocCode.replace(".", "").slice(0, 7),
+        socCode: target.onetSocCode.replace(/\.\d+$/, ""),  // "43-4051.00" → "43-4051"
       },
     });
     const lmqResult = computeLMQ({
