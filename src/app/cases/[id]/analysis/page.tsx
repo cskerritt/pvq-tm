@@ -532,7 +532,7 @@ export default function AnalysisPage() {
               </div>
 
               {active.status === "completed" && (
-                <div className="flex gap-2 pt-2">
+                <div className="flex flex-col gap-2 sm:flex-row pt-2">
                   <Button
                     onClick={() =>
                       router.push(`/cases/${caseId}/results`)
@@ -577,18 +577,18 @@ export default function AnalysisPage() {
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
-                <Table>
+                <Table className="table-fixed md:table-auto">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>O*NET Code</TableHead>
+                      <TableHead className="hidden md:table-cell">O*NET Code</TableHead>
                       <TableHead>Title</TableHead>
-                      <TableHead>SVP</TableHead>
-                      <TableHead className="text-right">STQ</TableHead>
-                      <TableHead className="text-right">TFQ</TableHead>
-                      <TableHead className="text-right">VAQ</TableHead>
-                      <TableHead className="text-right">LMQ</TableHead>
-                      <TableHead className="text-right">PVQ</TableHead>
-                      <TableHead className="text-center">Status</TableHead>
+                      <TableHead className="hidden md:table-cell">SVP</TableHead>
+                      <TableHead className="hidden md:table-cell text-right">STQ</TableHead>
+                      <TableHead className="hidden md:table-cell text-right">TFQ</TableHead>
+                      <TableHead className="hidden md:table-cell text-right">VAQ</TableHead>
+                      <TableHead className="hidden md:table-cell text-right">LMQ</TableHead>
+                      <TableHead className="w-12 md:w-auto text-right">PVQ</TableHead>
+                      <TableHead className="w-20 md:w-auto text-center">Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -602,21 +602,24 @@ export default function AnalysisPage() {
                           key={t.id}
                           className={t.excluded ? "opacity-50" : ""}
                         >
-                          <TableCell className="font-mono text-xs">
+                          <TableCell className="hidden md:table-cell font-mono text-xs">
                             {t.onetSocCode}
                           </TableCell>
-                          <TableCell>{t.title}</TableCell>
-                          <TableCell>{t.svp ?? "\u2014"}</TableCell>
-                          <TableCell className="text-right">
+                          <TableCell>
+                            {t.title}
+                            <span className="block md:hidden text-xs text-muted-foreground font-mono">{t.onetSocCode}</span>
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell">{t.svp ?? "\u2014"}</TableCell>
+                          <TableCell className="hidden md:table-cell text-right">
                             {t.stq?.toFixed(1) ?? "\u2014"}
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="hidden md:table-cell text-right">
                             {t.tfq?.toFixed(1) ?? "\u2014"}
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="hidden md:table-cell text-right">
                             {t.vaq?.toFixed(1) ?? "\u2014"}
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="hidden md:table-cell text-right">
                             {t.lmq?.toFixed(1) ?? "\u2014"}
                           </TableCell>
                           <TableCell className="text-right font-bold">

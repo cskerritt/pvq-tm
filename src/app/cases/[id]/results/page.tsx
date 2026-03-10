@@ -318,20 +318,20 @@ export default function ResultsPage() {
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            <Table>
+            <Table className="table-fixed md:table-auto">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-8" />
-                  <TableHead>Rank</TableHead>
-                  <TableHead>O*NET</TableHead>
-                  <TableHead className="min-w-[180px]">Title</TableHead>
-                <TableHead>SVP</TableHead>
-                <TableHead className="text-right">STQ</TableHead>
-                <TableHead className="text-right">TFQ</TableHead>
-                <TableHead className="text-right">VAQ</TableHead>
-                <TableHead className="text-right">LMQ</TableHead>
-                <TableHead className="text-right">PVQ</TableHead>
-                <TableHead className="text-center">Grade</TableHead>
+                  <TableHead className="w-8 md:w-8" />
+                  <TableHead className="hidden md:table-cell">Rank</TableHead>
+                  <TableHead className="hidden md:table-cell">O*NET</TableHead>
+                  <TableHead className="md:min-w-[180px]">Title</TableHead>
+                <TableHead className="hidden md:table-cell">SVP</TableHead>
+                <TableHead className="hidden md:table-cell text-right">STQ</TableHead>
+                <TableHead className="hidden md:table-cell text-right">TFQ</TableHead>
+                <TableHead className="hidden md:table-cell text-right">VAQ</TableHead>
+                <TableHead className="hidden md:table-cell text-right">LMQ</TableHead>
+                <TableHead className="w-14 md:w-auto text-right">PVQ</TableHead>
+                <TableHead className="w-14 md:w-auto text-center">Grade</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -344,14 +344,18 @@ export default function ResultsPage() {
                     <TableCell>
                       {expandedRow === t.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                     </TableCell>
-                    <TableCell className="font-bold">{i + 1}</TableCell>
-                    <TableCell className="font-mono text-xs">{t.onetSocCode}</TableCell>
-                    <TableCell className="font-medium">{t.title}</TableCell>
-                    <TableCell>{t.svp ?? "\u2014"}</TableCell>
-                    <TableCell className="text-right"><ScoreCell value={t.stq} /></TableCell>
-                    <TableCell className="text-right"><ScoreCell value={t.tfq} /></TableCell>
-                    <TableCell className="text-right"><ScoreCell value={t.vaq} /></TableCell>
-                    <TableCell className="text-right"><ScoreCell value={t.lmq} /></TableCell>
+                    <TableCell className="hidden md:table-cell font-bold">{i + 1}</TableCell>
+                    <TableCell className="hidden md:table-cell font-mono text-xs">{t.onetSocCode}</TableCell>
+                    <TableCell className="font-medium">
+                      <span className="md:hidden text-xs text-muted-foreground">#{i + 1} · </span>
+                      {t.title}
+                      <span className="block md:hidden text-xs text-muted-foreground font-mono">{t.onetSocCode}</span>
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">{t.svp ?? "\u2014"}</TableCell>
+                    <TableCell className="hidden md:table-cell text-right"><ScoreCell value={t.stq} /></TableCell>
+                    <TableCell className="hidden md:table-cell text-right"><ScoreCell value={t.tfq} /></TableCell>
+                    <TableCell className="hidden md:table-cell text-right"><ScoreCell value={t.vaq} /></TableCell>
+                    <TableCell className="hidden md:table-cell text-right"><ScoreCell value={t.lmq} /></TableCell>
                     <TableCell className="text-right"><ScoreCell value={t.pvq} /></TableCell>
                     <TableCell className="text-center">
                       <Badge className={getGradeColor(t.confidenceGrade)} variant="outline">
@@ -456,20 +460,20 @@ export default function ResultsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="overflow-x-auto">
-            <Table>
+            <Table className="table-fixed md:table-auto">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Rank</TableHead>
-                  <TableHead className="min-w-[180px]">Occupation</TableHead>
-                  <TableHead className="text-right">Employment</TableHead>
-                  <TableHead className="text-right">10th %ile</TableHead>
-                  <TableHead className="text-right">25th %ile</TableHead>
-                  <TableHead className="text-right">Median</TableHead>
-                  <TableHead className="text-right">Mean</TableHead>
-                  <TableHead className="text-right">75th %ile</TableHead>
-                  <TableHead className="text-right">90th %ile</TableHead>
+                  <TableHead className="hidden md:table-cell">Rank</TableHead>
+                  <TableHead className="md:min-w-[180px]">Occupation</TableHead>
+                  <TableHead className="hidden md:table-cell text-right">Employment</TableHead>
+                  <TableHead className="hidden md:table-cell text-right">10th %ile</TableHead>
+                  <TableHead className="hidden md:table-cell text-right">25th %ile</TableHead>
+                  <TableHead className="w-20 md:w-auto text-right">Median</TableHead>
+                  <TableHead className="hidden md:table-cell text-right">Mean</TableHead>
+                  <TableHead className="hidden md:table-cell text-right">75th %ile</TableHead>
+                  <TableHead className="hidden md:table-cell text-right">90th %ile</TableHead>
                   {selected.priorEarnings && (
-                    <TableHead className="text-right">vs. Prior</TableHead>
+                    <TableHead className="w-16 md:w-auto text-right">vs. Prior</TableHead>
                   )}
                 </TableRow>
               </TableHeader>
@@ -492,32 +496,35 @@ export default function ResultsPage() {
 
                   return (
                     <TableRow key={t.id}>
-                      <TableCell className="font-bold">{i + 1}</TableCell>
+                      <TableCell className="hidden md:table-cell font-bold">{i + 1}</TableCell>
                       <TableCell>
                         <div>
-                          <p className="font-medium text-sm">{t.title}</p>
+                          <p className="font-medium text-sm">
+                            <span className="md:hidden text-xs text-muted-foreground">#{i + 1} · </span>
+                            {t.title}
+                          </p>
                           <p className="text-xs text-muted-foreground font-mono">{t.onetSocCode}</p>
                         </div>
                       </TableCell>
-                      <TableCell className="text-right text-sm">
+                      <TableCell className="hidden md:table-cell text-right text-sm">
                         {employment !== null ? formatNum(employment) : "\u2014"}
                       </TableCell>
-                      <TableCell className="text-right text-sm text-muted-foreground">
+                      <TableCell className="hidden md:table-cell text-right text-sm text-muted-foreground">
                         {pct10 !== null ? formatUSD(pct10) : "\u2014"}
                       </TableCell>
-                      <TableCell className="text-right text-sm text-muted-foreground">
+                      <TableCell className="hidden md:table-cell text-right text-sm text-muted-foreground">
                         {pct25 !== null ? formatUSD(pct25) : "\u2014"}
                       </TableCell>
                       <TableCell className="text-right text-sm font-semibold">
                         {medianWage !== null ? formatUSD(medianWage) : "\u2014"}
                       </TableCell>
-                      <TableCell className="text-right text-sm">
+                      <TableCell className="hidden md:table-cell text-right text-sm">
                         {meanWage !== null ? formatUSD(meanWage) : "\u2014"}
                       </TableCell>
-                      <TableCell className="text-right text-sm text-muted-foreground">
+                      <TableCell className="hidden md:table-cell text-right text-sm text-muted-foreground">
                         {pct75 !== null ? formatUSD(pct75) : "\u2014"}
                       </TableCell>
-                      <TableCell className="text-right text-sm text-muted-foreground">
+                      <TableCell className="hidden md:table-cell text-right text-sm text-muted-foreground">
                         {pct90 !== null ? formatUSD(pct90) : "\u2014"}
                       </TableCell>
                       {selected.priorEarnings && (

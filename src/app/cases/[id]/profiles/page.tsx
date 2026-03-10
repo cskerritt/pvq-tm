@@ -201,17 +201,17 @@ export default function ProfilesPage() {
   };
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-4 md:p-6 space-y-4">
       <CaseBreadcrumb caseId={caseId} currentPage="Worker Profiles" />
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Worker Profiles</h1>
           <p className="text-muted-foreground">
             24-trait vector across 4 profile rows
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
             onClick={analyzePRW}
@@ -241,7 +241,70 @@ export default function ProfilesPage() {
         </Badge>
       )}
 
-      <Card>
+      {/* Mobile Card Layout */}
+      <div className="md:hidden space-y-4">
+        {PROFILE_TYPES.map((pt) => (
+          <Card key={pt.key}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">{pt.label}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {Object.entries(TRAIT_GROUPS).map(([group, traits]) => (
+                <div key={group}>
+                  <p className="text-xs font-semibold text-muted-foreground mb-2">
+                    {groupLabels[group as keyof typeof groupLabels]}
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(traits as readonly TraitKey[]).map((trait) => {
+                      const value =
+                        profiles[pt.key]?.[trait] as number | null | undefined;
+                      const numValue =
+                        value !== undefined && value !== null ? value : null;
+                      return (
+                        <div
+                          key={trait}
+                          className={`flex items-center justify-between rounded-md px-2 py-1 ${getCellColor(numValue, pt.key === "POST")}`}
+                        >
+                          <span className="text-xs truncate mr-1">
+                            {TRAIT_LABELS[trait]}
+                          </span>
+                          <Select
+                            value={numValue !== null ? String(numValue) : "null"}
+                            onValueChange={(v) =>
+                              setTraitValue(
+                                pt.key,
+                                trait,
+                                !v || v === "null" ? null : parseInt(v)
+                              )
+                            }
+                          >
+                            <SelectTrigger className="h-8 w-16 text-xs px-1 shrink-0">
+                              <SelectValue>
+                                {numValue !== null ? numValue : "—"}
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="null">—</SelectItem>
+                              {[0, 1, 2, 3, 4].map((v) => (
+                                <SelectItem key={v} value={String(v)}>
+                                  {v} - {getTraitLabel(trait, v)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Desktop Table Layout */}
+      <Card className="hidden md:block">
         <CardContent className="overflow-x-auto pt-6">
           <table className="w-full text-sm">
             <thead>
@@ -337,7 +400,7 @@ export default function ProfilesPage() {
           <CardTitle className="text-sm">Scale Reference</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-3 gap-4 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
             <div>
               <p className="font-medium mb-1">Strength</p>
               {Object.entries(STRENGTH_LABELS).map(([k, v]) => (
