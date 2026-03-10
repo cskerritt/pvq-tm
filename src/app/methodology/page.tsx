@@ -198,6 +198,10 @@ export default function MethodologyPage() {
               { id: "lmq", num: "9", label: "Labor Market Quotient (LMQ)" },
               { id: "pvq", num: "10", label: "PVQ Composite Score" },
               { id: "reproducibility", num: "11", label: "Reproducibility & Audit Trail" },
+              { id: "mvqs-vq", num: "12", label: "MVQS Vocational Quotient (VQ)" },
+              { id: "mvqs-tsp", num: "13", label: "MVQS Transferable Skills Percent (TSP)" },
+              { id: "mvqs-ec", num: "14", label: "MVQS Earning Capacity Estimation" },
+              { id: "mvqs-validity", num: "15", label: "MVQS Validity & Daubert Compliance" },
             ].map((item) => (
               <a
                 key={item.id}
@@ -853,15 +857,276 @@ export default function MethodologyPage() {
         </SubSection>
       </Section>
 
+      {/* ─── Section 12: MVQS Vocational Quotient ──────────────────────── */}
+      <Section id="mvqs-vq" number="12" title="MVQS Vocational Quotient (VQ)">
+        <p>
+          The Vocational Quotient (VQ) is a standardized job difficulty index derived from the
+          McCroskey Vocational Quotient System (MVQS). It quantifies occupational complexity
+          on a normalized scale (mean=100, SD=15, range 68-158), enabling direct comparison
+          of job difficulty across all occupations.
+        </p>
+
+        <SubSection title="VQ Computation">
+          <p>
+            VQ is computed via linear regression using 24 occupational trait demands in their
+            native DOT scales. PVQ-TM first reverse-maps its normalized 0-4 trait values back
+            to native DOT scales before applying the MVQS regression weights.
+          </p>
+        </SubSection>
+
+        <FormulaCard
+          title="VQ Regression"
+          formula={"VQ = 34.56707 + \u03A3(weight[i] \u00d7 nativeTrait[i])  for i = 1..24"}
+        >
+          <p>
+            The 24 regression weights were derived from curvilinear regression analysis of
+            Year 2007 SOC data covering all DOT occupations. Native trait scales vary:
+            GED (1-6), Aptitudes (1-5), Strength (1-5), Binary Physical (0-1),
+            Environmental (0-3 or 0-1).
+          </p>
+        </FormulaCard>
+
+        <SubSection title="VQ Band Structure">
+          <p>
+            Occupations are classified into four VQ Bands for curvilinear earning capacity estimation:
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse mt-2">
+              <thead>
+                <tr className="bg-muted">
+                  <th className="text-left p-2 border font-semibold">Band</th>
+                  <th className="text-left p-2 border font-semibold">VQ Range</th>
+                  <th className="text-left p-2 border font-semibold">Label</th>
+                  <th className="text-center p-2 border font-semibold">% of Jobs</th>
+                  <th className="text-center p-2 border font-semibold">Rxy (Median)</th>
+                  <th className="text-center p-2 border font-semibold">SEE ($/hr)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td className="p-2 border font-medium text-foreground">Band 1</td>
+                  <td className="p-2 border font-mono text-xs">68 &ndash; 99.99</td>
+                  <td className="p-2 border">Below/Mid-Average</td>
+                  <td className="p-2 border text-center">50%</td>
+                  <td className="p-2 border text-center font-mono">0.96</td>
+                  <td className="p-2 border text-center font-mono">$0.20</td>
+                </tr>
+                <tr>
+                  <td className="p-2 border font-medium text-foreground">Band 2</td>
+                  <td className="p-2 border font-mono text-xs">100 &ndash; 108.99</td>
+                  <td className="p-2 border">Mid/High-Average</td>
+                  <td className="p-2 border text-center">17%</td>
+                  <td className="p-2 border text-center font-mono">0.98</td>
+                  <td className="p-2 border text-center font-mono">$0.27</td>
+                </tr>
+                <tr>
+                  <td className="p-2 border font-medium text-foreground">Band 3</td>
+                  <td className="p-2 border font-mono text-xs">109 &ndash; 143.99</td>
+                  <td className="p-2 border">High/Very-High</td>
+                  <td className="p-2 border text-center">32%</td>
+                  <td className="p-2 border text-center font-mono">0.92</td>
+                  <td className="p-2 border text-center font-mono">$1.32</td>
+                </tr>
+                <tr>
+                  <td className="p-2 border font-medium text-foreground">Band 4</td>
+                  <td className="p-2 border font-mono text-xs">144 &ndash; 158</td>
+                  <td className="p-2 border">Extremely High</td>
+                  <td className="p-2 border text-center">1%</td>
+                  <td className="p-2 border text-center font-mono">0.83</td>
+                  <td className="p-2 border text-center font-mono">$8.69</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </SubSection>
+      </Section>
+
+      {/* ─── Section 13: MVQS TSP ─────────────────────────────────────── */}
+      <Section id="mvqs-tsp" number="13" title="MVQS Transferable Skills Percent (TSP)">
+        <p>
+          The Transferable Skills Percent (TSP) provides a MVQS-compatible measure of skill
+          transferability between a worker&rsquo;s past relevant work (PRW) and target occupations.
+          TSP uses a five-tier classification system (0-97%) incorporating DOT and O*NET
+          occupational code prefix matching, trait similarity, and vocational proximity metrics.
+        </p>
+
+        <SubSection title="TSP Tier Determination">
+          <p>
+            Tier assignment follows DOT/O*NET code prefix overlap rules:
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse mt-2">
+              <thead>
+                <tr className="bg-muted">
+                  <th className="text-left p-2 border font-semibold">Tier</th>
+                  <th className="text-left p-2 border font-semibold">Score Range</th>
+                  <th className="text-left p-2 border font-semibold">Qualitative Label</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td className="p-2 border font-medium text-foreground">Tier 5</td>
+                  <td className="p-2 border font-mono text-xs">80-97%</td>
+                  <td className="p-2 border">Semi-skilled to skilled, high transferable skills</td>
+                </tr>
+                <tr>
+                  <td className="p-2 border font-medium text-foreground">Tier 4</td>
+                  <td className="p-2 border font-mono text-xs">60-79%</td>
+                  <td className="p-2 border">Semi-skilled to skilled, moderate transferable skills</td>
+                </tr>
+                <tr>
+                  <td className="p-2 border font-medium text-foreground">Tier 3</td>
+                  <td className="p-2 border font-mono text-xs">40-59%</td>
+                  <td className="p-2 border">Semi-skilled to skilled, low transferable skills</td>
+                </tr>
+                <tr>
+                  <td className="p-2 border font-medium text-foreground">Tier 2</td>
+                  <td className="p-2 border font-mono text-xs">20-39%</td>
+                  <td className="p-2 border">Semi-skilled to skilled, no significant transferable skills</td>
+                </tr>
+                <tr>
+                  <td className="p-2 border font-medium text-foreground">Tier 1</td>
+                  <td className="p-2 border font-mono text-xs">0-19%</td>
+                  <td className="p-2 border">Unskilled, no significant transferable skills</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </SubSection>
+
+        <SubSection title="TSP V2 Component Weights">
+          <p>Within each tier, the TSP score is computed using seven weighted components:</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse mt-2">
+              <thead>
+                <tr className="bg-muted">
+                  <th className="text-left p-2 border font-semibold">Component</th>
+                  <th className="text-center p-2 border font-semibold">Weight</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td className="p-2 border">Trait Similarity</td><td className="p-2 border text-center font-mono">0.30</td></tr>
+                <tr><td className="p-2 border">Trait Coverage</td><td className="p-2 border text-center font-mono">0.16</td></tr>
+                <tr><td className="p-2 border">DOT Code Prefix Match</td><td className="p-2 border text-center font-mono">0.14</td></tr>
+                <tr><td className="p-2 border">O*NET Code Prefix Match</td><td className="p-2 border text-center font-mono">0.14</td></tr>
+                <tr><td className="p-2 border">VQ Proximity</td><td className="p-2 border text-center font-mono">0.08</td></tr>
+                <tr><td className="p-2 border">SVP Proximity</td><td className="p-2 border text-center font-mono">0.06</td></tr>
+                <tr><td className="p-2 border">Strength Proximity</td><td className="p-2 border text-center font-mono">0.12</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </SubSection>
+      </Section>
+
+      {/* ─── Section 14: MVQS Earning Capacity ────────────────────────── */}
+      <Section id="mvqs-ec" number="14" title="MVQS Earning Capacity Estimation">
+        <p>
+          Earning capacity is estimated using VQ band-level regression combined with real
+          OEWS (Occupational Employment and Wage Statistics) wage data. Geographic adjustments
+          are applied via Earning Capacity Link Relatives (ECLR).
+        </p>
+
+        <SubSection title="Methodology">
+          <p>For each target occupation:</p>
+          <ol className="list-decimal pl-6 space-y-1">
+            <li>Compute VQ score and determine VQ Band (Section 12)</li>
+            <li>Retrieve OEWS wage data (median, mean, percentiles) for the occupation&rsquo;s SOC code</li>
+            <li>Apply ECLR geographic adjustment if the case specifies a metro area</li>
+            <li>Use the VQ band&rsquo;s published SEE to compute 95% confidence interval</li>
+          </ol>
+        </SubSection>
+
+        <FormulaCard
+          title="ECLR (Earning Capacity Link Relative)"
+          formula={"ECLR = areaMedianWage / nationalMedianWage\nAdjustedWage = nationalWage \u00d7 ECLR"}
+        >
+          <p>
+            ECLR adjusts national-level wage predictions to local labor market conditions.
+            Values above 1.0 indicate the area pays more than the national average.
+            Clamped to 0.5-2.0 range to prevent extreme adjustments.
+          </p>
+        </FormulaCard>
+
+        <FormulaCard
+          title="95% Confidence Interval"
+          formula={"CI = median \u00b1 1.96 \u00d7 SEE\nwhere SEE = VQ Band Standard Error of Estimate"}
+        >
+          <p>
+            The SEE values (Standard Error of Estimate) are derived from published MVQS
+            validity research (McCroskey et al., 2011) and represent the prediction accuracy
+            within each VQ band. Lower bands (simpler jobs) have smaller SEE values.
+          </p>
+        </FormulaCard>
+
+        <SubSection title="Aggregate Earning Capacity Loss">
+          <p>
+            At the analysis level, PVQ-TM computes aggregate earning capacity metrics:
+          </p>
+          <ol className="list-decimal pl-6 space-y-1">
+            <li><strong>Post-Injury EC:</strong> Average median EC across all post-injury viable occupations</li>
+            <li><strong>Pre-Injury EC:</strong> Average median EC across all pre-injury accessible occupations</li>
+            <li><strong>EC Loss:</strong> Pre-Injury EC minus Post-Injury EC ($/hr and % reduction)</li>
+          </ol>
+          <p>
+            These aggregates quantify the economic impact of reduced labor market access
+            due to injury in standardized, reproducible terms.
+          </p>
+        </SubSection>
+      </Section>
+
+      {/* ─── Section 15: MVQS Validity & Daubert ─────────────────────── */}
+      <Section id="mvqs-validity" number="15" title="MVQS Validity & Daubert Compliance">
+        <p>
+          The MVQS methodology incorporated in PVQ-TM has been subject to extensive empirical
+          validation. The VQ scoring system demonstrates strong predictive validity for
+          earning capacity estimation across all four VQ bands.
+        </p>
+
+        <SubSection title="Predictive Validity (Rxy)">
+          <p>
+            Published validity coefficients for VQ-based earning capacity prediction range
+            from 0.83 to 0.98, demonstrating strong predictive accuracy across all VQ bands.
+            Band 2 (Mid/High-Average) achieves the highest validity (Rxy = 0.98), while
+            Band 4 (Extremely High) shows the most variability (Rxy = 0.83).
+          </p>
+        </SubSection>
+
+        <SubSection title="Daubert Standard Compliance">
+          <p>
+            The MVQS methodology meets the Daubert standard requirements for admissibility
+            of scientific evidence:
+          </p>
+          <ol className="list-decimal pl-6 space-y-1">
+            <li><strong>Testable hypothesis:</strong> VQ predicts earning capacity with known error rates</li>
+            <li><strong>Peer review:</strong> Published validity studies and peer-reviewed research</li>
+            <li><strong>Known error rate:</strong> SEE values published per VQ band (ranging from $0.20/hr to $8.69/hr)</li>
+            <li><strong>General acceptance:</strong> Established in the vocational evaluation community</li>
+            <li><strong>Standards controlling operation:</strong> Standardized regression weights, documented thresholds</li>
+          </ol>
+        </SubSection>
+
+        <SubSection title="Key References">
+          <p>The following research supports the MVQS methodology used in PVQ-TM:</p>
+          <ul className="list-disc pl-6 space-y-1">
+            <li>McCroskey, Dennis, Wilkinson, et al. (2011). Predictive Validity and Standard Errors of Estimate for the MVQS VQ Job Difficulty Index.</li>
+            <li>McCroskey, B.J. (2001). Development and field testing of the McCroskey Vocational Quotient System.</li>
+            <li>U.S. Department of Labor. Revised Handbook for Analyzing Jobs (RHAJ, 1991).</li>
+            <li>U.S. Bureau of Labor Statistics. Occupational Employment and Wage Statistics (OEWS).</li>
+            <li>U.S. Bureau of Labor Statistics. Job Openings and Labor Turnover Survey (JOLTS).</li>
+          </ul>
+        </SubSection>
+      </Section>
+
       <Separator className="my-12" />
 
       <footer className="text-sm text-muted-foreground text-center pb-8">
         <p>
-          PVQ-TM Methodology Document &mdash; Version 1.0
+          PVQ-TM Methodology Document &mdash; Version 2.0 (MVQS Integration)
         </p>
         <p className="mt-1">
           This document describes a public, transparent methodology. All formulas and thresholds
-          are published for independent verification and replication.
+          are published for independent verification and replication. MVQS components are
+          derived from published McCroskey Vocational Quotient System research.
         </p>
       </footer>
     </div>

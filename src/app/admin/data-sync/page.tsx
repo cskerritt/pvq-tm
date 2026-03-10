@@ -94,6 +94,7 @@ export default function DataSyncPage() {
     ORS: "Occupational Requirements Survey — comprehensive physical demands, environmental conditions, cognitive demands, and education/training requirements",
     OEWS: "Occupational Employment & Wage Statistics — national employment levels and annual wage percentiles (10th, 25th, median, 75th, 90th)",
     PROJECTIONS: "Employment Projections — projected employment, growth rates, and annual openings estimates",
+    JOLTS: "JOLTS (Job Openings & Labor Turnover Survey) — industry-level job openings and hires data for 21 industries (2014-2025)",
   };
 
   const isSyncingAny = Object.values(syncing).some(Boolean) || autoSync?.isSyncing;

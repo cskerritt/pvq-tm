@@ -6,6 +6,10 @@ import { computeTFQ, buildDOTDemandVector, buildOccupationDemands } from "@/lib/
 import { computeVAQ, estimateVAQ, type VocationalAdjustment } from "@/lib/engine/vocational-adjustment";
 import { computeLMQ } from "@/lib/engine/labor-market";
 import { profileToTraitVector } from "@/lib/engine/traits";
+import { getPrimaryIndustryForSOC, getIndustryNameForSOC } from "@/lib/engine/industry-mapping";
+import { computeVQ } from "@/lib/engine/vocational-quotient";
+import { computeTSP, type TSPInput } from "@/lib/engine/tsp";
+import { computeEarningCapacity, computeECLR, type OEWSWageData } from "@/lib/engine/earning-capacity";
 
 /**
  * DPT (Data-People-Things) code labels from the DOT classification system.
@@ -102,6 +106,60 @@ export async function POST(
   }
 
   const workerTraits = profileToTraitVector(postProfile);
+
+  // ─── Pre-Injury Profile (optional) ──────────────────────────────
+  const preProfile = await prisma.workerProfile.findUnique({
+    where: { caseId_profileType: { caseId: id, profileType: "PRE" } },
+  });
+  const preTraits = preProfile ? profileToTraitVector(preProfile) : null;
+
+  // ─── Case date of injury (for JOLTS lookups) ───────────────────
+  const caseData = await prisma.case.findUnique({
+    where: { id },
+    select: { dateOfInjury: true },
+  });
+  const injuryYear = caseData?.dateOfInjury?.getFullYear() ?? null;
+
+  // ─── Batch-load JOLTS data from DB ────────────────────────────
+  const joltsRecords = await prisma.jOLTSIndustryData.findMany({});
+  // Build Map<naicsCode, Map<year, record>> for O(1) lookup
+  const joltsMap = new Map<string, Map<number, { jobOpenings: number | null; hires: number | null }>>();
+  for (const rec of joltsRecords) {
+    if (!joltsMap.has(rec.naicsCode)) joltsMap.set(rec.naicsCode, new Map());
+    joltsMap.get(rec.naicsCode)!.set(rec.year, {
+      jobOpenings: rec.jobOpenings,
+      hires: rec.hires,
+    });
+  }
+  // Find the most recent year available in JOLTS data
+  const joltsCurrentYear = joltsRecords.length > 0
+    ? Math.max(...joltsRecords.map(r => r.year))
+    : new Date().getFullYear();
+
+  // ─── ECLR Geographic Wage Adjustment ─────────────────────
+  const fullCaseData = await prisma.case.findUnique({
+    where: { id },
+    select: { metroAreaCode: true, metroAreaName: true },
+  });
+  let eclrFactor = 1.0;
+  const eclrAreaCode = fullCaseData?.metroAreaCode ?? null;
+  const eclrAreaName = fullCaseData?.metroAreaName ?? null;
+
+  if (eclrAreaCode) {
+    // Compute ECLR: compare area-level median wages to national
+    const nationalAvgWage = await prisma.occupationWages.aggregate({
+      _avg: { medianWage: true },
+      where: { areaType: "national" },
+    });
+    // For area wages, we use "metro" type or derive from state data if available
+    const areaAvgWage = await prisma.occupationWages.aggregate({
+      _avg: { medianWage: true },
+      where: { areaCode: eclrAreaCode },
+    });
+    if (areaAvgWage._avg.medianWage && nationalAvgWage._avg.medianWage) {
+      eclrFactor = computeECLR(areaAvgWage._avg.medianWage, nationalAvgWage._avg.medianWage);
+    }
+  }
 
   const prwList = await prisma.pastRelevantWork.findMany({
     where: { caseId: id },
@@ -217,6 +275,49 @@ export async function POST(
     }
     const tfqResult = computeTFQ(workerTraits, demandVector, demandSources);
 
+    // ─── Pre-Injury TFQ (if PRE profile exists) ──────────────────
+    let preTfqScore: number | null = null;
+    let preTfqPasses: boolean | null = null;
+    let preTfqDetailsJson: unknown = null;
+    if (preTraits) {
+      const preTfqResult = computeTFQ(preTraits, demandVector, demandSources);
+      preTfqScore = preTfqResult.tfq;
+      preTfqPasses = preTfqResult.passes;
+      preTfqDetailsJson = JSON.parse(JSON.stringify(preTfqResult));
+    }
+
+    // ─── JOLTS Industry Lookup ──────────────────────────────────
+    const joltsNaics = getPrimaryIndustryForSOC(target.onetSocCode);
+    const joltsName = getIndustryNameForSOC(target.onetSocCode);
+    const industryData = joltsMap.get(joltsNaics);
+
+    let joltsCurrentOpenings: number | null = null;
+    let joltsPreInjuryOpenings: number | null = null;
+
+    if (industryData) {
+      // Current year openings
+      const currentData = industryData.get(joltsCurrentYear);
+      joltsCurrentOpenings = currentData?.jobOpenings ?? null;
+
+      // Pre-injury year openings (closest available year to injury date)
+      if (injuryYear !== null) {
+        // Try exact year first, then closest available
+        let bestYear: number | null = null;
+        let bestDiff = Infinity;
+        for (const yr of industryData.keys()) {
+          const diff = Math.abs(yr - injuryYear);
+          if (diff < bestDiff) {
+            bestDiff = diff;
+            bestYear = yr;
+          }
+        }
+        if (bestYear !== null) {
+          const preData = industryData.get(bestYear);
+          joltsPreInjuryOpenings = preData?.jobOpenings ?? null;
+        }
+      }
+    }
+
     // ─── VAQ ────────────────────────────────────────────────────────
     // Check if evaluator provided manual ratings first
     const existingVAQ = target.vaqDetails as Record<string, unknown> | null;
@@ -295,6 +396,66 @@ export async function POST(
     // ─── PVQ Composite ──────────────────────────────────────────────
     const pvqResult = computePVQ(stqResult, tfqResult, vaqResult, lmqResult);
 
+    // ─── MVQS: VQ Computation ─────────────────────────────────────
+    const vqResult = computeVQ(demandVector);
+
+    // ─── MVQS: TSP Computation ────────────────────────────────────
+    // Build source traits from best PRW DOT data
+    const bestPrwDotOcc = prwDotOccs[0];
+    let sourceTraitsForTSP = workerTraits; // fallback to worker profile
+    let sourceVqForTSP = 100; // default mid-range
+
+    if (bestPrwDotOcc) {
+      const prwDemands = buildDOTDemandVector(bestPrwDotOcc);
+      sourceTraitsForTSP = prwDemands.demands;
+      sourceVqForTSP = computeVQ(prwDemands.demands).vq;
+    }
+
+    const tspInput: TSPInput = {
+      sourceDotCode: prwDotCodes[0] ?? null,
+      sourceOnetCode: prwOnetCodes[0] ?? null,
+      sourceTraits: sourceTraitsForTSP,
+      sourceVq: sourceVqForTSP,
+      sourceSvp: Math.max(...prwList.map((p) => p.svp ?? 2), 2),
+      sourceStrength: sourceTraitsForTSP.strength ?? 2,
+      targetDotCode: target.dotCode,
+      targetOnetCode: target.onetSocCode,
+      targetTraits: demandVector,
+      targetVq: vqResult.vq,
+      targetSvp: target.svp ?? 2,
+      targetStrength: demandVector.strength ?? 2,
+    };
+    const tspResult = computeTSP(tspInput);
+
+    // ─── MVQS: Earning Capacity ──────────────────────────────────
+    const ecWageData: OEWSWageData = {
+      medianWage: wages?.medianWage ?? null,
+      meanWage: wages?.meanWage ?? null,
+      pct10: wages?.pct10 ?? null,
+      pct25: wages?.pct25 ?? null,
+      pct75: wages?.pct75 ?? null,
+      pct90: wages?.pct90 ?? null,
+      employment: wages?.employment ?? null,
+    };
+    const ecResult = computeEarningCapacity(
+      vqResult.band,
+      ecWageData,
+      eclrFactor,
+      eclrAreaCode,
+      eclrAreaName
+    );
+
+    // Pre-injury VQ and EC (VQ is occupation-based, same for both)
+    let preVqScore: number | null = null;
+    let preEcMedian: number | null = null;
+    let preEcDetailsJson: unknown = null;
+    if (preTraits && preTfqPasses) {
+      // VQ is the same (occupation-based), but we only store for pre-accessible targets
+      preVqScore = vqResult.vq;
+      preEcMedian = ecResult.median;
+      preEcDetailsJson = JSON.parse(JSON.stringify(ecResult));
+    }
+
     await prisma.targetOccupation.update({
       where: { id: target.id },
       data: {
@@ -310,13 +471,133 @@ export async function POST(
         excluded: pvqResult.excluded,
         exclusionReason: pvqResult.exclusionReason,
         confidenceGrade: pvqResult.confidenceGrade,
+        // Pre-injury TFQ
+        preTfq: preTfqScore,
+        preTfqPasses: preTfqPasses,
+        preTfqDetails: preTfqDetailsJson ? JSON.parse(JSON.stringify(preTfqDetailsJson)) : null,
+        // JOLTS industry data
+        joltsIndustryCode: joltsNaics,
+        joltsIndustryName: joltsName,
+        joltsCurrentOpenings,
+        joltsPreInjuryOpenings,
+        // MVQS: VQ
+        vqScore: vqResult.vq,
+        vqBand: vqResult.band,
+        vqDetails: JSON.parse(JSON.stringify(vqResult)),
+        // MVQS: TSP
+        tspScore: tspResult.tsp,
+        tspTier: tspResult.tier,
+        tspLabel: tspResult.qualitativeLabel,
+        tspDetails: JSON.parse(JSON.stringify(tspResult)),
+        // MVQS: Earning Capacity
+        ecMedian: ecResult.median,
+        ecMean: ecResult.mean,
+        ec10: ecResult.p10,
+        ec25: ecResult.p25,
+        ec75: ecResult.p75,
+        ec90: ecResult.p90,
+        ecSee: ecResult.see,
+        ecConfLow: ecResult.confLow,
+        ecConfHigh: ecResult.confHigh,
+        ecGeoAdjusted: ecResult.eclrApplied,
+        ecDetails: JSON.parse(JSON.stringify(ecResult)),
+        // MVQS: Pre-Injury
+        preVqScore,
+        preEcMedian,
+        preEcDetails: preEcDetailsJson ? JSON.parse(JSON.stringify(preEcDetailsJson)) : null,
       },
     });
   }
 
+  // ─── Compute Pre/Post Injury Aggregates ────────────────────────
+  // Re-fetch targets with updated scores to compute aggregates
+  const updatedTargets = await prisma.targetOccupation.findMany({
+    where: { analysisId },
+  });
+
+  // Also fetch wage data for employment figures
+  const allOnetCodes = [...new Set(updatedTargets.map(t => t.onetSocCode))];
+  const allWages = allOnetCodes.length > 0
+    ? await prisma.occupationWages.findMany({
+        where: { onetSocCode: { in: allOnetCodes } },
+        orderBy: { year: "desc" },
+        distinct: ["onetSocCode"],
+      })
+    : [];
+  const wageMap = new Map(allWages.map(w => [w.onetSocCode, w]));
+
+  let preInjuryViableCount: number | null = null;
+  let preInjuryTotalEmployment: number | null = null;
+  let preInjuryJoltsOpenings: number | null = null;
+  let postInjuryViableCount = 0;
+  let postInjuryTotalEmployment = 0;
+  let postInjuryJoltsOpenings = 0;
+
+  const hasPreProfile = preTraits !== null;
+
+  if (hasPreProfile) {
+    preInjuryViableCount = 0;
+    preInjuryTotalEmployment = 0;
+    preInjuryJoltsOpenings = 0;
+  }
+
+  for (const t of updatedTargets) {
+    const wages = wageMap.get(t.onetSocCode);
+    const employment = wages?.employment ?? 0;
+
+    // Post-injury: viable if not excluded
+    if (!t.excluded) {
+      postInjuryViableCount++;
+      postInjuryTotalEmployment += employment;
+      postInjuryJoltsOpenings += t.joltsCurrentOpenings ?? 0;
+    }
+
+    // Pre-injury: viable if pre-TFQ passes
+    if (hasPreProfile && t.preTfqPasses === true) {
+      preInjuryViableCount!++;
+      preInjuryTotalEmployment! += employment;
+      preInjuryJoltsOpenings! += t.joltsPreInjuryOpenings ?? t.joltsCurrentOpenings ?? 0;
+    }
+  }
+
+  // ─── MVQS Earning Capacity Aggregates ──────────────────────
+  const viableWithEC = updatedTargets.filter(t => !t.excluded && t.ecMedian !== null);
+  const mvqsPostEcMedian = viableWithEC.length > 0
+    ? Math.round((viableWithEC.reduce((sum, t) => sum + (t.ecMedian ?? 0), 0) / viableWithEC.length) * 100) / 100
+    : null;
+
+  let mvqsPreEcMedian: number | null = null;
+  if (hasPreProfile) {
+    const preViableWithEC = updatedTargets.filter(t => t.preTfqPasses && t.preEcMedian !== null);
+    mvqsPreEcMedian = preViableWithEC.length > 0
+      ? Math.round((preViableWithEC.reduce((sum, t) => sum + (t.preEcMedian ?? 0), 0) / preViableWithEC.length) * 100) / 100
+      : null;
+  }
+
+  const mvqsEcLoss = (mvqsPreEcMedian !== null && mvqsPostEcMedian !== null)
+    ? Math.round((mvqsPreEcMedian - mvqsPostEcMedian) * 100) / 100
+    : null;
+  const mvqsEcLossPct = (mvqsPreEcMedian !== null && mvqsEcLoss !== null && mvqsPreEcMedian > 0)
+    ? Math.round((mvqsEcLoss / mvqsPreEcMedian) * 10000) / 100
+    : null;
+
   await prisma.analysis.update({
     where: { id: analysisId },
-    data: { step: 5, status: "completed" },
+    data: {
+      step: 5,
+      status: "completed",
+      preInjuryViableCount: hasPreProfile ? preInjuryViableCount : null,
+      preInjuryTotalEmployment: hasPreProfile ? preInjuryTotalEmployment : null,
+      preInjuryJoltsOpenings: hasPreProfile ? preInjuryJoltsOpenings : null,
+      postInjuryViableCount,
+      postInjuryTotalEmployment,
+      postInjuryJoltsOpenings,
+      // MVQS aggregates
+      mvqsPostEcMedian,
+      mvqsPreEcMedian,
+      mvqsEcLoss,
+      mvqsEcLossPct,
+    },
   });
 
   return NextResponse.json({ computed: targets.length });

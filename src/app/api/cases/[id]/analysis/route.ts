@@ -6,7 +6,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const { id } = await params;
     const analyses = await prisma.analysis.findMany({
       where: { caseId: id },
-      include: { targetOccupations: true },
+      include: {
+        targetOccupations: true,
+        case: {
+          select: {
+            id: true,
+            clientName: true,
+            dateOfInjury: true,
+          },
+        },
+      },
       orderBy: { createdAt: "desc" },
     });
     return NextResponse.json(analyses);

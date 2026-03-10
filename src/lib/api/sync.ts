@@ -25,7 +25,7 @@ function toJson(val: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(val ?? []));
 }
 
-export type SyncSource = "ONET" | "ORS" | "OEWS" | "PROJECTIONS" | "DOT" | "CROSSWALK";
+export type SyncSource = "ONET" | "ORS" | "OEWS" | "PROJECTIONS" | "JOLTS" | "DOT" | "CROSSWALK";
 
 export interface SyncStatus {
   source: SyncSource;
@@ -47,7 +47,7 @@ export function getSyncLock(): boolean {
  * Get sync status for all data sources.
  */
 export async function getSyncStatus(): Promise<SyncStatus[]> {
-  const sources: SyncSource[] = ["ONET", "ORS", "OEWS", "PROJECTIONS", "DOT", "CROSSWALK"];
+  const sources: SyncSource[] = ["ONET", "ORS", "OEWS", "PROJECTIONS", "JOLTS", "DOT", "CROSSWALK"];
   const statuses: SyncStatus[] = [];
 
   // Get total O*NET occupations once (used as denominator for coverage)
@@ -72,6 +72,9 @@ export async function getSyncStatus(): Promise<SyncStatus[]> {
         break;
       case "PROJECTIONS":
         recordCount = await prisma.occupationProjections.count();
+        break;
+      case "JOLTS":
+        recordCount = await prisma.jOLTSIndustryData.count();
         break;
       case "DOT":
         recordCount = await prisma.occupationDOT.count();
@@ -814,6 +817,109 @@ export async function syncProjections(): Promise<{ synced: number; errors: numbe
   return { synced, errors };
 }
 
+/** JOLTS data structure (mirrors data-loaders.ts) */
+interface JOLTSYearData {
+  jo: number | null;
+  hi: number | null;
+}
+interface JOLTSIndustryDataJSON {
+  n: string;
+  d: Record<string, JOLTSYearData>;
+}
+
+/**
+ * Sync JOLTS (Job Openings and Labor Turnover Survey) data from local dataset.
+ *
+ * Source: BLS Public Data API v2 — JOLTS series for 21 industries (2014-2025).
+ * Data stored in src/data/jolts-data.json.
+ * Values are in thousands (matching raw BLS format).
+ */
+export async function syncJOLTS(): Promise<{ synced: number; errors: number }> {
+  const log = await prisma.dataSyncLog.create({
+    data: {
+      source: "JOLTS",
+      status: "started",
+      startedAt: new Date(),
+    },
+  });
+
+  let synced = 0;
+  let errors = 0;
+
+  try {
+    // Clear old JOLTS records
+    const deleted = await prisma.jOLTSIndustryData.deleteMany({});
+    console.log(`[syncJOLTS] Cleared ${deleted.count} old JOLTS records`);
+
+    // Load JOLTS data from bundled JSON
+    const joltsModule = await import("@/data/jolts-data.json");
+    const joltsData = joltsModule.default as unknown as Record<string, JOLTSIndustryDataJSON>;
+
+    const industryCodes = Object.keys(joltsData);
+    console.log(`[syncJOLTS] Loaded ${industryCodes.length} industries`);
+
+    for (const naicsCode of industryCodes) {
+      const industry = joltsData[naicsCode];
+      for (const [yearStr, yearData] of Object.entries(industry.d)) {
+        const year = parseInt(yearStr, 10);
+        if (isNaN(year)) continue;
+        // Skip years with no data
+        if (yearData.jo === null && yearData.hi === null) continue;
+
+        try {
+          await prisma.jOLTSIndustryData.upsert({
+            where: {
+              naicsCode_year: { naicsCode, year },
+            },
+            create: {
+              naicsCode,
+              industryName: industry.n,
+              year,
+              jobOpenings: yearData.jo,
+              hires: yearData.hi,
+            },
+            update: {
+              industryName: industry.n,
+              jobOpenings: yearData.jo,
+              hires: yearData.hi,
+            },
+          });
+          synced++;
+        } catch (e) {
+          errors++;
+          if (errors <= 5) {
+            console.error(`[syncJOLTS] Failed for ${naicsCode}/${year}:`, e);
+          }
+        }
+      }
+    }
+
+    console.log(`[syncJOLTS] Done: ${synced} records synced, ${errors} errors`);
+
+    await prisma.dataSyncLog.update({
+      where: { id: log.id },
+      data: {
+        status: "completed",
+        recordsUpdated: synced,
+        version: "JOLTS-2014-25",
+        completedAt: new Date(),
+      },
+    });
+  } catch (e) {
+    await prisma.dataSyncLog.update({
+      where: { id: log.id },
+      data: {
+        status: "failed",
+        error: String(e),
+        recordsUpdated: synced,
+        completedAt: new Date(),
+      },
+    });
+  }
+
+  return { synced, errors };
+}
+
 /**
  * Sync DOT (Dictionary of Occupational Titles) data from local dataset.
  *
@@ -1166,6 +1272,7 @@ export async function syncAll(): Promise<Record<SyncSource, { synced: number; er
       ORS: { synced: 0, errors: 0 },
       OEWS: { synced: 0, errors: 0 },
       PROJECTIONS: { synced: 0, errors: 0 },
+      JOLTS: { synced: 0, errors: 0 },
       DOT: { synced: 0, errors: 0 },
       CROSSWALK: { synced: 0, errors: 0 },
     };
@@ -1181,6 +1288,7 @@ export async function syncAll(): Promise<Record<SyncSource, { synced: number; er
     ORS: { synced: 0, errors: 0 },
     OEWS: { synced: 0, errors: 0 },
     PROJECTIONS: { synced: 0, errors: 0 },
+    JOLTS: { synced: 0, errors: 0 },
     DOT: { synced: 0, errors: 0 },
     CROSSWALK: { synced: 0, errors: 0 },
   };
@@ -1206,12 +1314,17 @@ export async function syncAll(): Promise<Record<SyncSource, { synced: number; er
     results.PROJECTIONS = await syncProjections();
     console.log(`[syncAll] Projections: ${results.PROJECTIONS.synced} synced, ${results.PROJECTIONS.errors} errors`);
 
-    // 5. Sync DOT occupations
+    // 5. Sync JOLTS industry data
+    console.log("[syncAll] Syncing JOLTS data...");
+    results.JOLTS = await syncJOLTS();
+    console.log(`[syncAll] JOLTS: ${results.JOLTS.synced} synced, ${results.JOLTS.errors} errors`);
+
+    // 6. Sync DOT occupations
     console.log("[syncAll] Syncing DOT data...");
     results.DOT = await syncDOT();
     console.log(`[syncAll] DOT: ${results.DOT.synced} synced, ${results.DOT.errors} errors`);
 
-    // 6. Build DOT→O*NET crosswalk (depends on both ONET and DOT)
+    // 7. Build DOT→O*NET crosswalk (depends on both ONET and DOT)
     console.log("[syncAll] Building DOT→O*NET crosswalk...");
     results.CROSSWALK = await syncCrosswalk();
     console.log(`[syncAll] Crosswalk: ${results.CROSSWALK.synced} synced, ${results.CROSSWALK.errors} errors`);

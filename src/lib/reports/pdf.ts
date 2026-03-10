@@ -39,6 +39,10 @@ export interface ReportData {
     name?: string | null;
     ageRule?: string | null;
     priorEarnings?: number | null;
+    mvqsPostEcMedian?: number | null;
+    mvqsPreEcMedian?: number | null;
+    mvqsEcLoss?: number | null;
+    mvqsEcLossPct?: number | null;
   };
   targets: Array<{
     title: string;
@@ -55,6 +59,19 @@ export interface ReportData {
     tfqDetails?: unknown;
     vaqDetails?: unknown;
     lmqDetails?: unknown;
+    // MVQS fields
+    vqScore?: number | null;
+    vqBand?: number | null;
+    tspScore?: number | null;
+    tspTier?: number | null;
+    tspLabel?: string | null;
+    ecMedian?: number | null;
+    ecMean?: number | null;
+    ecConfLow?: number | null;
+    ecConfHigh?: number | null;
+    ecSee?: number | null;
+    ecGeoAdjusted?: boolean | null;
+    preEcMedian?: number | null;
   }>;
 }
 
@@ -735,11 +752,144 @@ function summarizeObject(obj: Record<string, unknown>): string {
   return parts.join(", ") || "---";
 }
 
+function fmtHourly(n: number | null | undefined): string {
+  if (n == null) return "---";
+  return `$${n.toFixed(2)}/hr`;
+}
+
+function getVQBandName(band: number | null | undefined): string {
+  switch (band) {
+    case 1: return "Below/Mid-Avg";
+    case 2: return "Mid/High-Avg";
+    case 3: return "High/Very-High";
+    case 4: return "Extremely High";
+    default: return "---";
+  }
+}
+
+function renderMVQSAnalysis(doc: jsPDF, data: ReportData): void {
+  // Only render if any targets have VQ data
+  const targetsWithVQ = data.targets.filter(t => t.vqScore != null);
+  if (targetsWithVQ.length === 0) return;
+
+  doc.addPage();
+  let y = MARGIN + 5;
+
+  y = addSectionTitle(doc, "7. MVQS Vocational Analysis", y);
+
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...COLORS.darkText);
+
+  const intro =
+    "The McCroskey Vocational Quotient System (MVQS) provides standardized measures of " +
+    "occupational complexity (VQ), skill transferability (TSP), and earning capacity (EC) " +
+    "with published validity coefficients and confidence intervals.";
+  const splitIntro = doc.splitTextToSize(intro, CONTENT_WIDTH);
+  doc.text(splitIntro, MARGIN, y);
+  y += splitIntro.length * 4.5 + 4;
+
+  // EC Summary if available
+  if (data.analysis.mvqsPostEcMedian != null || data.analysis.mvqsPreEcMedian != null) {
+    y = checkPageBreak(doc, y, 30);
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...COLORS.primary);
+    doc.text("Earning Capacity Summary", MARGIN, y);
+    y += 6;
+
+    const ecRows: RowInput[] = [];
+    if (data.analysis.mvqsPreEcMedian != null) {
+      ecRows.push(["Pre-Injury EC", fmtHourly(data.analysis.mvqsPreEcMedian),
+        `$${((data.analysis.mvqsPreEcMedian) * 2080).toLocaleString("en-US", { maximumFractionDigits: 0 })}/yr`]);
+    }
+    if (data.analysis.mvqsPostEcMedian != null) {
+      ecRows.push(["Post-Injury EC", fmtHourly(data.analysis.mvqsPostEcMedian),
+        `$${((data.analysis.mvqsPostEcMedian) * 2080).toLocaleString("en-US", { maximumFractionDigits: 0 })}/yr`]);
+    }
+    if (data.analysis.mvqsEcLoss != null) {
+      ecRows.push(["EC Loss", fmtHourly(data.analysis.mvqsEcLoss),
+        `$${(Math.abs(data.analysis.mvqsEcLoss) * 2080).toLocaleString("en-US", { maximumFractionDigits: 0 })}/yr`]);
+    }
+    if (data.analysis.mvqsEcLossPct != null) {
+      ecRows.push(["Loss %", `${data.analysis.mvqsEcLossPct.toFixed(1)}%`, ""]);
+    }
+
+    autoTable(doc, {
+      startY: y,
+      head: [["Metric", "Hourly", "Annual"]],
+      body: ecRows,
+      theme: "grid",
+      headStyles: {
+        fillColor: COLORS.primary,
+        textColor: COLORS.white,
+        fontSize: 9,
+        fontStyle: "bold",
+      },
+      styles: { fontSize: 9, cellPadding: 2 },
+      margin: { left: MARGIN, right: MARGIN },
+      columnStyles: {
+        0: { fontStyle: "bold", cellWidth: 50 },
+        1: { halign: "right", cellWidth: 40 },
+        2: { halign: "right" },
+      },
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    y = (doc as any).lastAutoTable.finalY + 8;
+  }
+
+  // Per-occupation MVQS table
+  y = checkPageBreak(doc, y, 20);
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...COLORS.primary);
+  doc.text("MVQS Scores by Occupation", MARGIN, y);
+  y += 6;
+
+  const viable = targetsWithVQ.filter(t => !t.excluded);
+  const mvqsBody: RowInput[] = viable.map(t => [
+    t.title.length > 28 ? t.title.substring(0, 26) + "..." : t.title,
+    t.vqScore != null ? t.vqScore.toFixed(0) : "---",
+    t.vqBand != null ? `B${t.vqBand}` : "---",
+    t.tspScore != null ? `${t.tspScore.toFixed(0)}%` : "---",
+    t.tspTier != null ? `T${t.tspTier}` : "---",
+    fmtHourly(t.ecMedian),
+    t.ecConfLow != null && t.ecConfHigh != null
+      ? `[${fmtHourly(t.ecConfLow)}, ${fmtHourly(t.ecConfHigh)}]`
+      : "---",
+  ]);
+
+  autoTable(doc, {
+    startY: y,
+    head: [["Occupation", "VQ", "Band", "TSP", "Tier", "EC Median", "95% CI"]],
+    body: mvqsBody,
+    theme: "striped",
+    headStyles: {
+      fillColor: COLORS.primary,
+      textColor: COLORS.white,
+      fontSize: 8,
+      fontStyle: "bold",
+    },
+    styles: { fontSize: 7.5, cellPadding: 1.5, overflow: "linebreak" },
+    margin: { left: MARGIN, right: MARGIN },
+    columnStyles: {
+      0: { cellWidth: 48 },
+      1: { halign: "center", cellWidth: 15 },
+      2: { halign: "center", cellWidth: 15 },
+      3: { halign: "center", cellWidth: 15 },
+      4: { halign: "center", cellWidth: 12 },
+      5: { halign: "right", cellWidth: 22 },
+      6: { halign: "right", cellWidth: 43 },
+    },
+    alternateRowStyles: { fillColor: COLORS.lightGray },
+  });
+}
+
 function renderMethodology(doc: jsPDF): void {
   doc.addPage();
   let y = MARGIN + 5;
 
-  y = addSectionTitle(doc, "7. Methodology Disclosure", y);
+  y = addSectionTitle(doc, "8. Methodology Disclosure", y);
 
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
@@ -766,7 +916,11 @@ function renderMethodology(doc: jsPDF): void {
     "Data sources include the Dictionary of Occupational Titles (DOT), O*NET OnLine, " +
     "the Occupational Requirements Survey (ORS), Bureau of Labor Statistics Occupational " +
     "Employment and Wage Statistics (OEWS), and Bureau of Labor Statistics Employment Projections. " +
-    "All quotient calculations use the most recent available data at the time of analysis.";
+    "All quotient calculations use the most recent available data at the time of analysis.\n\n" +
+    "MVQS Analysis: The McCroskey Vocational Quotient System (MVQS) components (VQ, TSP, EC) " +
+    "use published regression weights and Standard Errors of Estimate from MVQS validity research " +
+    "(McCroskey et al., 2011). Earning capacity estimates incorporate real OEWS wage data with " +
+    "ECLR geographic adjustments and VQ band-specific 95% confidence intervals.";
 
   const splitText = doc.splitTextToSize(methodologyText, CONTENT_WIDTH);
   doc.text(splitText, MARGIN, y);
@@ -791,6 +945,7 @@ export async function generateReport(data: ReportData): Promise<Uint8Array> {
   renderWorkerProfiles(doc, data);
   renderTargetRankings(doc, data);
   renderQuotientDetails(doc, data);
+  renderMVQSAnalysis(doc, data);
   renderMethodology(doc);
 
   // ---- Add footers to all pages (except cover) ----

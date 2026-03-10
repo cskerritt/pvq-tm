@@ -101,6 +101,18 @@ model OccupationProjections {
   @@unique([socCode, baseYear, projYear])
 }
 
+model JOLTSIndustryData {
+  id           String   @id @default(cuid())
+  naicsCode    String
+  industryName String
+  year         Int
+  jobOpenings  Float?   // thousands
+  hires        Float?   // thousands
+  createdAt    DateTime @default(now())
+
+  @@unique([naicsCode, year])
+}
+
 model DOTONETCrosswalk {
   id          String @id @default(cuid())
   dotCode     String
@@ -235,6 +247,19 @@ model Analysis {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  preInjuryViableCount     Int?
+  preInjuryTotalEmployment Float?
+  preInjuryJoltsOpenings   Float?
+  postInjuryViableCount    Int?
+  postInjuryTotalEmployment Float?
+  postInjuryJoltsOpenings  Float?
+
+  // ─── MVQS Earning Capacity Aggregates ──────────────────────
+  mvqsPostEcMedian     Float?  // Weighted avg earning capacity (post-injury viable)
+  mvqsPreEcMedian      Float?  // Weighted avg earning capacity (pre-injury viable)
+  mvqsEcLoss           Float?  // Earning capacity loss (pre - post) $/hr
+  mvqsEcLossPct        Float?  // Earning capacity loss as percentage
+
   case              Case               @relation(fields: [caseId], references: [id], onDelete: Cascade)
   targetOccupations TargetOccupation[]
 }
@@ -259,6 +284,43 @@ model TargetOccupation {
   exclusionReason String?
   confidenceGrade String?
   notes           String?
+
+  preTfq                 Float?
+  preTfqPasses           Boolean?
+  preTfqDetails          Json?
+  joltsIndustryCode      String?
+  joltsIndustryName      String?
+  joltsCurrentOpenings   Float?   // current year openings (thousands)
+  joltsPreInjuryOpenings Float?   // injury year openings (thousands)
+
+  // ─── MVQS: Vocational Quotient ─────────────────────────────
+  vqScore        Float?   // MVQS VQ score (68-158 scale, mean=100, SD=15)
+  vqBand         Int?     // VQ Band (1-4)
+  vqDetails      Json?    // Full VQ computation breakdown
+
+  // ─── MVQS: Transferable Skills Percent ─────────────────────
+  tspScore       Float?   // TSP score (0-97%)
+  tspTier        Int?     // TSP Tier (1-5)
+  tspLabel       String?  // Qualitative label
+  tspDetails     Json?    // Full TSP computation breakdown
+
+  // ─── MVQS: Earning Capacity ────────────────────────────────
+  ecMedian       Float?   // Earning capacity median $/hr
+  ecMean         Float?   // Earning capacity mean $/hr
+  ec10           Float?   // 10th percentile $/hr
+  ec25           Float?   // 25th percentile $/hr
+  ec75           Float?   // 75th percentile $/hr
+  ec90           Float?   // 90th percentile $/hr
+  ecSee          Float?   // Standard Error of Estimate $/hr
+  ecConfLow      Float?   // Lower 95% CI (median)
+  ecConfHigh     Float?   // Upper 95% CI (median)
+  ecGeoAdjusted  Boolean? // Whether ECLR geographic adjustment applied
+  ecDetails      Json?    // Full EC breakdown
+
+  // ─── MVQS: Pre-Injury ─────────────────────────────────────
+  preVqScore     Float?   // Pre-injury VQ (occupation-based, same as post)
+  preEcMedian    Float?   // Pre-injury earning capacity median
+  preEcDetails   Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -103,6 +103,10 @@ export async function GET(
       name: analysis.name,
       ageRule: analysis.ageRule,
       priorEarnings: analysis.priorEarnings,
+      mvqsPostEcMedian: analysis.mvqsPostEcMedian,
+      mvqsPreEcMedian: analysis.mvqsPreEcMedian,
+      mvqsEcLoss: analysis.mvqsEcLoss,
+      mvqsEcLossPct: analysis.mvqsEcLossPct,
     },
     targets: analysis.targetOccupations.map((t) => ({
       title: t.title,
@@ -119,6 +123,19 @@ export async function GET(
       tfqDetails: t.tfqDetails,
       vaqDetails: t.vaqDetails,
       lmqDetails: t.lmqDetails,
+      // MVQS fields
+      vqScore: t.vqScore,
+      vqBand: t.vqBand,
+      tspScore: t.tspScore,
+      tspTier: t.tspTier,
+      tspLabel: t.tspLabel,
+      ecMedian: t.ecMedian,
+      ecMean: t.ecMean,
+      ecConfLow: t.ecConfLow,
+      ecConfHigh: t.ecConfHigh,
+      ecSee: t.ecSee,
+      ecGeoAdjusted: t.ecGeoAdjusted,
+      preEcMedian: t.preEcMedian,
     })),
   };
 

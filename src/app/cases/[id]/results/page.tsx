@@ -15,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { FileText, Download, ChevronDown, ChevronUp, ExternalLink, DollarSign, TrendingUp, ArrowUpDown, Sparkles, Loader2, RefreshCw } from "lucide-react";
+import { FileText, Download, ChevronDown, ChevronUp, ExternalLink, DollarSign, TrendingUp, ArrowUpDown, Sparkles, Loader2, RefreshCw, AlertTriangle, BarChart3 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Fragment } from "react";
@@ -27,7 +27,18 @@ interface AnalysisResult {
   status: string;
   ageRule: string | null;
   priorEarnings: number | null;
-  case: { clientName: string; id: string };
+  preInjuryViableCount: number | null;
+  preInjuryTotalEmployment: number | null;
+  preInjuryJoltsOpenings: number | null;
+  postInjuryViableCount: number | null;
+  postInjuryTotalEmployment: number | null;
+  postInjuryJoltsOpenings: number | null;
+  // MVQS aggregates
+  mvqsPostEcMedian: number | null;
+  mvqsPreEcMedian: number | null;
+  mvqsEcLoss: number | null;
+  mvqsEcLossPct: number | null;
+  case: { clientName: string; id: string; dateOfInjury: string | null };
   targetOccupations: TargetOcc[];
 }
 
@@ -48,6 +59,35 @@ interface TargetOcc {
   excluded: boolean;
   exclusionReason: string | null;
   confidenceGrade: string | null;
+  preTfq: number | null;
+  preTfqPasses: boolean | null;
+  preTfqDetails: Record<string, unknown> | null;
+  joltsIndustryCode: string | null;
+  joltsIndustryName: string | null;
+  joltsCurrentOpenings: number | null;
+  joltsPreInjuryOpenings: number | null;
+  // MVQS fields
+  vqScore: number | null;
+  vqBand: number | null;
+  vqDetails: Record<string, unknown> | null;
+  tspScore: number | null;
+  tspTier: number | null;
+  tspLabel: string | null;
+  tspDetails: Record<string, unknown> | null;
+  ecMedian: number | null;
+  ecMean: number | null;
+  ec10: number | null;
+  ec25: number | null;
+  ec75: number | null;
+  ec90: number | null;
+  ecSee: number | null;
+  ecConfLow: number | null;
+  ecConfHigh: number | null;
+  ecGeoAdjusted: boolean | null;
+  ecDetails: Record<string, unknown> | null;
+  preVqScore: number | null;
+  preEcMedian: number | null;
+  preEcDetails: Record<string, unknown> | null;
 }
 
 function ScoreCell({ value }: { value: number | null }) {
@@ -72,6 +112,42 @@ function getGradeColor(grade: string | null): string {
 function formatUSD(val: unknown): string {
   if (typeof val !== "number") return "\u2014";
   return "$" + val.toLocaleString();
+}
+
+function formatHourly(val: number | null): string {
+  if (val === null) return "\u2014";
+  return `$${val.toFixed(2)}`;
+}
+
+function getVQBandColor(band: number | null): string {
+  switch (band) {
+    case 1: return "bg-blue-100 text-blue-800";
+    case 2: return "bg-green-100 text-green-800";
+    case 3: return "bg-amber-100 text-amber-800";
+    case 4: return "bg-red-100 text-red-800";
+    default: return "";
+  }
+}
+
+function getVQBandLabel(band: number | null): string {
+  switch (band) {
+    case 1: return "Below/Mid-Avg";
+    case 2: return "Mid/High-Avg";
+    case 3: return "High/Very-High";
+    case 4: return "Extremely High";
+    default: return "\u2014";
+  }
+}
+
+function getTSPTierColor(tier: number | null): string {
+  switch (tier) {
+    case 5: return "bg-green-100 text-green-800";
+    case 4: return "bg-emerald-100 text-emerald-800";
+    case 3: return "bg-yellow-100 text-yellow-800";
+    case 2: return "bg-orange-100 text-orange-800";
+    case 1: return "bg-red-100 text-red-800";
+    default: return "";
+  }
 }
 
 function formatNum(val: unknown): string {
@@ -311,6 +387,173 @@ export default function ResultsPage() {
         </Card>
       </div>
 
+      {/* Labor Market Access — Pre/Post Injury Comparison */}
+      {selected.preInjuryViableCount !== null && selected.preInjuryViableCount !== undefined && (
+        <Card className="border-amber-200 bg-amber-50/30 dark:border-amber-800 dark:bg-amber-950/20">
+          <CardHeader>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-600" />
+                Labor Market Access — Pre vs. Post Injury
+              </CardTitle>
+              <Link href={`/cases/${caseId}/comparison${selected ? `?analysisId=${selected.id}` : ""}`}>
+                <Button variant="outline" size="sm">
+                  <BarChart3 className="mr-2 h-4 w-4" />
+                  View Detailed Comparison
+                </Button>
+              </Link>
+            </div>
+            {selected.case?.dateOfInjury && (
+              <p className="text-sm text-muted-foreground">
+                Date of Injury: {new Date(selected.case.dateOfInjury).toLocaleDateString()}
+              </p>
+            )}
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Occupations */}
+              <div className="rounded-lg border p-4 space-y-2">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Accessible Occupations</p>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Pre-Injury</p>
+                    <p className="text-2xl font-bold text-blue-600">{selected.preInjuryViableCount}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Post-Injury</p>
+                    <p className="text-2xl font-bold text-amber-600">{selected.postInjuryViableCount ?? 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Lost</p>
+                    <p className="text-2xl font-bold text-red-600">
+                      {selected.preInjuryViableCount - (selected.postInjuryViableCount ?? 0)}
+                    </p>
+                    <p className="text-xs text-red-500">
+                      {selected.preInjuryViableCount > 0
+                        ? `(${(((selected.preInjuryViableCount - (selected.postInjuryViableCount ?? 0)) / selected.preInjuryViableCount) * 100).toFixed(0)}%)`
+                        : ""}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Employment */}
+              <div className="rounded-lg border p-4 space-y-2">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Total Employment</p>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Pre-Injury</p>
+                    <p className="text-lg font-bold text-blue-600">
+                      {selected.preInjuryTotalEmployment !== null
+                        ? (selected.preInjuryTotalEmployment / 1000).toFixed(0) + "K"
+                        : "\u2014"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Post-Injury</p>
+                    <p className="text-lg font-bold text-amber-600">
+                      {selected.postInjuryTotalEmployment !== null
+                        ? ((selected.postInjuryTotalEmployment ?? 0) / 1000).toFixed(0) + "K"
+                        : "\u2014"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Lost</p>
+                    <p className="text-lg font-bold text-red-600">
+                      {selected.preInjuryTotalEmployment !== null && selected.postInjuryTotalEmployment !== null
+                        ? ((selected.preInjuryTotalEmployment - (selected.postInjuryTotalEmployment ?? 0)) / 1000).toFixed(0) + "K"
+                        : "\u2014"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* JOLTS Openings */}
+              <div className="rounded-lg border p-4 space-y-2">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">JOLTS Openings (thousands)</p>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Pre-Injury</p>
+                    <p className="text-lg font-bold text-blue-600">
+                      {selected.preInjuryJoltsOpenings !== null
+                        ? selected.preInjuryJoltsOpenings.toFixed(0) + "K"
+                        : "\u2014"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Current</p>
+                    <p className="text-lg font-bold text-amber-600">
+                      {selected.postInjuryJoltsOpenings !== null
+                        ? (selected.postInjuryJoltsOpenings ?? 0).toFixed(0) + "K"
+                        : "\u2014"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Change</p>
+                    <p className="text-lg font-bold text-red-600">
+                      {selected.preInjuryJoltsOpenings !== null && selected.postInjuryJoltsOpenings !== null
+                        ? ((selected.postInjuryJoltsOpenings ?? 0) - selected.preInjuryJoltsOpenings).toFixed(0) + "K"
+                        : "\u2014"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* MVQS Earning Capacity Summary */}
+      {(selected.mvqsPostEcMedian !== null || selected.mvqsPreEcMedian !== null) && (
+        <Card className="border-green-200 bg-green-50/30 dark:border-green-800 dark:bg-green-950/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <DollarSign className="h-5 w-5 text-green-600" />
+              MVQS Earning Capacity Analysis
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Vocational Quotient-based earning capacity estimates with OEWS wage data and ECLR geographic adjustments.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              {selected.mvqsPreEcMedian !== null && (
+                <div className="rounded-lg border p-4 text-center">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Pre-Injury EC</p>
+                  <p className="text-2xl font-bold text-blue-600">{formatHourly(selected.mvqsPreEcMedian)}/hr</p>
+                  <p className="text-xs text-muted-foreground">${((selected.mvqsPreEcMedian ?? 0) * 2080).toLocaleString("en-US", { maximumFractionDigits: 0 })}/yr</p>
+                </div>
+              )}
+              <div className="rounded-lg border p-4 text-center">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Post-Injury EC</p>
+                <p className="text-2xl font-bold text-amber-600">{formatHourly(selected.mvqsPostEcMedian)}/hr</p>
+                <p className="text-xs text-muted-foreground">${((selected.mvqsPostEcMedian ?? 0) * 2080).toLocaleString("en-US", { maximumFractionDigits: 0 })}/yr</p>
+              </div>
+              {selected.mvqsEcLoss !== null && (
+                <div className="rounded-lg border p-4 text-center">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">EC Loss</p>
+                  <p className={`text-2xl font-bold ${(selected.mvqsEcLoss ?? 0) > 0 ? "text-red-600" : "text-green-600"}`}>
+                    {(selected.mvqsEcLoss ?? 0) > 0 ? "-" : "+"}{formatHourly(Math.abs(selected.mvqsEcLoss ?? 0))}/hr
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    ${(Math.abs((selected.mvqsEcLoss ?? 0)) * 2080).toLocaleString("en-US", { maximumFractionDigits: 0 })}/yr
+                  </p>
+                </div>
+              )}
+              {selected.mvqsEcLossPct !== null && (
+                <div className="rounded-lg border p-4 text-center">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Loss %</p>
+                  <p className={`text-2xl font-bold ${(selected.mvqsEcLossPct ?? 0) > 0 ? "text-red-600" : "text-green-600"}`}>
+                    {selected.mvqsEcLossPct.toFixed(1)}%
+                  </p>
+                  <p className="text-xs text-muted-foreground">Earning capacity reduction</p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Viable Occupations Table */}
       <Card>
         <CardHeader>
@@ -331,6 +574,9 @@ export default function ResultsPage() {
                 <TableHead className="hidden md:table-cell text-right">VAQ</TableHead>
                 <TableHead className="hidden md:table-cell text-right">LMQ</TableHead>
                 <TableHead className="w-14 md:w-auto text-right">PVQ</TableHead>
+                <TableHead className="hidden md:table-cell text-right">VQ</TableHead>
+                <TableHead className="hidden md:table-cell text-right">TSP</TableHead>
+                <TableHead className="hidden md:table-cell text-right">EC $/hr</TableHead>
                 <TableHead className="w-14 md:w-auto text-center">Grade</TableHead>
               </TableRow>
             </TableHeader>
@@ -357,6 +603,31 @@ export default function ResultsPage() {
                     <TableCell className="hidden md:table-cell text-right"><ScoreCell value={t.vaq} /></TableCell>
                     <TableCell className="hidden md:table-cell text-right"><ScoreCell value={t.lmq} /></TableCell>
                     <TableCell className="text-right"><ScoreCell value={t.pvq} /></TableCell>
+                    <TableCell className="hidden md:table-cell text-right">
+                      {t.vqScore !== null ? (
+                        <div className="flex items-center justify-end gap-1">
+                          <span className="font-mono text-sm">{t.vqScore.toFixed(0)}</span>
+                          <Badge className={`${getVQBandColor(t.vqBand)} text-[10px] px-1`} variant="outline">
+                            B{t.vqBand}
+                          </Badge>
+                        </div>
+                      ) : "\u2014"}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell text-right">
+                      {t.tspScore !== null ? (
+                        <div className="flex items-center justify-end gap-1">
+                          <span className="font-mono text-sm">{t.tspScore.toFixed(0)}%</span>
+                          <Badge className={`${getTSPTierColor(t.tspTier)} text-[10px] px-1`} variant="outline">
+                            T{t.tspTier}
+                          </Badge>
+                        </div>
+                      ) : "\u2014"}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell text-right">
+                      {t.ecMedian !== null ? (
+                        <span className="font-mono text-sm font-semibold text-green-700">{formatHourly(t.ecMedian)}</span>
+                      ) : "\u2014"}
+                    </TableCell>
                     <TableCell className="text-center">
                       <Badge className={getGradeColor(t.confidenceGrade)} variant="outline">
                         {t.confidenceGrade ?? "\u2014"}
@@ -365,9 +636,9 @@ export default function ResultsPage() {
                   </TableRow>
                   {expandedRow === t.id && (
                     <TableRow>
-                      <TableCell colSpan={11}>
+                      <TableCell colSpan={14}>
                         <div className="p-4 bg-muted/30 rounded-md space-y-4">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 text-sm">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 sm:gap-4 text-sm">
                             {/* STQ Details */}
                             <div>
                               <p className="font-medium mb-2">STQ Components</p>
@@ -419,6 +690,68 @@ export default function ResultsPage() {
                                   <p>Projected Growth: {(getNestedVal(t.lmqDetails, "details", "changePct") as number)?.toFixed(1) ?? "\u2014"}%</p>
                                 </div>
                               )}
+                            </div>
+
+                            {/* JOLTS / Pre-Injury Data */}
+                            <div>
+                              <p className="font-medium mb-2">Industry & Pre-Injury</p>
+                              <div className="space-y-1 text-muted-foreground text-xs">
+                                {t.joltsIndustryName && (
+                                  <p>Industry: {t.joltsIndustryName}</p>
+                                )}
+                                {t.joltsCurrentOpenings !== null && (
+                                  <p>JOLTS Openings (Current): {t.joltsCurrentOpenings.toFixed(1)}K</p>
+                                )}
+                                {t.joltsPreInjuryOpenings !== null && (
+                                  <p>JOLTS Openings (At DOI): {t.joltsPreInjuryOpenings.toFixed(1)}K</p>
+                                )}
+                                {t.preTfqPasses !== null && (
+                                  <p>
+                                    Pre-Injury TFQ:{" "}
+                                    <span className={t.preTfqPasses ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}>
+                                      {t.preTfqPasses ? "PASS" : "FAIL"}
+                                    </span>
+                                    {t.preTfq !== null && ` (${t.preTfq.toFixed(1)})`}
+                                  </p>
+                                )}
+                                {t.preTfqPasses === null && (
+                                  <p className="italic">No pre-injury profile</p>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* MVQS Analysis */}
+                            <div>
+                              <p className="font-medium mb-2">MVQS Analysis</p>
+                              <div className="space-y-1 text-muted-foreground text-xs">
+                                {t.vqScore !== null && (
+                                  <>
+                                    <p>VQ Score: <span className="font-semibold text-foreground">{t.vqScore.toFixed(1)}</span></p>
+                                    <p>VQ Band: <Badge className={`${getVQBandColor(t.vqBand)} text-[10px] px-1`} variant="outline">Band {t.vqBand}</Badge> {getVQBandLabel(t.vqBand)}</p>
+                                  </>
+                                )}
+                                {t.tspScore !== null && (
+                                  <>
+                                    <p>TSP: <span className="font-semibold text-foreground">{t.tspScore.toFixed(1)}%</span> (Tier {t.tspTier})</p>
+                                    <p className="text-[10px] leading-tight">{t.tspLabel}</p>
+                                  </>
+                                )}
+                                {t.ecMedian !== null && (
+                                  <>
+                                    <Separator className="my-1" />
+                                    <p>EC Median: <span className="font-semibold text-green-700">{formatHourly(t.ecMedian)}/hr</span></p>
+                                    <p>EC Mean: {formatHourly(t.ecMean)}/hr</p>
+                                    <p>95% CI: [{formatHourly(t.ecConfLow)}, {formatHourly(t.ecConfHigh)}]</p>
+                                    <p>SEE: {formatHourly(t.ecSee)}/hr</p>
+                                    {t.ecGeoAdjusted && (
+                                      <p className="text-blue-600">ECLR Geo-Adjusted</p>
+                                    )}
+                                  </>
+                                )}
+                                {t.preEcMedian !== null && (
+                                  <p>Pre-Injury EC: {formatHourly(t.preEcMedian)}/hr</p>
+                                )}
+                              </div>
                             </div>
                           </div>
 

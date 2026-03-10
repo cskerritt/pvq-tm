@@ -157,6 +157,27 @@ export async function loadONETFullData(): Promise<Record<string, ONETFullOccupat
   return data.default as unknown as Record<string, ONETFullOccupationData>;
 }
 
+export interface JOLTSYearData {
+  jo: number | null; // job openings (thousands)
+  hi: number | null; // hires (thousands)
+}
+
+export interface JOLTSIndustryData {
+  n: string;                          // industry name
+  d: Record<string, JOLTSYearData>;   // year → data
+}
+
+/**
+ * Load JOLTS (Job Openings and Labor Turnover Survey) data from bundled JSON.
+ * Source: BLS Public Data API v2 — JOLTS series JTU*JOL and JTU*HIL.
+ * Returns a map of NAICS industry code → { name, yearlyData }.
+ * Values are in thousands (matching raw BLS format).
+ */
+export async function loadJOLTSData(): Promise<Record<string, JOLTSIndustryData>> {
+  const data = await import("@/data/jolts-data.json");
+  return data.default as unknown as Record<string, JOLTSIndustryData>;
+}
+
 export interface BLSProjectionsData {
   t: string;        // title
   be: number | null; // base year employment (2024)

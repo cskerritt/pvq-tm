@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { syncONET, syncOEWS, syncORS, syncProjections, syncDOT, syncCrosswalk, syncAll } from "@/lib/api/sync";
+import { syncONET, syncOEWS, syncORS, syncProjections, syncJOLTS, syncDOT, syncCrosswalk, syncAll } from "@/lib/api/sync";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ source: string }> }) {
   try {
@@ -20,6 +20,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ sou
     }
     case "PROJECTIONS": {
       const result = await syncProjections();
+      return NextResponse.json(result);
+    }
+    case "JOLTS": {
+      const result = await syncJOLTS();
       return NextResponse.json(result);
     }
     case "DOT": {
