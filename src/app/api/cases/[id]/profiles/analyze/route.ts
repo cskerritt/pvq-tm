@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { buildDOTDemandVector } from "@/lib/engine/trait-feasibility";
-import { mapORSToTraits, TRAIT_KEYS, type TraitKey } from "@/lib/engine/traits";
+import { mapORSToTraits, mapONETAbilitiesToTraits, TRAIT_KEYS, type TraitKey } from "@/lib/engine/traits";
 
 /**
  * POST /api/cases/[id]/profiles/analyze
@@ -87,6 +87,17 @@ export async function POST(
       }
     }
 
+    // Fetch O*NET abilities data for all relevant O*NET codes
+    const onetRecords =
+      onetCodes.length > 0
+        ? await prisma.occupationONET.findMany({
+            where: { id: { in: onetCodes } },
+            select: { id: true, abilities: true },
+          })
+        : [];
+
+    const onetMap = new Map(onetRecords.map((r) => [r.id, r]));
+
     // 3. Build trait vectors for each PRW entry and aggregate (max per trait)
     const aggregated: Partial<Record<TraitKey, number>> = {};
     let filledCount = 0;
@@ -150,6 +161,26 @@ export async function POST(
           }
         }
       }
+
+      // O*NET abilities (spatialPerception, formPerception, clericalPerception,
+      // eyeHandFoot, colorDiscrimination)
+      if (prw.onetSocCode) {
+        const onetOcc = onetMap.get(prw.onetSocCode);
+        if (onetOcc?.abilities) {
+          const abilityTraits = mapONETAbilitiesToTraits(
+            onetOcc.abilities as { id: string; name: string; value: number; level: number }[]
+          );
+
+          for (const [key, val] of Object.entries(abilityTraits)) {
+            if (val !== null && val !== undefined) {
+              aggregated[key as TraitKey] = Math.max(
+                aggregated[key as TraitKey] ?? 0,
+                val
+              );
+            }
+          }
+        }
+      }
     }
 
     // 4. Build the response — only include traits that have values
@@ -173,6 +204,7 @@ export async function POST(
         jobsAnalyzed: jobsUsed,
         dotSourceCount,
         orsAvailable: orsRecords.length,
+        onetAbilitiesAvailable: onetRecords.filter((r) => r.abilities).length,
       },
     });
   } catch (error) {

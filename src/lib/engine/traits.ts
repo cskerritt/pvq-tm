@@ -458,6 +458,54 @@ export function mapORSToTraits(
   return traits;
 }
 
+// ─── O*NET Abilities → Trait Mapping ──────────────────────────────────
+
+/**
+ * Map O*NET abilities data to the 5 aptitude/physical traits not covered
+ * by DOT or ORS data:
+ *   - spatialPerception  ← "Spatial Orientation" (1.A.1.f.1)
+ *   - formPerception     ← "Visualization"       (1.A.1.f.2)
+ *   - clericalPerception ← "Perceptual Speed"    (1.A.1.e.3)
+ *   - eyeHandFoot        ← "Multilimb Coordination" (1.A.2.b.2)
+ *   - colorDiscrimination← "Visual Color Discrimination" (1.A.4.a.3)
+ *
+ * O*NET abilities are stored with:
+ *   - value: importance score (1-5 scale)
+ *   - level: demand level (0-7 scale)
+ *
+ * We use the `level` field (actual demand) and map 0-7 → 0-4.
+ */
+const ONET_ABILITY_TO_TRAIT: Record<string, TraitKey> = {
+  "1.A.1.f.1": "spatialPerception",   // Spatial Orientation
+  "1.A.1.f.2": "formPerception",      // Visualization
+  "1.A.1.e.3": "clericalPerception",  // Perceptual Speed
+  "1.A.2.b.2": "eyeHandFoot",         // Multilimb Coordination
+  "1.A.4.a.3": "colorDiscrimination", // Visual Color Discrimination
+};
+
+/**
+ * Convert O*NET ability level (0-7 scale) to 0-4 trait scale.
+ */
+function normalizeONETLevel(level: number): number {
+  return Math.round(Math.min(4, Math.max(0, (level / 7) * 4)));
+}
+
+export function mapONETAbilitiesToTraits(
+  abilities: { id: string; name: string; value: number; level: number }[] | null | undefined
+): Partial<TraitVector> {
+  const traits: Partial<TraitVector> = {};
+  if (!abilities || !Array.isArray(abilities)) return traits;
+
+  for (const ab of abilities) {
+    const traitKey = ONET_ABILITY_TO_TRAIT[ab.id];
+    if (traitKey && typeof ab.level === "number") {
+      traits[traitKey] = normalizeONETLevel(ab.level);
+    }
+  }
+
+  return traits;
+}
+
 // ─── Trait Comparison ──────────────────────────────────────────────────
 
 export interface TraitComparison {
