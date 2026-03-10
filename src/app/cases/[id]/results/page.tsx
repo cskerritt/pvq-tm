@@ -223,10 +223,10 @@ export default function ResultsPage() {
     if (!selected) return;
     setGeneratingNarrative(true);
     try {
-      const viableOccs = selected.targetOccupations
+      const viableOccs = (selected.targetOccupations ?? [])
         .filter((t) => !t.excluded)
         .sort((a, b) => (b.pvq ?? 0) - (a.pvq ?? 0));
-      const excludedOccs = selected.targetOccupations.filter((t) => t.excluded);
+      const excludedOccs = (selected.targetOccupations ?? []).filter((t) => t.excluded);
 
       const topOccupations = viableOccs.slice(0, 5).map((t) => {
         const d = (t.lmqDetails as Record<string, unknown>)?.details as Record<string, unknown> | undefined;
@@ -291,10 +291,10 @@ export default function ResultsPage() {
     );
   }
 
-  const viable = selected.targetOccupations
+  const viable = (selected.targetOccupations ?? [])
     .filter((t) => !t.excluded)
     .sort((a, b) => (b.pvq ?? 0) - (a.pvq ?? 0));
-  const excluded = selected.targetOccupations.filter((t) => t.excluded);
+  const excluded = (selected.targetOccupations ?? []).filter((t) => t.excluded);
 
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-6">
@@ -346,7 +346,7 @@ export default function ResultsPage() {
             <CardTitle className="text-sm font-medium">Total Candidates</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{selected.targetOccupations.length}</div>
+            <div className="text-2xl font-bold">{(selected.targetOccupations ?? []).length}</div>
           </CardContent>
         </Card>
         <Card>
