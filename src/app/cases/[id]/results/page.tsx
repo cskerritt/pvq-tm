@@ -248,7 +248,7 @@ export default function ResultsPage() {
       </div>
 
       {/* Analysis Selector */}
-      {analyses.length > 1 && (
+      {analyses.length > 0 && (
         <div className="flex gap-2 flex-wrap">
           {analyses.map((a) => (
             <Button
