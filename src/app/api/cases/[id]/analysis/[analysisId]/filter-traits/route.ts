@@ -90,7 +90,7 @@ export async function POST(
 
   await prisma.analysis.update({
     where: { id: analysisId },
-    data: { step: 3 },
+    data: { step: 4 },
   });
 
   return NextResponse.json({ passed, excluded });

@@ -54,7 +54,7 @@ export async function POST(
 
   await prisma.analysis.update({
     where: { id: analysisId },
-    data: { step: 2, status: "in_progress" },
+    data: { step: 3, status: "in_progress" },
   });
 
   return NextResponse.json({ count: created.length, candidates: created });
