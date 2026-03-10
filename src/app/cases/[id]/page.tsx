@@ -38,13 +38,18 @@ interface CaseData {
 type StepStatus = "complete" | "ready" | "blocked";
 
 function getStepStatus(caseData: CaseData) {
-  const hasPRW = caseData.pastRelevantWork.length > 0;
-  const hasProfiles = caseData.profiles.length >= 1;
-  const hasSkills = caseData.acquiredSkills.length > 0;
-  const hasCompletedAnalysis = caseData.analyses.some(
+  const prw = caseData.pastRelevantWork ?? [];
+  const profiles = caseData.profiles ?? [];
+  const skills = caseData.acquiredSkills ?? [];
+  const analyses = caseData.analyses ?? [];
+
+  const hasPRW = prw.length > 0;
+  const hasProfiles = profiles.length >= 1;
+  const hasSkills = skills.length > 0;
+  const hasCompletedAnalysis = analyses.some(
     (a) => a.status === "completed"
   );
-  const hasAnalysis = caseData.analyses.length > 0;
+  const hasAnalysis = analyses.length > 0;
 
   return {
     prw: hasPRW ? "complete" as StepStatus : "ready" as StepStatus,
@@ -101,10 +106,14 @@ export default function CaseDetailPage() {
   if (!caseData) return <div className="p-6">Case not found</div>;
 
   const steps = getStepStatus(caseData);
-  const transferableCount = caseData.acquiredSkills.filter(
+  const prw = caseData.pastRelevantWork ?? [];
+  const profiles = caseData.profiles ?? [];
+  const skills = caseData.acquiredSkills ?? [];
+  const analyses = caseData.analyses ?? [];
+  const transferableCount = skills.filter(
     (s) => s.isTransferable
   ).length;
-  const completedAnalyses = caseData.analyses.filter(
+  const completedAnalyses = analyses.filter(
     (a) => a.status === "completed"
   ).length;
 
@@ -114,7 +123,7 @@ export default function CaseDetailPage() {
       icon: Briefcase,
       label: "Past Relevant Work",
       desc: "Employment history with DOT/O*NET codes, SVP, strength, and duties",
-      countLabel: `${caseData.pastRelevantWork.length} entries`,
+      countLabel: `${prw.length} entries`,
       status: steps.prw,
       hint: steps.prw === "ready" ? "Start here \u2014 add jobs from the 15 years before disability onset" : undefined,
     },
@@ -123,7 +132,7 @@ export default function CaseDetailPage() {
       icon: Grid3x3,
       label: "Worker Profiles",
       desc: "4-row \u00d7 24-trait profile grid (Work History, Evaluative, Pre-injury, Post-injury)",
-      countLabel: `${caseData.profiles.length}/4 profiles`,
+      countLabel: `${profiles.length}/4 profiles`,
       status: steps.profiles,
       hint: steps.profiles === "ready" ? "Build profiles including the Post-injury functional capacity" : steps.profiles === "blocked" ? "Add Past Relevant Work first" : undefined,
     },
@@ -132,8 +141,8 @@ export default function CaseDetailPage() {
       icon: Wrench,
       label: "Acquired Skills",
       desc: "Transferable skills inventory using SSA format (Action + Object + Context)",
-      countLabel: caseData.acquiredSkills.length > 0
-        ? `${transferableCount} transferable / ${caseData.acquiredSkills.length} total`
+      countLabel: skills.length > 0
+        ? `${transferableCount} transferable / ${skills.length} total`
         : "0 skills",
       status: steps.skills,
       hint: steps.skills === "ready" ? "Extract skills from each PRW entry" : steps.skills === "blocked" ? "Add Past Relevant Work first" : undefined,
@@ -143,11 +152,11 @@ export default function CaseDetailPage() {
       icon: BarChart3,
       label: "Analysis",
       desc: "Run the 5-step PVQ-TM analysis: candidates, trait filter, adjustment, labor market, PVQ",
-      countLabel: caseData.analyses.length > 0
-        ? `${caseData.analyses.length} analyses (${completedAnalyses} completed)`
+      countLabel: analyses.length > 0
+        ? `${analyses.length} analyses (${completedAnalyses} completed)`
         : "No analyses",
       status: steps.analysis,
-      hint: steps.analysis === "ready" && caseData.analyses.length === 0 ? "Create and run an analysis" : steps.analysis === "blocked" ? "Complete PRW and Profiles first" : undefined,
+      hint: steps.analysis === "ready" && analyses.length === 0 ? "Create and run an analysis" : steps.analysis === "blocked" ? "Complete PRW and Profiles first" : undefined,
     },
     {
       href: `/cases/${id}/results`,

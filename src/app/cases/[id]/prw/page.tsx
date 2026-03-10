@@ -1161,7 +1161,7 @@ export default function PRWPage() {
                     {e.svp !== null && <Badge variant="outline">SVP {e.svp}</Badge>}
                     {e.strengthLevel && <Badge variant="secondary">{STRENGTH_MAP[e.strengthLevel] ?? e.strengthLevel}</Badge>}
                     {e.skillLevel && <Badge variant="secondary">{e.skillLevel}</Badge>}
-                    <Badge variant="outline">{e.acquiredSkills.length} skills</Badge>
+                    <Badge variant="outline">{(e.acquiredSkills ?? []).length} skills</Badge>
                     <Button
                       variant="ghost"
                       size="sm"
