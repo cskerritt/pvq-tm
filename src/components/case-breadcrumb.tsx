@@ -14,9 +14,12 @@ export function CaseBreadcrumb({ caseId, currentPage }: CaseBreadcrumbProps) {
 
   useEffect(() => {
     fetch(`/api/cases/${caseId}`)
-      .then((r) => r.json())
-      .then((data) => setClientName(data.clientName ?? null))
-      .catch(() => {});
+      .then((r) => {
+        if (!r.ok) throw new Error("Failed");
+        return r.json();
+      })
+      .then((data) => setClientName(data.clientName ?? "Untitled Case"))
+      .catch(() => setClientName("Case"));
   }, [caseId]);
 
   return (

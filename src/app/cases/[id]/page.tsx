@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useState, useCallback } from "react";
+import { useParams, usePathname } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -88,21 +88,38 @@ function StatusLabel({ status }: { status: StepStatus }) {
 
 export default function CaseDetailPage() {
   const params = useParams();
+  const pathname = usePathname();
   const id = params.id as string;
   const [caseData, setCaseData] = useState<CaseData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch(`/api/cases/${id}`)
-      .then((r) => r.json())
-      .then(setCaseData)
-      .catch(() => {
-        toast.error("Failed to load data");
-      })
-      .finally(() => setLoading(false));
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const r = await fetch(`/api/cases/${id}`);
+      if (!r.ok) {
+        const msg = await r.text().catch(() => "Unknown error");
+        throw new Error(`HTTP ${r.status}: ${msg}`);
+      }
+      const data = await r.json();
+      setCaseData(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load data");
+      toast.error("Failed to load case data");
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
 
+  // Re-fetch when component mounts or when navigating back to this page
+  useEffect(() => {
+    load();
+  }, [load, pathname]);
+
   if (loading) return <div className="p-6">Loading...</div>;
+  if (error) return <div className="p-6 text-red-600">Error: {error}</div>;
   if (!caseData) return <div className="p-6">Case not found</div>;
 
   const steps = getStepStatus(caseData);

@@ -235,6 +235,10 @@ export default function PRWPage() {
   const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/cases/${caseId}/prw`);
+      if (!res.ok) {
+        toast.error("Failed to load PRW data");
+        return;
+      }
       const raw = await res.json();
       const data = Array.isArray(raw) ? raw : [];
       setEntries(data);
@@ -678,8 +682,9 @@ export default function PRWPage() {
         setSearchResults([]);
         setSearchQuery("");
 
-        // Navigate back to case dashboard
+        // Navigate back to case dashboard and force a refresh
         router.push(`/cases/${caseId}`);
+        router.refresh();
       } else {
         toast.error("Failed to save PRW");
       }
