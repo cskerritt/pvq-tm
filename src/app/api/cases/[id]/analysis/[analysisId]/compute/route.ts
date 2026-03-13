@@ -121,20 +121,23 @@ export async function POST(
   const injuryYear = caseData?.dateOfInjury?.getFullYear() ?? null;
 
   // ─── Batch-load JOLTS data from DB ────────────────────────────
-  const joltsRecords = await prisma.jOLTSIndustryData.findMany({});
-  // Build Map<naicsCode, Map<year, record>> for O(1) lookup
   const joltsMap = new Map<string, Map<number, { jobOpenings: number | null; hires: number | null }>>();
-  for (const rec of joltsRecords) {
-    if (!joltsMap.has(rec.naicsCode)) joltsMap.set(rec.naicsCode, new Map());
-    joltsMap.get(rec.naicsCode)!.set(rec.year, {
-      jobOpenings: rec.jobOpenings,
-      hires: rec.hires,
-    });
+  let joltsCurrentYear = new Date().getFullYear();
+  try {
+    const joltsRecords = await prisma.jOLTSIndustryData.findMany({});
+    for (const rec of joltsRecords) {
+      if (!joltsMap.has(rec.naicsCode)) joltsMap.set(rec.naicsCode, new Map());
+      joltsMap.get(rec.naicsCode)!.set(rec.year, {
+        jobOpenings: rec.jobOpenings,
+        hires: rec.hires,
+      });
+    }
+    if (joltsRecords.length > 0) {
+      joltsCurrentYear = Math.max(...joltsRecords.map(r => r.year));
+    }
+  } catch (joltsError) {
+    console.warn("[compute] JOLTS data unavailable, continuing without it:", joltsError);
   }
-  // Find the most recent year available in JOLTS data
-  const joltsCurrentYear = joltsRecords.length > 0
-    ? Math.max(...joltsRecords.map(r => r.year))
-    : new Date().getFullYear();
 
   // ─── ECLR Geographic Wage Adjustment ─────────────────────
   const fullCaseData = await prisma.case.findUnique({
@@ -603,6 +606,7 @@ export async function POST(
   return NextResponse.json({ computed: targets.length });
   } catch (error) {
     console.error("[POST /api/cases/[id]/analysis/[analysisId]/compute]", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Internal server error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
