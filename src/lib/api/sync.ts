@@ -25,7 +25,7 @@ function toJson(val: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(val ?? []));
 }
 
-export type SyncSource = "ONET" | "ORS" | "OEWS" | "PROJECTIONS" | "JOLTS" | "DOT" | "CROSSWALK";
+export type SyncSource = "ONET" | "ORS" | "OEWS" | "PROJECTIONS" | "JOLTS" | "JOLTS_STATE" | "DOT" | "CROSSWALK";
 
 export interface SyncStatus {
   source: SyncSource;
@@ -47,7 +47,7 @@ export function getSyncLock(): boolean {
  * Get sync status for all data sources.
  */
 export async function getSyncStatus(): Promise<SyncStatus[]> {
-  const sources: SyncSource[] = ["ONET", "ORS", "OEWS", "PROJECTIONS", "JOLTS", "DOT", "CROSSWALK"];
+  const sources: SyncSource[] = ["ONET", "ORS", "OEWS", "PROJECTIONS", "JOLTS", "JOLTS_STATE", "DOT", "CROSSWALK"];
   const statuses: SyncStatus[] = [];
 
   // Get total O*NET occupations once (used as denominator for coverage)
@@ -75,6 +75,9 @@ export async function getSyncStatus(): Promise<SyncStatus[]> {
         break;
       case "JOLTS":
         recordCount = await prisma.jOLTSIndustryData.count();
+        break;
+      case "JOLTS_STATE":
+        recordCount = await prisma.jOLTSStateData.count();
         break;
       case "DOT":
         recordCount = await prisma.occupationDOT.count();
@@ -920,6 +923,102 @@ export async function syncJOLTS(): Promise<{ synced: number; errors: number }> {
   return { synced, errors };
 }
 
+/** JOLTS state data structure */
+interface JOLTSStateDataJSON {
+  n: string;
+  d: Record<string, JOLTSYearData>;
+}
+
+/**
+ * Sync JOLTS state-level data from local dataset.
+ *
+ * Source: BLS Public Data API v2 — JOLTS series for 51 states + 4 regions.
+ * Data stored in src/data/jolts-state-data.json.
+ * Values are in thousands (matching raw BLS format).
+ */
+export async function syncJOLTSState(): Promise<{ synced: number; errors: number }> {
+  const log = await prisma.dataSyncLog.create({
+    data: {
+      source: "JOLTS_STATE",
+      status: "started",
+      startedAt: new Date(),
+    },
+  });
+
+  let synced = 0;
+  let errors = 0;
+
+  try {
+    const deleted = await prisma.jOLTSStateData.deleteMany({});
+    console.log(`[syncJOLTSState] Cleared ${deleted.count} old state JOLTS records`);
+
+    const stateModule = await import("@/data/jolts-state-data.json");
+    const stateData = stateModule.default as unknown as Record<string, JOLTSStateDataJSON>;
+
+    const stateCodes = Object.keys(stateData);
+    console.log(`[syncJOLTSState] Loaded ${stateCodes.length} states/regions`);
+
+    for (const stateCode of stateCodes) {
+      const state = stateData[stateCode];
+      for (const [yearStr, yearData] of Object.entries(state.d)) {
+        const year = parseInt(yearStr, 10);
+        if (isNaN(year)) continue;
+        if (yearData.jo === null && yearData.hi === null) continue;
+
+        try {
+          await prisma.jOLTSStateData.upsert({
+            where: {
+              stateCode_year: { stateCode, year },
+            },
+            create: {
+              stateCode,
+              stateName: state.n,
+              year,
+              jobOpenings: yearData.jo,
+              hires: yearData.hi,
+            },
+            update: {
+              stateName: state.n,
+              jobOpenings: yearData.jo,
+              hires: yearData.hi,
+            },
+          });
+          synced++;
+        } catch (e) {
+          errors++;
+          if (errors <= 5) {
+            console.error(`[syncJOLTSState] Failed for ${stateCode}/${year}:`, e);
+          }
+        }
+      }
+    }
+
+    console.log(`[syncJOLTSState] Done: ${synced} records synced, ${errors} errors`);
+
+    await prisma.dataSyncLog.update({
+      where: { id: log.id },
+      data: {
+        status: "completed",
+        recordsUpdated: synced,
+        version: "JOLTS-STATE-2014-25",
+        completedAt: new Date(),
+      },
+    });
+  } catch (e) {
+    await prisma.dataSyncLog.update({
+      where: { id: log.id },
+      data: {
+        status: "failed",
+        error: String(e),
+        recordsUpdated: synced,
+        completedAt: new Date(),
+      },
+    });
+  }
+
+  return { synced, errors };
+}
+
 /**
  * Sync DOT (Dictionary of Occupational Titles) data from local dataset.
  *
@@ -1273,6 +1372,7 @@ export async function syncAll(): Promise<Record<SyncSource, { synced: number; er
       OEWS: { synced: 0, errors: 0 },
       PROJECTIONS: { synced: 0, errors: 0 },
       JOLTS: { synced: 0, errors: 0 },
+      JOLTS_STATE: { synced: 0, errors: 0 },
       DOT: { synced: 0, errors: 0 },
       CROSSWALK: { synced: 0, errors: 0 },
     };
@@ -1289,6 +1389,7 @@ export async function syncAll(): Promise<Record<SyncSource, { synced: number; er
     OEWS: { synced: 0, errors: 0 },
     PROJECTIONS: { synced: 0, errors: 0 },
     JOLTS: { synced: 0, errors: 0 },
+    JOLTS_STATE: { synced: 0, errors: 0 },
     DOT: { synced: 0, errors: 0 },
     CROSSWALK: { synced: 0, errors: 0 },
   };
@@ -1318,6 +1419,11 @@ export async function syncAll(): Promise<Record<SyncSource, { synced: number; er
     console.log("[syncAll] Syncing JOLTS data...");
     results.JOLTS = await syncJOLTS();
     console.log(`[syncAll] JOLTS: ${results.JOLTS.synced} synced, ${results.JOLTS.errors} errors`);
+
+    // 5b. Sync JOLTS state-level data
+    console.log("[syncAll] Syncing JOLTS state data...");
+    results.JOLTS_STATE = await syncJOLTSState();
+    console.log(`[syncAll] JOLTS State: ${results.JOLTS_STATE.synced} synced, ${results.JOLTS_STATE.errors} errors`);
 
     // 6. Sync DOT occupations
     console.log("[syncAll] Syncing DOT data...");

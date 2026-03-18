@@ -10,6 +10,8 @@ import { getPrimaryIndustryForSOC, getIndustryNameForSOC } from "@/lib/engine/in
 import { computeVQ } from "@/lib/engine/vocational-quotient";
 import { computeTSP, type TSPInput } from "@/lib/engine/tsp";
 import { computeEarningCapacity, computeECLR, type OEWSWageData } from "@/lib/engine/earning-capacity";
+import { computeJOLTSTrend } from "@/lib/engine/jolts-trend";
+import { getStateFipsFromZip, getStateNameFromZip } from "@/lib/geo/state-fips";
 
 /**
  * DPT (Data-People-Things) code labels from the DOT classification system.
@@ -142,11 +144,12 @@ export async function POST(
   // ─── ECLR Geographic Wage Adjustment ─────────────────────
   const fullCaseData = await prisma.case.findUnique({
     where: { id },
-    select: { metroAreaCode: true, metroAreaName: true },
+    select: { metroAreaCode: true, metroAreaName: true, zipCode: true },
   });
   let eclrFactor = 1.0;
   const eclrAreaCode = fullCaseData?.metroAreaCode ?? null;
   const eclrAreaName = fullCaseData?.metroAreaName ?? null;
+  const caseZipCode = fullCaseData?.zipCode ?? null;
 
   if (eclrAreaCode) {
     // Compute ECLR: compare area-level median wages to national
@@ -161,6 +164,46 @@ export async function POST(
     });
     if (areaAvgWage._avg.medianWage && nationalAvgWage._avg.medianWage) {
       eclrFactor = computeECLR(areaAvgWage._avg.medianWage, nationalAvgWage._avg.medianWage);
+    }
+  }
+
+  // ─── State-Level JOLTS Lookup ──────────────────────────────
+  const stateFips = caseZipCode ? getStateFipsFromZip(caseZipCode) : null;
+  const stateName = caseZipCode ? getStateNameFromZip(caseZipCode) : null;
+
+  // Build state JOLTS map for trend and current/pre-injury lookups
+  const stateJoltsMap = new Map<number, { jobOpenings: number | null; hires: number | null }>();
+  let stateJoltsCurrent: number | null = null;
+  let stateJoltsPreInjury: number | null = null;
+
+  if (stateFips) {
+    try {
+      const stateRecords = await prisma.jOLTSStateData.findMany({
+        where: { stateCode: stateFips },
+      });
+      for (const rec of stateRecords) {
+        stateJoltsMap.set(rec.year, {
+          jobOpenings: rec.jobOpenings,
+          hires: rec.hires,
+        });
+      }
+      // Current year
+      const currentData = stateJoltsMap.get(joltsCurrentYear);
+      stateJoltsCurrent = currentData?.jobOpenings ?? null;
+      // Pre-injury year (closest match)
+      if (injuryYear !== null) {
+        let bestYear: number | null = null;
+        let bestDiff = Infinity;
+        for (const yr of stateJoltsMap.keys()) {
+          const diff = Math.abs(yr - injuryYear);
+          if (diff < bestDiff) { bestDiff = diff; bestYear = yr; }
+        }
+        if (bestYear !== null) {
+          stateJoltsPreInjury = stateJoltsMap.get(bestYear)?.jobOpenings ?? null;
+        }
+      }
+    } catch (stateJoltsError) {
+      console.warn("[compute] State JOLTS data unavailable:", stateJoltsError);
     }
   }
 
@@ -304,7 +347,6 @@ export async function POST(
 
       // Pre-injury year openings (closest available year to injury date)
       if (injuryYear !== null) {
-        // Try exact year first, then closest available
         let bestYear: number | null = null;
         let bestDiff = Infinity;
         for (const yr of industryData.keys()) {
@@ -320,6 +362,11 @@ export async function POST(
         }
       }
     }
+
+    // ─── JOLTS Trend Analysis ─────────────────────────────────────
+    const joltsTrendResult = industryData
+      ? computeJOLTSTrend(industryData)
+      : null;
 
     // ─── VAQ ────────────────────────────────────────────────────────
     // Check if evaluator provided manual ratings first
@@ -375,7 +422,7 @@ export async function POST(
 
     // ─── LMQ ────────────────────────────────────────────────────────
     const wages = await prisma.occupationWages.findFirst({
-      where: { onetSocCode: target.onetSocCode },
+      where: { onetSocCode: target.onetSocCode, areaType: "national" },
       orderBy: { year: "desc" },
     });
     const projections = await prisma.occupationProjections.findFirst({
@@ -383,6 +430,19 @@ export async function POST(
         socCode: target.onetSocCode.replace(/\.\d+$/, ""),  // "43-4051.00" → "43-4051"
       },
     });
+
+    // ─── Area-Level Employment Lookup ─────────────────────────────
+    let targetAreaEmployment: number | null = null;
+    let targetAreaMedianWage: number | null = null;
+    if (eclrAreaCode) {
+      const areaWages = await prisma.occupationWages.findFirst({
+        where: { onetSocCode: target.onetSocCode, areaCode: eclrAreaCode },
+        orderBy: { year: "desc" },
+      });
+      targetAreaEmployment = areaWages?.employment ?? null;
+      targetAreaMedianWage = areaWages?.medianWage ?? null;
+    }
+
     const lmqResult = computeLMQ({
       employment: wages?.employment ?? null,
       medianWage: wages?.medianWage ?? null,
@@ -394,6 +454,10 @@ export async function POST(
       pct25: wages?.pct25 ?? null,
       pct75: wages?.pct75 ?? null,
       pct90: wages?.pct90 ?? null,
+      areaEmployment: targetAreaEmployment,
+      joltsTrend: joltsTrendResult?.trend ?? null,
+      joltsOpenings: joltsCurrentOpenings,
+      stateJoltsOpenings: stateJoltsCurrent,
     });
 
     // ─── PVQ Composite ──────────────────────────────────────────────
@@ -483,6 +547,11 @@ export async function POST(
         joltsIndustryName: joltsName,
         joltsCurrentOpenings,
         joltsPreInjuryOpenings,
+        joltsTrend: joltsTrendResult?.trend ?? null,
+        joltsTrendLabel: joltsTrendResult?.label ?? null,
+        // Area-level employment
+        areaEmployment: targetAreaEmployment,
+        areaMedianWage: targetAreaMedianWage,
         // MVQS: VQ
         vqScore: vqResult.vq,
         vqBand: vqResult.band,
@@ -532,9 +601,11 @@ export async function POST(
   let preInjuryViableCount: number | null = null;
   let preInjuryTotalEmployment: number | null = null;
   let preInjuryJoltsOpenings: number | null = null;
+  let preInjuryAreaEmployment: number | null = null;
   let postInjuryViableCount = 0;
   let postInjuryTotalEmployment = 0;
   let postInjuryJoltsOpenings = 0;
+  let postInjuryAreaEmployment = 0;
 
   const hasPreProfile = preTraits !== null;
 
@@ -542,17 +613,20 @@ export async function POST(
     preInjuryViableCount = 0;
     preInjuryTotalEmployment = 0;
     preInjuryJoltsOpenings = 0;
+    preInjuryAreaEmployment = 0;
   }
 
   for (const t of updatedTargets) {
     const wages = wageMap.get(t.onetSocCode);
     const employment = wages?.employment ?? 0;
+    const areaEmpl = t.areaEmployment ?? 0;
 
     // Post-injury: viable if not excluded
     if (!t.excluded) {
       postInjuryViableCount++;
       postInjuryTotalEmployment += employment;
       postInjuryJoltsOpenings += t.joltsCurrentOpenings ?? 0;
+      postInjuryAreaEmployment += areaEmpl;
     }
 
     // Pre-injury: viable if pre-TFQ passes
@@ -560,6 +634,7 @@ export async function POST(
       preInjuryViableCount!++;
       preInjuryTotalEmployment! += employment;
       preInjuryJoltsOpenings! += t.joltsPreInjuryOpenings ?? t.joltsCurrentOpenings ?? 0;
+      preInjuryAreaEmployment! += areaEmpl;
     }
   }
 
@@ -595,6 +670,14 @@ export async function POST(
       postInjuryViableCount,
       postInjuryTotalEmployment,
       postInjuryJoltsOpenings,
+      // Area-level employment aggregates
+      preInjuryAreaEmployment: hasPreProfile ? preInjuryAreaEmployment : null,
+      postInjuryAreaEmployment,
+      // State-level JOLTS
+      stateJoltsCurrent,
+      stateJoltsPreInjury,
+      stateFips,
+      stateName,
       // MVQS aggregates
       mvqsPostEcMedian,
       mvqsPreEcMedian,

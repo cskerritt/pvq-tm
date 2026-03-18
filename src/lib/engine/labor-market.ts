@@ -2,11 +2,15 @@
  * Labor Market Engine (LMQ)
  *
  * Computes the Labor Market Quotient based on:
- * - Regional employment count
+ * - National employment count
+ * - Area-level (metro) employment count
  * - Wage comparison (target vs prior earnings)
- * - Projected openings
+ * - Projected openings & growth
+ * - JOLTS trend (industry job openings direction)
  *
- * LMQ = weighted composite of employment, wage, and projections scores.
+ * LMQ = weighted composite of all available scoring components.
+ * When optional data (area employment, JOLTS) is unavailable,
+ * weights redistribute proportionally to available components.
  */
 
 export interface LaborMarketInput {
@@ -20,31 +24,43 @@ export interface LaborMarketInput {
   pct25?: number | null;
   pct75?: number | null;
   pct90?: number | null;
+  // New fields for enhanced LMQ
+  areaEmployment?: number | null;
+  joltsTrend?: number | null;       // -1 to +1 normalized trend
+  joltsOpenings?: number | null;    // current JOLTS openings (thousands)
+  stateJoltsOpenings?: number | null; // state-level total nonfarm openings
 }
 
 export interface LMQResult {
   lmq: number;
   components: {
     employmentScore: number;
+    areaEmploymentScore: number | null;
     wageScore: number;
     projectionsScore: number;
+    joltsTrendScore: number | null;
   };
   details: {
     employment: number | null;
+    areaEmployment: number | null;
     medianWage: number | null;
     meanWage: number | null;
     wageRatio: number | null;
     projectedOpenings: number | null;
     projectedGrowthPct: number | null;
+    joltsOpenings: number | null;
+    joltsTrend: number | null;
+    stateJoltsOpenings: number | null;
     pct10: number | null;
     pct25: number | null;
     pct75: number | null;
     pct90: number | null;
+    weightsUsed: Record<string, number>;
   };
 }
 
 /**
- * Score employment count (0-100).
+ * Score national employment count (0-100).
  * Higher employment = more opportunity.
  *
  * Thresholds (national):
@@ -67,16 +83,30 @@ function scoreEmployment(employment: number | null): number {
 }
 
 /**
+ * Score area-level (metro) employment count (0-100).
+ * Lower thresholds than national since metro areas have smaller counts.
+ *
+ * > 10,000 = 100  (major employer in the area)
+ * > 5,000  = 80
+ * > 2,000  = 60
+ * > 500    = 40
+ * > 100    = 20
+ * <= 100   = 10
+ */
+function scoreAreaEmployment(areaEmployment: number | null): number {
+  if (areaEmployment === null) return -1; // signal: no data
+
+  if (areaEmployment > 10000) return 100;
+  if (areaEmployment > 5000) return 80;
+  if (areaEmployment > 2000) return 60;
+  if (areaEmployment > 500) return 40;
+  if (areaEmployment > 100) return 20;
+  return 10;
+}
+
+/**
  * Score wage comparison (0-100).
  * Compares target median wage against worker's prior earnings.
- *
- * Ratio >= 1.0 (same or better) = 100
- * Ratio >= 0.9 = 80
- * Ratio >= 0.75 = 60
- * Ratio >= 0.5 = 40
- * Ratio < 0.5 = 20
- *
- * If no prior earnings, score based on wage relative to median income.
  */
 function scoreWage(
   medianWage: number | null,
@@ -103,13 +133,6 @@ function scoreWage(
 
 /**
  * Score projected employment (0-100).
- *
- * Growth + openings:
- * Growth > 10% AND openings > 10,000 = 100
- * Growth > 5%  AND openings > 5,000  = 80
- * Growth > 0%  AND openings > 1,000  = 60
- * Growth <= 0% OR openings < 1,000   = 40
- * Declining with few openings         = 20
  */
 function scoreProjections(
   projectedOpenings: number | null,
@@ -128,12 +151,35 @@ function scoreProjections(
 }
 
 /**
+ * Score JOLTS trend (0-100).
+ * Maps the -1 to +1 trend score to 0-100.
+ *
+ * +1.0 (strongly growing)  = 100
+ * +0.5 (growing)           = 80
+ *  0.0 (stable)            = 60
+ * -0.5 (declining)         = 40
+ * -1.0 (strongly declining) = 20
+ */
+function scoreJOLTSTrend(trend: number | null): number {
+  if (trend === null) return -1; // signal: no data
+
+  // Linear mapping: trend -1→20, 0→60, +1→100
+  const score = 60 + trend * 40;
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+/**
  * Compute the Labor Market Quotient (LMQ).
  *
- * Weights:
- * - 40% employment score
- * - 35% wage score
- * - 25% projections score
+ * Base weights (when all data available):
+ * - 25% national employment score
+ * - 15% area employment score
+ * - 25% wage score
+ * - 20% projections score
+ * - 15% JOLTS trend score
+ *
+ * When optional components (area, JOLTS) are unavailable,
+ * their weights redistribute proportionally to the core components.
  */
 export function computeLMQ(input: LaborMarketInput): LMQResult {
   const employmentScore = scoreEmployment(input.employment);
@@ -146,27 +192,61 @@ export function computeLMQ(input: LaborMarketInput): LMQResult {
     input.projectedGrowthPct
   );
 
-  const lmq =
-    0.4 * employmentScore + 0.35 * wageScore + 0.25 * projectionsScore;
+  const areaScore = scoreAreaEmployment(input.areaEmployment ?? null);
+  const trendScore = scoreJOLTSTrend(input.joltsTrend ?? null);
+
+  // Build weighted components dynamically based on available data
+  const components: { name: string; weight: number; score: number }[] = [
+    { name: "employment", weight: 0.25, score: employmentScore },
+    { name: "wage", weight: 0.25, score: wageScore },
+    { name: "projections", weight: 0.20, score: projectionsScore },
+  ];
+
+  const hasArea = areaScore >= 0;
+  const hasTrend = trendScore >= 0;
+
+  if (hasArea) {
+    components.push({ name: "areaEmployment", weight: 0.15, score: areaScore });
+  }
+  if (hasTrend) {
+    components.push({ name: "joltsTrend", weight: 0.15, score: trendScore });
+  }
+
+  // Normalize weights to sum to 1.0
+  const totalWeight = components.reduce((s, c) => s + c.weight, 0);
+  const weightsUsed: Record<string, number> = {};
+  let lmq = 0;
+  for (const c of components) {
+    const normalizedWeight = c.weight / totalWeight;
+    weightsUsed[c.name] = Math.round(normalizedWeight * 1000) / 1000;
+    lmq += normalizedWeight * c.score;
+  }
 
   return {
     lmq: Math.round(lmq * 100) / 100,
     components: {
       employmentScore,
+      areaEmploymentScore: hasArea ? areaScore : null,
       wageScore,
       projectionsScore,
+      joltsTrendScore: hasTrend ? trendScore : null,
     },
     details: {
       employment: input.employment,
+      areaEmployment: input.areaEmployment ?? null,
       medianWage: input.medianWage,
       meanWage: input.meanWage,
       wageRatio: wageRatio !== null ? Math.round(wageRatio * 100) / 100 : null,
       projectedOpenings: input.projectedOpenings,
       projectedGrowthPct: input.projectedGrowthPct,
+      joltsOpenings: input.joltsOpenings ?? null,
+      joltsTrend: input.joltsTrend ?? null,
+      stateJoltsOpenings: input.stateJoltsOpenings ?? null,
       pct10: input.pct10 ?? null,
       pct25: input.pct25 ?? null,
       pct75: input.pct75 ?? null,
       pct90: input.pct90 ?? null,
+      weightsUsed,
     },
   };
 }

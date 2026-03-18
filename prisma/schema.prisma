@@ -113,6 +113,18 @@ model JOLTSIndustryData {
   @@unique([naicsCode, year])
 }
 
+model JOLTSStateData {
+  id          String   @id @default(cuid())
+  stateCode   String   // FIPS code: "01"-"56" or region "NE","MW","SO","WE"
+  stateName   String
+  year        Int
+  jobOpenings Float?   // thousands
+  hires       Float?   // thousands
+  createdAt   DateTime @default(now())
+
+  @@unique([stateCode, year])
+}
+
 model DOTONETCrosswalk {
   id          String @id @default(cuid())
   dotCode     String
@@ -254,6 +266,14 @@ model Analysis {
   postInjuryTotalEmployment Float?
   postInjuryJoltsOpenings  Float?
 
+  // ─── Area-Level Employment Aggregates ──────────────────────
+  preInjuryAreaEmployment  Float?  // sum of area employment for pre-injury viable occs
+  postInjuryAreaEmployment Float?  // sum of area employment for post-injury viable occs
+  stateJoltsCurrent        Float?  // state-level JOLTS openings (current year)
+  stateJoltsPreInjury      Float?  // state-level JOLTS openings (injury year)
+  stateFips                String? // state FIPS code used for JOLTS lookup
+  stateName                String? // state name
+
   // ─── MVQS Earning Capacity Aggregates ──────────────────────
   mvqsPostEcMedian     Float?  // Weighted avg earning capacity (post-injury viable)
   mvqsPreEcMedian      Float?  // Weighted avg earning capacity (pre-injury viable)
@@ -292,6 +312,12 @@ model TargetOccupation {
   joltsIndustryName      String?
   joltsCurrentOpenings   Float?   // current year openings (thousands)
   joltsPreInjuryOpenings Float?   // injury year openings (thousands)
+  joltsTrend             Float?   // trend score (-1 to +1, from linear regression)
+  joltsTrendLabel        String?  // "strongly_growing"|"growing"|"stable"|"declining"|"strongly_declining"
+
+  // ─── Area-Level Employment ────────────────────────────────────
+  areaEmployment         Int?     // employment count in evaluee's metro area
+  areaMedianWage         Float?   // median wage in evaluee's metro area
 
   // ─── MVQS: Vocational Quotient ─────────────────────────────
   vqScore        Float?   // MVQS VQ score (68-158 scale, mean=100, SD=15)
