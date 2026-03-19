@@ -17,10 +17,13 @@ if [ -n "$DATABASE_URL" ]; then
     20260319000000_add_local_demand_columns \
     20260319100000_add_hired_jobs_and_local_demand \
     20260319110000_add_injury_prw_earnings_trait_sources \
-    20260319180000_add_labor_market_access \
-    20260319190000_ensure_all_columns; do
+    20260319180000_add_labor_market_access; do
     node node_modules/prisma/build/index.js migrate resolve --applied "$migration" 2>/dev/null || true
   done
+
+  # Force the catch-all migration to actually run by marking it as NOT applied first.
+  # This ensures all missing columns get created on the production database.
+  node node_modules/prisma/build/index.js migrate resolve --rolled-back 20260319190000_ensure_all_columns 2>/dev/null || true
 
   if node node_modules/prisma/build/index.js migrate deploy; then
     echo "Migrations complete."
