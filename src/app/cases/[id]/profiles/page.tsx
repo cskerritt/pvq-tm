@@ -101,6 +101,7 @@ export default function ProfilesPage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [traitSources, setTraitSources] = useState<Record<string, TraitSourceEntry>>({});
+  const [autoAnalyzed, setAutoAnalyzed] = useState(false);
 
   function setTraitSource(trait: string, field: keyof TraitSourceEntry, value: string | null) {
     setTraitSources((prev) => ({
@@ -144,6 +145,22 @@ export default function ProfilesPage() {
   useEffect(() => {
     loadProfiles();
   }, [loadProfiles]);
+
+  // Auto-analyze PRW when profiles are empty (first visit)
+  useEffect(() => {
+    if (autoAnalyzed || analyzing || dirty) return;
+    // Check if WORK_HISTORY row is completely empty (no traits filled)
+    const wh = profiles.WORK_HISTORY;
+    if (!wh) return;
+    const hasAnyTrait = TRAIT_KEYS.some(
+      (k) => wh[k] !== undefined && wh[k] !== null
+    );
+    if (!hasAnyTrait) {
+      setAutoAnalyzed(true);
+      analyzePRW();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profiles, autoAnalyzed, analyzing, dirty]);
 
   function setTraitValue(
     profileType: ProfileType,
@@ -250,6 +267,41 @@ export default function ProfilesPage() {
       <WizardNav caseId={caseId} currentStep={4} />
       <div className="p-4 md:p-6 space-y-4">
       <CaseBreadcrumb caseId={caseId} currentPage="Worker Profiles" />
+
+      {/* Auto-analysis banner */}
+      {analyzing && (
+        <Card className="border-blue-300 bg-blue-50 dark:bg-blue-950">
+          <CardContent className="py-4">
+            <div className="flex items-center gap-3">
+              <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-500 border-t-transparent" />
+              <div>
+                <p className="font-semibold text-blue-800 dark:text-blue-200">
+                  Analyzing Past Relevant Work...
+                </p>
+                <p className="text-sm text-blue-600 dark:text-blue-300">
+                  Building all 24 traits from DOT, O*NET, and ORS data for your PRW entries. All 4 profile rows will be populated automatically.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Post-analysis instruction banner */}
+      {!analyzing && dirty && !saving && (
+        <Card className="border-amber-300 bg-amber-50 dark:bg-amber-950">
+          <CardContent className="py-4">
+            <div>
+              <p className="font-semibold text-amber-800 dark:text-amber-200">
+                ✏️ Review & Adjust the Evaluative Profile
+              </p>
+              <p className="text-sm text-amber-600 dark:text-amber-300">
+                All 4 profiles were auto-filled from PRW data. Now adjust the <strong>Evaluative</strong> row to reflect medical restrictions (FCE results, physician opinions, vocational testing). Changes to the Evaluative row automatically update the Post-Injury row. Then click <strong>Save All</strong>.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
