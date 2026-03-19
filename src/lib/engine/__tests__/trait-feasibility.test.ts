@@ -3,6 +3,9 @@ import {
   computeTFQ,
   buildDOTDemandVector,
   buildOccupationDemands,
+  getStrengthSVPDefaults,
+  deriveDPTTraits,
+  type TraitSource,
 } from '@/lib/engine/trait-feasibility';
 import { type TraitVector, TRAIT_KEYS } from '@/lib/engine/traits';
 
@@ -27,6 +30,14 @@ function makeVector(
     (v as Record<string, number | null>)[key] = val;
   }
   return v;
+}
+
+/** Assert no nulls in a TraitVector */
+function assertNoNulls(demands: TraitVector) {
+  for (const key of TRAIT_KEYS) {
+    expect(demands[key], `${key} should not be null`).not.toBeNull();
+    expect(demands[key], `${key} should not be undefined`).not.toBeUndefined();
+  }
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────
@@ -118,7 +129,7 @@ describe('computeTFQ', () => {
   it('should track data sources in comparisons', () => {
     const worker = uniformVector(3);
     const demands = uniformVector(2);
-    const sources: Partial<Record<string, 'ORS' | 'DOT' | 'ONET' | 'proxy'>> = {
+    const sources: Partial<Record<string, TraitSource>> = {
       reasoning: 'DOT',
       strength: 'ORS',
     };
@@ -153,7 +164,18 @@ describe('buildDOTDemandVector', () => {
     expect(sources.strength).toBe('DOT');
   });
 
-  it('should set remaining traits to null with proxy source', () => {
+  it('should return no null values for any trait', () => {
+    const { demands } = buildDOTDemandVector({
+      gedR: 3,
+      gedM: 2,
+      gedL: 4,
+      strength: 'L',
+    });
+
+    assertNoNulls(demands);
+  });
+
+  it('should fill previously-null traits with fallback sources', () => {
     const { demands, sources } = buildDOTDemandVector({
       gedR: 3,
       gedM: 2,
@@ -161,13 +183,15 @@ describe('buildDOTDemandVector', () => {
       strength: 'L',
     });
 
-    // Traits not mapped from DOT should be null
-    expect(demands.spatialPerception).toBeNull();
-    expect(demands.fingerDexterity).toBeNull();
-    expect(demands.hazards).toBeNull();
+    // These traits should no longer be null
+    expect(typeof demands.spatialPerception).toBe('number');
+    expect(typeof demands.fingerDexterity).toBe('number');
+    expect(typeof demands.hazards).toBe('number');
 
-    expect(sources.spatialPerception).toBe('proxy');
-    expect(sources.fingerDexterity).toBe('proxy');
+    // Sources should reflect fallback chain
+    const validSources: TraitSource[] = ['DOT', 'ONET', 'DPT_PROXY', 'SVP_PROXY', 'proxy'];
+    expect(validSources).toContain(sources.spatialPerception);
+    expect(validSources).toContain(sources.fingerDexterity);
   });
 
   it('should handle sedentary strength and apply SVP proxy for zero GED', () => {
@@ -185,6 +209,9 @@ describe('buildDOTDemandVector', () => {
     expect(demands.math).toBe(0.4);
     expect(demands.language).toBe(0.8);
     expect(gedSource).toBe('SVP_PROXY');
+
+    // All traits should be filled
+    assertNoNulls(demands);
   });
 
   it('should handle very heavy strength', () => {
@@ -197,6 +224,54 @@ describe('buildDOTDemandVector', () => {
 
     expect(demands.strength).toBe(4);
     expect(demands.reasoning).toBe(4); // normalizeDOTGED(6) = 4
+
+    // All traits should be filled
+    assertNoNulls(demands);
+  });
+
+  it('should use O*NET abilities for aptitude/motor traits when available', () => {
+    const onetData = {
+      abilities: [
+        { id: "1.A.2.b.3", name: "Spatial Orientation", value: 3, level: 3.5 },
+        { id: "1.A.2.b.2", name: "Perceptual Speed", value: 3, level: 2.8 },
+        { id: "1.A.2.a.4", name: "Finger Dexterity", value: 4, level: 4.2 },
+      ],
+    };
+
+    const { demands, sources } = buildDOTDemandVector(
+      { gedR: 3, gedM: 2, gedL: 4, strength: 'M' },
+      onetData,
+    );
+
+    // spatialPerception should come from O*NET
+    expect(demands.spatialPerception).toBeGreaterThan(0);
+    expect(sources.spatialPerception).toBe('ONET');
+
+    // fingerDexterity should come from O*NET
+    expect(demands.fingerDexterity).toBeGreaterThan(0);
+    expect(sources.fingerDexterity).toBe('ONET');
+
+    assertNoNulls(demands);
+  });
+
+  it('should use DPT inference when O*NET is unavailable', () => {
+    const { demands, sources } = buildDOTDemandVector({
+      gedR: 3,
+      gedM: 2,
+      gedL: 4,
+      strength: 'M',
+      data: 2,       // Analyzing
+      people: 6,     // Speaking-Signaling
+      things: 1,     // Precision Working
+    });
+
+    // DPT should contribute to motor/dexterity traits
+    // Things=1 (Precision Working) → high motorCoordination, fingerDexterity
+    assertNoNulls(demands);
+
+    // With DPT data=2 (Analyzing), clericalPerception should be derived
+    const source = sources.clericalPerception;
+    expect(['ONET', 'DPT_PROXY', 'SVP_PROXY']).toContain(source);
   });
 });
 
@@ -230,17 +305,44 @@ describe('buildOccupationDemands', () => {
     expect(sources.reasoning).toBe('ONET');
   });
 
-  it('should set SVP proxy values for reasoning/math/language when no data is available', () => {
-    const { demands, sources, gedSource } = buildOccupationDemands(null, null, null);
+  it('should return no null values even when no data is available', () => {
+    const { demands } = buildOccupationDemands(null, null, null);
+
+    assertNoNulls(demands);
 
     // With no data at all, SVP defaults to 2 (unskilled)
     expect(demands.reasoning).toBe(0.8);
     expect(demands.math).toBe(0.4);
     expect(demands.language).toBe(0.8);
-    expect(sources.reasoning).toBe('proxy');
-    expect(gedSource).toBe('SVP_PROXY');
-    // Non-GED traits remain null
-    expect(demands.spatialPerception).toBeNull();
+  });
+
+  it('should return no null values with partial DOT data', () => {
+    const dotData = { reasoning: 2, strength: 'M', svp: 4 };
+
+    const { demands } = buildOccupationDemands(null, dotData, null);
+
+    assertNoNulls(demands);
+  });
+
+  it('should return no null values with O*NET abilities and work context', () => {
+    const onetData = {
+      abilities: [
+        { id: "1.A.2.b.3", name: "Spatial Orientation", value: 3, level: 3.5 },
+        { id: "1.A.2.a.4", name: "Finger Dexterity", value: 4, level: 4.2 },
+      ],
+      workContext: [
+        { name: "Outdoors, Exposed to Weather", level: 2 },
+        { name: "Exposed to Hazardous Conditions", level: 3 },
+      ],
+    };
+
+    const { demands, sources } = buildOccupationDemands(null, null, onetData);
+
+    assertNoNulls(demands);
+
+    // O*NET-derived traits should be properly sourced
+    expect(sources.spatialPerception).toBe('ONET');
+    expect(sources.fingerDexterity).toBe('ONET');
   });
 
   it('should handle mixed sources across different traits', () => {
@@ -256,5 +358,175 @@ describe('buildOccupationDemands', () => {
     expect(sources.strength).toBe('DOT');
     expect(demands.math).toBe(1);
     expect(sources.math).toBe('ONET');
+
+    // All traits should be filled
+    assertNoNulls(demands);
+  });
+
+  it('should track sources accurately through the fallback chain', () => {
+    const onetData = {
+      abilities: [
+        { id: "1.A.2.b.3", name: "Spatial Orientation", value: 3, level: 3.5 },
+      ],
+    };
+    const dotData = { strength: 'H', svp: 4 };
+
+    const { sources } = buildOccupationDemands(null, dotData, onetData);
+
+    // spatialPerception from O*NET abilities
+    expect(sources.spatialPerception).toBe('ONET');
+
+    // strength from DOT
+    expect(sources.strength).toBe('DOT');
+
+    // Traits not covered by any primary source should be SVP_PROXY
+    // (since no DPT data is available in dotData)
+    const fallbackSources: TraitSource[] = ['ONET', 'DPT_PROXY', 'SVP_PROXY', 'proxy'];
+    expect(fallbackSources).toContain(sources.hazards);
+    expect(fallbackSources).toContain(sources.dustsFumes);
+  });
+});
+
+describe('getStrengthSVPDefaults', () => {
+  it('should return a complete TraitVector with no nulls', () => {
+    const strengths = ['S', 'L', 'M', 'H', 'V'];
+    const svps = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+    for (const s of strengths) {
+      for (const svp of svps) {
+        const defaults = getStrengthSVPDefaults(s, svp);
+        assertNoNulls(defaults);
+      }
+    }
+  });
+
+  it('should have low physical demands for sedentary occupations', () => {
+    const defaults = getStrengthSVPDefaults('S', 2);
+
+    expect(defaults.strength).toBe(0);
+    expect(defaults.climbBalance).toBe(0);
+    expect(defaults.stoopKneel).toBe(0);
+    expect(defaults.workLocation).toBe(0); // inside
+    expect(defaults.extremeCold).toBe(0);
+    expect(defaults.extremeHeat).toBe(0);
+    expect(defaults.hazards).toBe(0);
+  });
+
+  it('should have high physical demands for heavy occupations', () => {
+    const defaults = getStrengthSVPDefaults('H', 4);
+
+    expect(defaults.strength).toBe(3);
+    expect(defaults.climbBalance).toBeGreaterThanOrEqual(2);
+    expect(defaults.stoopKneel).toBeGreaterThanOrEqual(2);
+    expect(defaults.hazards).toBeGreaterThanOrEqual(2);
+    expect(defaults.noiseVibration).toBeGreaterThanOrEqual(2);
+  });
+
+  it('should have higher cognitive demands for high SVP', () => {
+    const lowSVP = getStrengthSVPDefaults('M', 2);
+    const highSVP = getStrengthSVPDefaults('M', 8);
+
+    expect(highSVP.reasoning).toBeGreaterThan(lowSVP.reasoning);
+    expect(highSVP.math).toBeGreaterThan(lowSVP.math);
+  });
+
+  it('should scale physical demands with strength level', () => {
+    const sedentary = getStrengthSVPDefaults('S', 4);
+    const heavy = getStrengthSVPDefaults('H', 4);
+    const veryHeavy = getStrengthSVPDefaults('V', 4);
+
+    expect(sedentary.strength).toBeLessThan(heavy.strength);
+    expect(heavy.strength).toBeLessThanOrEqual(veryHeavy.strength);
+    expect(sedentary.climbBalance).toBeLessThan(heavy.climbBalance);
+  });
+
+  it('should handle unknown strength codes gracefully', () => {
+    const defaults = getStrengthSVPDefaults('X', 2);
+    assertNoNulls(defaults);
+  });
+});
+
+describe('deriveDPTTraits', () => {
+  it('should derive clerical/spatial from high Data function', () => {
+    // Data=0 (Synthesizing) = highest complexity
+    const traits = deriveDPTTraits(0, null, null);
+
+    expect(traits.clericalPerception).toBeGreaterThan(0);
+    expect(traits.spatialPerception).toBeGreaterThan(0);
+  });
+
+  it('should derive talkHear from low People function code', () => {
+    // People=0 (Mentoring) = highest interaction
+    const traits = deriveDPTTraits(null, 0, null);
+
+    expect(traits.talkHear).toBeGreaterThan(0);
+  });
+
+  it('should derive motor/dexterity from low Things function code', () => {
+    // Things=0 (Setting Up) = highest complexity
+    const traits = deriveDPTTraits(null, null, 0);
+
+    expect(traits.motorCoordination).toBeGreaterThan(0);
+    expect(traits.fingerDexterity).toBeGreaterThan(0);
+    expect(traits.manualDexterity).toBeGreaterThan(0);
+  });
+
+  it('should return lower values for low-complexity DPT codes', () => {
+    const highComplexity = deriveDPTTraits(0, 0, 0);
+    const lowComplexity = deriveDPTTraits(6, 8, 7);
+
+    expect(highComplexity.clericalPerception!).toBeGreaterThan(lowComplexity.clericalPerception!);
+    expect(highComplexity.talkHear!).toBeGreaterThan(lowComplexity.talkHear!);
+    expect(highComplexity.motorCoordination!).toBeGreaterThan(lowComplexity.motorCoordination!);
+  });
+
+  it('should return empty object when all inputs are null', () => {
+    const traits = deriveDPTTraits(null, null, null);
+    expect(Object.keys(traits).length).toBe(0);
+  });
+});
+
+describe('no-nulls guarantee', () => {
+  it('buildDOTDemandVector returns no nulls with minimal input', () => {
+    const { demands } = buildDOTDemandVector({
+      gedR: 1,
+      gedM: 1,
+      gedL: 1,
+      strength: 'S',
+    });
+    assertNoNulls(demands);
+  });
+
+  it('buildOccupationDemands returns no nulls with no data at all', () => {
+    const { demands } = buildOccupationDemands(null, null, null);
+    assertNoNulls(demands);
+  });
+
+  it('buildOccupationDemands returns no nulls with only partial ORS data', () => {
+    const orsData = { reasoning: 3, strength: 2 };
+    const { demands } = buildOccupationDemands(orsData, null, null);
+    assertNoNulls(demands);
+  });
+
+  it('all 24 traits are present and numeric in every scenario', () => {
+    const scenarios = [
+      buildOccupationDemands(null, null, null),
+      buildOccupationDemands({ reasoning: 2 }, null, null),
+      buildOccupationDemands(null, { strength: 3, svp: 6 }, null), // H=3 on 0-4 scale
+      buildOccupationDemands(null, null, {
+        abilities: [{ id: "1.A.2.b.3", name: "Spatial Orientation", value: 3, level: 3.5 }],
+      }),
+      buildDOTDemandVector({ gedR: 4, gedM: 3, gedL: 5, strength: 'M', svp: 5 }),
+      buildDOTDemandVector({ gedR: 1, gedM: 1, gedL: 1, strength: 'S' }),
+    ];
+
+    for (const { demands } of scenarios) {
+      assertNoNulls(demands);
+      for (const key of TRAIT_KEYS) {
+        expect(typeof demands[key]).toBe('number');
+        expect(demands[key]).toBeGreaterThanOrEqual(0);
+        expect(demands[key]).toBeLessThanOrEqual(4);
+      }
+    }
   });
 });

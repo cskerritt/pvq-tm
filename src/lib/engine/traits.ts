@@ -514,7 +514,7 @@ export interface TraitComparison {
   occupationDemand: number | null;
   margin: number | null; // positive = surplus, negative = deficit
   passes: boolean;
-  source: "ORS" | "DOT" | "ONET" | "proxy";
+  source: "ORS" | "DOT" | "ONET" | "DPT_PROXY" | "SVP_PROXY" | "proxy";
 }
 
 /**
@@ -524,7 +524,7 @@ export interface TraitComparison {
 export function compareTraits(
   workerProfile: TraitVector,
   occupationDemands: TraitVector,
-  sources?: Partial<Record<TraitKey, "ORS" | "DOT" | "ONET" | "proxy">>
+  sources?: Partial<Record<TraitKey, "ORS" | "DOT" | "ONET" | "DPT_PROXY" | "SVP_PROXY" | "proxy">>
 ): TraitComparison[] {
   return TRAIT_KEYS.map((trait) => {
     const capacity = workerProfile[trait];

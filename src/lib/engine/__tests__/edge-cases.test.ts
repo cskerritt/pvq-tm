@@ -812,7 +812,8 @@ describe("buildOccupationDemands edge cases", () => {
     expect(sources.reasoning).toBe("DOT");
     expect(demands.spatialPerception).toBe(1);
     expect(sources.spatialPerception).toBe("ONET");
-    expect(demands.hazards).toBeNull();
-    expect(sources.hazards).toBe("proxy");
+    // hazards is filled via the fallback chain (no longer null)
+    expect(demands.hazards).not.toBeNull();
+    expect(typeof demands.hazards).toBe("number");
   });
 });
