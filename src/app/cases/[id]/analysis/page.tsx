@@ -50,6 +50,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { CaseBreadcrumb } from "@/components/case-breadcrumb";
+import { WizardNav, WizardNavButtons } from "@/components/wizard-nav";
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -458,7 +459,9 @@ export default function AnalysisPage() {
   const excludedOccs = active?.targetOccupations?.filter((t) => t.excluded) ?? [];
 
   return (
-    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+    <div>
+      <WizardNav caseId={caseId} currentStep={5} />
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <CaseBreadcrumb caseId={caseId} currentPage="Analysis" />
 
       <div className="flex items-center justify-between">
@@ -1155,6 +1158,9 @@ export default function AnalysisPage() {
           )}
         </>
       )}
+
+      <WizardNavButtons caseId={caseId} currentStep={5} />
+      </div>
     </div>
   );
 }

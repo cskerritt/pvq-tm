@@ -170,16 +170,21 @@ describe('buildDOTDemandVector', () => {
     expect(sources.fingerDexterity).toBe('proxy');
   });
 
-  it('should handle sedentary strength', () => {
-    const { demands } = buildDOTDemandVector({
+  it('should handle sedentary strength and apply SVP proxy for zero GED', () => {
+    const { demands, gedSource } = buildDOTDemandVector({
       gedR: 1,
       gedM: 1,
       gedL: 1,
       strength: 'S',
+      svp: 2,
     });
 
     expect(demands.strength).toBe(0);
-    expect(demands.reasoning).toBe(0); // normalizeDOTGED(1) = 0
+    // normalizeDOTGED(1) = 0, but SVP proxy kicks in (SVP 2 → reasoning=0.8)
+    expect(demands.reasoning).toBe(0.8);
+    expect(demands.math).toBe(0.4);
+    expect(demands.language).toBe(0.8);
+    expect(gedSource).toBe('SVP_PROXY');
   });
 
   it('should handle very heavy strength', () => {
@@ -225,11 +230,17 @@ describe('buildOccupationDemands', () => {
     expect(sources.reasoning).toBe('ONET');
   });
 
-  it('should set proxy source when no data is available', () => {
-    const { demands, sources } = buildOccupationDemands(null, null, null);
+  it('should set SVP proxy values for reasoning/math/language when no data is available', () => {
+    const { demands, sources, gedSource } = buildOccupationDemands(null, null, null);
 
-    expect(demands.reasoning).toBeNull();
+    // With no data at all, SVP defaults to 2 (unskilled)
+    expect(demands.reasoning).toBe(0.8);
+    expect(demands.math).toBe(0.4);
+    expect(demands.language).toBe(0.8);
     expect(sources.reasoning).toBe('proxy');
+    expect(gedSource).toBe('SVP_PROXY');
+    // Non-GED traits remain null
+    expect(demands.spatialPerception).toBeNull();
   });
 
   it('should handle mixed sources across different traits', () => {

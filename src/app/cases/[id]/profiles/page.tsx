@@ -27,6 +27,7 @@ import { Label } from "@/components/ui/label";
 import { Save, RotateCcw, Zap, Info } from "lucide-react";
 import { toast } from "sonner";
 import { CaseBreadcrumb } from "@/components/case-breadcrumb";
+import { WizardNav, WizardNavButtons } from "@/components/wizard-nav";
 import {
   TRAIT_KEYS,
   TRAIT_LABELS,
@@ -245,7 +246,9 @@ export default function ProfilesPage() {
   };
 
   return (
-    <div className="p-4 md:p-6 space-y-4">
+    <div>
+      <WizardNav caseId={caseId} currentStep={4} />
+      <div className="p-4 md:p-6 space-y-4">
       <CaseBreadcrumb caseId={caseId} currentPage="Worker Profiles" />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -589,6 +592,9 @@ export default function ProfilesPage() {
           </div>
         </CardContent>
       </Card>
+
+      <WizardNavButtons caseId={caseId} currentStep={4} />
+      </div>
     </div>
   );
 }

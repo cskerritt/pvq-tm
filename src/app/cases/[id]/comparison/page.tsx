@@ -33,6 +33,13 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { CaseBreadcrumb } from "@/components/case-breadcrumb";
+import { WizardNav, WizardNavButtons } from "@/components/wizard-nav";
+import {
+  ScoreTooltip,
+  buildVQBreakdown,
+  buildECBreakdown,
+  buildSTQBreakdown,
+} from "@/components/score-tooltip";
 
 interface Profile {
   profileType: string;
@@ -96,6 +103,14 @@ interface TargetOcc {
   ecGeoAdjusted: boolean | null;
   preVqScore: number | null;
   preEcMedian: number | null;
+  // Detail JSON fields for score breakdowns
+  stqDetails: Record<string, unknown> | null;
+  tfqDetails: Record<string, unknown> | null;
+  vaqDetails: Record<string, unknown> | null;
+  lmqDetails: Record<string, unknown> | null;
+  vqDetails: Record<string, unknown> | null;
+  ecDetails: Record<string, unknown> | null;
+  confidenceGrade: string | null;
   // Near-miss fields
   nearMissSeverity: string | null;
   nearMissDetails: Record<string, unknown> | null;
@@ -363,7 +378,9 @@ export default function ComparisonPage() {
   const regionalData = safeJson(analysis?.regionalLaborMarket);
 
   return (
-    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+    <div>
+      <WizardNav caseId={caseId} currentStep={7} />
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <CaseBreadcrumb caseId={caseId} currentPage="Pre/Post Comparison" />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1219,7 +1236,12 @@ export default function ComparisonPage() {
                               <p className="text-xs text-muted-foreground font-mono">{t.onetSocCode}</p>
                             </div>
                           </TableCell>
-                          <TableCell className="text-center font-mono text-sm">{t.vqScore?.toFixed(0) ?? "\u2014"}</TableCell>
+                          <TableCell className="text-center">
+                            <div className="flex items-center justify-center gap-0.5">
+                              <span className="font-mono text-sm">{t.vqScore?.toFixed(0) ?? "\u2014"}</span>
+                              <ScoreTooltip breakdown={buildVQBreakdown(t.vqScore, t.vqBand, t.vqDetails)} />
+                            </div>
+                          </TableCell>
                           <TableCell className="text-center">
                             <Badge className={`${getVQBandColor(t.vqBand)} text-xs`} variant="outline">
                               B{t.vqBand} {getVQBandLabel(t.vqBand)}
@@ -1232,8 +1254,11 @@ export default function ComparisonPage() {
                               </Badge>
                             ) : "\u2014"}
                           </TableCell>
-                          <TableCell className="text-right font-mono text-sm font-semibold text-green-700">
-                            {formatHourly(t.ecMedian)}
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-0.5">
+                              <span className="font-mono text-sm font-semibold text-green-700">{formatHourly(t.ecMedian)}</span>
+                              <ScoreTooltip breakdown={buildECBreakdown(t)} />
+                            </div>
                           </TableCell>
                           <TableCell className="text-right text-xs text-muted-foreground">
                             {formatAnnual(t.ecMedian)}
@@ -1348,9 +1373,12 @@ export default function ComparisonPage() {
                       {coreOccs.map((t) => (
                         <div key={t.id} className="flex items-center justify-between rounded border p-2 bg-purple-50/50">
                           <span className="text-sm">{t.title}</span>
-                          <Badge variant="outline" className="bg-purple-100 text-purple-800 text-xs">
-                            STQ {t.stq?.toFixed(0)}
-                          </Badge>
+                          <div className="flex items-center gap-0.5">
+                            <Badge variant="outline" className="bg-purple-100 text-purple-800 text-xs">
+                              STQ {t.stq?.toFixed(0)}
+                            </Badge>
+                            <ScoreTooltip breakdown={buildSTQBreakdown(t.stq, t.stqDetails)} />
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1373,9 +1401,12 @@ export default function ComparisonPage() {
                       {peripheralOccs.map((t) => (
                         <div key={t.id} className="flex items-center justify-between rounded border p-2 bg-slate-50/50">
                           <span className="text-sm">{t.title}</span>
-                          <Badge variant="outline" className="text-xs">
-                            STQ {t.stq?.toFixed(0)}
-                          </Badge>
+                          <div className="flex items-center gap-0.5">
+                            <Badge variant="outline" className="text-xs">
+                              STQ {t.stq?.toFixed(0)}
+                            </Badge>
+                            <ScoreTooltip breakdown={buildSTQBreakdown(t.stq, t.stqDetails)} />
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1582,6 +1613,9 @@ export default function ComparisonPage() {
           </p>
         </CardContent>
       </Card>
+
+      <WizardNavButtons caseId={caseId} currentStep={7} />
+      </div>
     </div>
   );
 }

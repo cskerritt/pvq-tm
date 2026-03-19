@@ -26,6 +26,7 @@ import {
 import { Plus, Search, Briefcase, Trash2, Pencil, ExternalLink, Loader2, Sparkles, ChevronDown, ChevronUp, CheckSquare, Square } from "lucide-react";
 import { toast } from "sonner";
 import { CaseBreadcrumb } from "@/components/case-breadcrumb";
+import { WizardNav, WizardNavButtons } from "@/components/wizard-nav";
 
 interface WageInfo {
   areaName: string;
@@ -869,7 +870,9 @@ export default function PRWPage() {
   const STRENGTH_MAP: Record<string, string> = { S: "Sedentary", L: "Light", M: "Medium", H: "Heavy", V: "Very Heavy" };
 
   return (
-    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+    <div>
+      <WizardNav caseId={caseId} currentStep={2} />
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <CaseBreadcrumb caseId={caseId} currentPage="Past Relevant Work" />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1687,6 +1690,9 @@ export default function PRWPage() {
           ))}
         </div>
       )}
+
+      <WizardNavButtons caseId={caseId} currentStep={2} />
+      </div>
     </div>
   );
 }

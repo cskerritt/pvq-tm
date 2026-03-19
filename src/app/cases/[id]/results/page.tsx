@@ -20,6 +20,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Fragment } from "react";
 import { CaseBreadcrumb } from "@/components/case-breadcrumb";
+import {
+  ScoreTooltip,
+  buildTFQBreakdown,
+  buildPVQBreakdown,
+  buildLMQBreakdown,
+  buildVQBreakdown,
+  buildECBreakdown,
+  buildSTQBreakdown,
+  buildVAQBreakdown,
+} from "@/components/score-tooltip";
+import { WizardNav, WizardNavButtons } from "@/components/wizard-nav";
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -1045,7 +1056,9 @@ export default function ResultsPage() {
   const regionalLaborMarket = selected.regionalLaborMarket as RegionalLaborMarket | null;
 
   return (
-    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+    <div>
+      <WizardNav caseId={caseId} currentStep={6} />
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <CaseBreadcrumb caseId={caseId} currentPage="Results" />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1118,9 +1131,16 @@ export default function ResultsPage() {
             <CardTitle className="text-sm font-medium">Top PVQ</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {viable.length > 0 ? Math.max(...viable.map((t) => t.pvq ?? 0)).toFixed(1) : "\u2014"}
-            </div>
+            {(() => {
+              if (viable.length === 0) return <div className="text-2xl font-bold">{"\u2014"}</div>;
+              const topOcc = viable.reduce((best, t) => (t.pvq ?? 0) > (best.pvq ?? 0) ? t : best, viable[0]);
+              return (
+                <div className="flex items-center gap-1">
+                  <span className="text-2xl font-bold">{(topOcc.pvq ?? 0).toFixed(1)}</span>
+                  <ScoreTooltip breakdown={buildPVQBreakdown(topOcc.pvq, topOcc.stq, topOcc.tfq, topOcc.vaq, topOcc.lmq, topOcc.confidenceGrade)} />
+                </div>
+              );
+            })()}
           </CardContent>
         </Card>
         <Card>
@@ -1488,18 +1508,44 @@ export default function ResultsPage() {
                       <span className="block md:hidden text-xs text-muted-foreground font-mono">{t.onetSocCode}</span>
                     </TableCell>
                     <TableCell className="hidden md:table-cell">{t.svp ?? "\u2014"}</TableCell>
-                    <TableCell className="hidden md:table-cell text-right"><ScoreCell value={t.stq} /></TableCell>
-                    <TableCell className="hidden md:table-cell text-right"><ScoreCell value={t.tfq} /></TableCell>
-                    <TableCell className="hidden md:table-cell text-right"><ScoreCell value={t.vaq} /></TableCell>
-                    <TableCell className="hidden md:table-cell text-right"><ScoreCell value={t.lmq} /></TableCell>
-                    <TableCell className="text-right"><ScoreCell value={t.pvq} /></TableCell>
+                    <TableCell className="hidden md:table-cell text-right">
+                      <div className="flex items-center justify-end gap-0.5">
+                        <ScoreCell value={t.stq} />
+                        <ScoreTooltip breakdown={buildSTQBreakdown(t.stq, t.stqDetails)} />
+                      </div>
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell text-right">
+                      <div className="flex items-center justify-end gap-0.5">
+                        <ScoreCell value={t.tfq} />
+                        <ScoreTooltip breakdown={buildTFQBreakdown(t.tfq, t.tfqDetails)} />
+                      </div>
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell text-right">
+                      <div className="flex items-center justify-end gap-0.5">
+                        <ScoreCell value={t.vaq} />
+                        <ScoreTooltip breakdown={buildVAQBreakdown(t.vaq, t.vaqDetails)} />
+                      </div>
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell text-right">
+                      <div className="flex items-center justify-end gap-0.5">
+                        <ScoreCell value={t.lmq} />
+                        <ScoreTooltip breakdown={buildLMQBreakdown(t.lmq, t.lmqDetails)} />
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-0.5">
+                        <ScoreCell value={t.pvq} />
+                        <ScoreTooltip breakdown={buildPVQBreakdown(t.pvq, t.stq, t.tfq, t.vaq, t.lmq, t.confidenceGrade)} />
+                      </div>
+                    </TableCell>
                     <TableCell className="hidden md:table-cell text-right">
                       {t.vqScore !== null ? (
-                        <div className="flex items-center justify-end gap-1">
+                        <div className="flex items-center justify-end gap-0.5">
                           <span className="font-mono text-sm">{t.vqScore.toFixed(0)}</span>
                           <Badge className={`${getVQBandColor(t.vqBand)} text-[10px] px-1`} variant="outline">
                             B{t.vqBand}
                           </Badge>
+                          <ScoreTooltip breakdown={buildVQBreakdown(t.vqScore, t.vqBand, t.vqDetails)} />
                         </div>
                       ) : "\u2014"}
                     </TableCell>
@@ -1515,7 +1561,10 @@ export default function ResultsPage() {
                     </TableCell>
                     <TableCell className="hidden md:table-cell text-right">
                       {t.ecMedian !== null ? (
-                        <span className="font-mono text-sm font-semibold text-green-700">{formatHourly(t.ecMedian)}</span>
+                        <div className="flex items-center justify-end gap-0.5">
+                          <span className="font-mono text-sm font-semibold text-green-700">{formatHourly(t.ecMedian)}</span>
+                          <ScoreTooltip breakdown={buildECBreakdown(t)} />
+                        </div>
                       ) : "\u2014"}
                     </TableCell>
                     <TableCell className="text-center">
@@ -2576,6 +2625,9 @@ export default function ResultsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <WizardNavButtons caseId={caseId} currentStep={6} />
+      </div>
     </div>
   );
 }

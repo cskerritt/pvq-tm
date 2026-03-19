@@ -26,6 +26,7 @@ import {
   Stethoscope,
 } from "lucide-react";
 import { CaseBreadcrumb } from "@/components/case-breadcrumb";
+import { WizardNav, WizardNavButtons } from "@/components/wizard-nav";
 
 interface CaseData {
   id: string;
@@ -675,7 +676,9 @@ export default function CaseDetailPage() {
   ];
 
   return (
-    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+    <div>
+      <WizardNav caseId={id} currentStep={1} />
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <CaseBreadcrumb caseId={id} currentPage="" />
 
       {/* Header */}
@@ -872,6 +875,9 @@ export default function CaseDetailPage() {
             </Card>
           </Link>
         ))}
+      </div>
+
+      <WizardNavButtons caseId={id} currentStep={1} />
       </div>
     </div>
   );
