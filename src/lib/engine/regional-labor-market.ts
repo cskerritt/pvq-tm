@@ -301,8 +301,5 @@ export function analyzeRegionalLaborMarket(
 /** Format thousands value (JOLTS data is in thousands) */
 function formatThousands(valueInThousands: number): string {
   const actual = valueInThousands * 1000;
-  if (actual >= 1000000) {
-    return `${(actual / 1000000).toFixed(1)} million`;
-  }
   return `${Math.round(actual).toLocaleString()}`;
 }

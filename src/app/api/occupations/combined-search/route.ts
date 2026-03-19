@@ -28,10 +28,13 @@ export async function GET(req: NextRequest) {
   try {
     // Search both sources in parallel
     const [dotResults, onetApiResults, onetCachedResults] = await Promise.all([
-      // 1. Search DOT database by title (local, instant)
+      // 1. Search DOT database by title OR code (local, instant)
       prisma.occupationDOT.findMany({
         where: {
-          title: { contains: query, mode: "insensitive" },
+          OR: [
+            { title: { contains: query, mode: "insensitive" } },
+            { id: { contains: query, mode: "insensitive" } },
+          ],
         },
         select: {
           id: true,
@@ -42,7 +45,7 @@ export async function GET(req: NextRequest) {
           gedM: true,
           gedL: true,
         },
-        take: 20,
+        take: 50,
         orderBy: { title: "asc" },
       }),
 

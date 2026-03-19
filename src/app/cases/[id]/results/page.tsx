@@ -1256,7 +1256,7 @@ export default function ResultsPage() {
                     <p className="text-xs text-muted-foreground">Pre-Injury</p>
                     <p className="text-lg font-bold text-blue-600">
                       {selected.preInjuryTotalEmployment !== null
-                        ? (selected.preInjuryTotalEmployment / 1000).toFixed(0) + "K"
+                        ? selected.preInjuryTotalEmployment.toLocaleString()
                         : "\u2014"}
                     </p>
                   </div>
@@ -1264,7 +1264,7 @@ export default function ResultsPage() {
                     <p className="text-xs text-muted-foreground">Post-Injury</p>
                     <p className="text-lg font-bold text-amber-600">
                       {selected.postInjuryTotalEmployment !== null
-                        ? ((selected.postInjuryTotalEmployment ?? 0) / 1000).toFixed(0) + "K"
+                        ? (selected.postInjuryTotalEmployment ?? 0).toLocaleString()
                         : "\u2014"}
                     </p>
                   </div>
@@ -1272,7 +1272,7 @@ export default function ResultsPage() {
                     <p className="text-xs text-muted-foreground">Lost</p>
                     <p className="text-lg font-bold text-red-600">
                       {selected.preInjuryTotalEmployment !== null && selected.postInjuryTotalEmployment !== null
-                        ? ((selected.preInjuryTotalEmployment - (selected.postInjuryTotalEmployment ?? 0)) / 1000).toFixed(0) + "K"
+                        ? (selected.preInjuryTotalEmployment - (selected.postInjuryTotalEmployment ?? 0)).toLocaleString()
                         : "\u2014"}
                     </p>
                   </div>
@@ -1281,13 +1281,13 @@ export default function ResultsPage() {
 
               {/* JOLTS Openings */}
               <div className="rounded-lg border p-4 space-y-2">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">JOLTS Openings (thousands)</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">JOLTS Openings</p>
                 <div className="grid grid-cols-3 gap-2 text-center">
                   <div>
                     <p className="text-xs text-muted-foreground">Pre-Injury</p>
                     <p className="text-lg font-bold text-blue-600">
                       {selected.preInjuryJoltsOpenings !== null
-                        ? selected.preInjuryJoltsOpenings.toFixed(0) + "K"
+                        ? Math.round(selected.preInjuryJoltsOpenings * 1000).toLocaleString()
                         : "\u2014"}
                     </p>
                   </div>
@@ -1295,7 +1295,7 @@ export default function ResultsPage() {
                     <p className="text-xs text-muted-foreground">Current</p>
                     <p className="text-lg font-bold text-amber-600">
                       {selected.postInjuryJoltsOpenings !== null
-                        ? (selected.postInjuryJoltsOpenings ?? 0).toFixed(0) + "K"
+                        ? Math.round((selected.postInjuryJoltsOpenings ?? 0) * 1000).toLocaleString()
                         : "\u2014"}
                     </p>
                   </div>
@@ -1303,7 +1303,7 @@ export default function ResultsPage() {
                     <p className="text-xs text-muted-foreground">Change</p>
                     <p className="text-lg font-bold text-red-600">
                       {selected.preInjuryJoltsOpenings !== null && selected.postInjuryJoltsOpenings !== null
-                        ? ((selected.postInjuryJoltsOpenings ?? 0) - selected.preInjuryJoltsOpenings).toFixed(0) + "K"
+                        ? Math.round(((selected.postInjuryJoltsOpenings ?? 0) - selected.preInjuryJoltsOpenings) * 1000).toLocaleString()
                         : "\u2014"}
                     </p>
                   </div>
@@ -1500,13 +1500,13 @@ export default function ResultsPage() {
                               {t.joltsCurrentOpenings !== null && (
                                 <div className="rounded border p-2">
                                   <p className="text-muted-foreground">JOLTS Current</p>
-                                  <p className="font-semibold">{t.joltsCurrentOpenings.toFixed(1)}K</p>
+                                  <p className="font-semibold">{Math.round(t.joltsCurrentOpenings * 1000).toLocaleString()}</p>
                                 </div>
                               )}
                               {t.joltsPreInjuryOpenings !== null && (
                                 <div className="rounded border p-2">
                                   <p className="text-muted-foreground">JOLTS At DOI</p>
-                                  <p className="font-semibold">{t.joltsPreInjuryOpenings.toFixed(1)}K</p>
+                                  <p className="font-semibold">{Math.round(t.joltsPreInjuryOpenings * 1000).toLocaleString()}</p>
                                 </div>
                               )}
                               {t.joltsTrendLabel && (

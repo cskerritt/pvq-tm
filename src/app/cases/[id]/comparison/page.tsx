@@ -29,6 +29,7 @@ import {
   Target,
   Layers,
   Activity,
+  Briefcase,
 } from "lucide-react";
 import { toast } from "sonner";
 import { CaseBreadcrumb } from "@/components/case-breadcrumb";
@@ -125,6 +126,7 @@ interface AnalysisData {
   nearMissAnalysis: any;
   viableSetAnalysis: any;
   regionalLaborMarket: any;
+  hiredJobsComparison: any;
   case: { clientName: string; id: string; dateOfInjury: string | null };
   targetOccupations: TargetOcc[];
 }
@@ -455,7 +457,7 @@ export default function ComparisonPage() {
               <CardContent className="pt-4 pb-4 text-center">
                 <p className="text-xs text-muted-foreground">State JOLTS at Injury</p>
                 <p className="text-2xl font-bold text-slate-600">
-                  {analysis.stateJoltsPreInjury.toLocaleString("en-US", { maximumFractionDigits: 1 })}K
+                  {Math.round(analysis.stateJoltsPreInjury * 1000).toLocaleString()}
                 </p>
                 <p className="text-xs text-muted-foreground">{analysis.stateName ?? "State"} openings</p>
               </CardContent>
@@ -466,7 +468,7 @@ export default function ComparisonPage() {
               <CardContent className="pt-4 pb-4 text-center">
                 <p className="text-xs text-muted-foreground">State JOLTS Current</p>
                 <p className="text-2xl font-bold text-slate-600">
-                  {analysis.stateJoltsCurrent.toLocaleString("en-US", { maximumFractionDigits: 1 })}K
+                  {Math.round(analysis.stateJoltsCurrent * 1000).toLocaleString()}
                 </p>
                 <p className="text-xs text-muted-foreground">{analysis.stateName ?? "State"} openings</p>
               </CardContent>
@@ -709,10 +711,10 @@ export default function ComparisonPage() {
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">{t.joltsIndustryName ?? "\u2014"}</TableCell>
                       <TableCell className="text-right text-xs">
-                        {t.joltsCurrentOpenings !== null ? `${t.joltsCurrentOpenings.toFixed(1)}K` : "\u2014"}
+                        {t.joltsCurrentOpenings !== null ? Math.round(t.joltsCurrentOpenings * 1000).toLocaleString() : "\u2014"}
                       </TableCell>
                       <TableCell className="text-right text-xs">
-                        {t.joltsPreInjuryOpenings !== null ? `${t.joltsPreInjuryOpenings.toFixed(1)}K` : "\u2014"}
+                        {t.joltsPreInjuryOpenings !== null ? Math.round(t.joltsPreInjuryOpenings * 1000).toLocaleString() : "\u2014"}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -740,10 +742,10 @@ export default function ComparisonPage() {
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">{t.joltsIndustryName ?? "\u2014"}</TableCell>
                       <TableCell className="text-right text-xs">
-                        {t.joltsCurrentOpenings !== null ? `${t.joltsCurrentOpenings.toFixed(1)}K` : "\u2014"}
+                        {t.joltsCurrentOpenings !== null ? Math.round(t.joltsCurrentOpenings * 1000).toLocaleString() : "\u2014"}
                       </TableCell>
                       <TableCell className="text-right text-xs">
-                        {t.joltsPreInjuryOpenings !== null ? `${t.joltsPreInjuryOpenings.toFixed(1)}K` : "\u2014"}
+                        {t.joltsPreInjuryOpenings !== null ? Math.round(t.joltsPreInjuryOpenings * 1000).toLocaleString() : "\u2014"}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -779,10 +781,10 @@ export default function ComparisonPage() {
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">{t.joltsIndustryName ?? "\u2014"}</TableCell>
                       <TableCell className="text-right text-xs">
-                        {t.joltsCurrentOpenings !== null ? `${t.joltsCurrentOpenings.toFixed(1)}K` : "\u2014"}
+                        {t.joltsCurrentOpenings !== null ? Math.round(t.joltsCurrentOpenings * 1000).toLocaleString() : "\u2014"}
                       </TableCell>
                       <TableCell className="text-right text-xs">
-                        {t.joltsPreInjuryOpenings !== null ? `${t.joltsPreInjuryOpenings.toFixed(1)}K` : "\u2014"}
+                        {t.joltsPreInjuryOpenings !== null ? Math.round(t.joltsPreInjuryOpenings * 1000).toLocaleString() : "\u2014"}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -930,9 +932,9 @@ export default function ComparisonPage() {
                     <TableHead className="text-center">Pre-Injury Occupations</TableHead>
                     <TableHead className="text-center">Post-Injury Occupations</TableHead>
                     <TableHead className="text-center">Lost</TableHead>
-                    <TableHead className="text-right">JOLTS at DOI (K)</TableHead>
-                    <TableHead className="text-right">JOLTS Current (K)</TableHead>
-                    <TableHead className="text-right">Change (K)</TableHead>
+                    <TableHead className="text-right">JOLTS at DOI</TableHead>
+                    <TableHead className="text-right">JOLTS Current</TableHead>
+                    <TableHead className="text-right">Change</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -956,10 +958,10 @@ export default function ComparisonPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm">
-                          {data.preOpenings > 0 ? data.preOpenings.toFixed(1) : "\u2014"}
+                          {data.preOpenings > 0 ? Math.round(data.preOpenings * 1000).toLocaleString() : "\u2014"}
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm">
-                          {data.currentOpenings > 0 ? data.currentOpenings.toFixed(1) : "\u2014"}
+                          {data.currentOpenings > 0 ? Math.round(data.currentOpenings * 1000).toLocaleString() : "\u2014"}
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm">
                           {data.preOpenings > 0 && data.currentOpenings > 0 ? (
@@ -969,7 +971,7 @@ export default function ComparisonPage() {
                               }
                             >
                               {joltsChange >= 0 ? "+" : ""}
-                              {joltsChange.toFixed(1)}
+                              {Math.round(joltsChange * 1000).toLocaleString()}
                             </span>
                           ) : (
                             "\u2014"
@@ -1389,6 +1391,143 @@ export default function ComparisonPage() {
         </Card>
       )}
 
+      {/* Most Frequently Hired Occupations - Access Comparison */}
+      {(() => {
+        const hjcRaw = safeJson(analysis?.hiredJobsComparison);
+        if (!hjcRaw) return null;
+        const hjc = hjcRaw as {
+          totalJobs: number;
+          preInjuryAccessible: number;
+          postInjuryAccessible: number;
+          accessLost: number;
+          accessRetained: number;
+          neverAccessible: number;
+          reductionPercent: number;
+          comparisons: Array<{
+            job: { socCode: string; title: string; estimatedHires: number };
+            preInjury: { canPerform: boolean; failingTraits: string[]; marginAvg: number };
+            postInjury: { canPerform: boolean; failingTraits: string[]; marginAvg: number };
+            accessLost: boolean;
+          }>;
+        };
+        const top15 = (hjc.comparisons ?? []).slice(0, 15);
+        if (top15.length === 0) return null;
+
+        const traitLabelMap: Record<string, string> = {};
+        for (const td of TRAIT_DEFS) {
+          traitLabelMap[td.key] = td.label;
+        }
+
+        return (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Briefcase className="h-5 w-5" />
+                Most Frequently Hired Occupations &mdash; Access Comparison
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Summary stats */}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="rounded-lg border p-3 text-center">
+                  <div className="text-2xl font-bold text-green-700">
+                    {hjc.preInjuryAccessible}
+                    <span className="text-sm font-normal text-muted-foreground"> of {top15.length}</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground">Pre-Injury Accessible</div>
+                </div>
+                <div className="rounded-lg border p-3 text-center">
+                  <div className="text-2xl font-bold text-blue-700">
+                    {hjc.postInjuryAccessible}
+                    <span className="text-sm font-normal text-muted-foreground"> of {top15.length}</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground">Post-Injury Accessible</div>
+                </div>
+                <div className="rounded-lg border p-3 text-center">
+                  <div className={`text-2xl font-bold ${hjc.reductionPercent > 0 ? "text-red-700" : "text-green-700"}`}>
+                    {hjc.reductionPercent}%
+                  </div>
+                  <div className="text-xs text-muted-foreground">Access Reduction</div>
+                </div>
+              </div>
+
+              {/* Job comparison table */}
+              <div className="rounded-md border overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[40%]">Occupation Group</TableHead>
+                      <TableHead className="text-center w-[100px]">Est. Hires/Mo</TableHead>
+                      <TableHead className="text-center w-[100px]">Pre-Injury</TableHead>
+                      <TableHead className="text-center w-[100px]">Post-Injury</TableHead>
+                      <TableHead>Failing Traits (Post-Injury)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {top15.map((c, idx) => (
+                      <TableRow
+                        key={idx}
+                        className={c.accessLost ? "bg-red-50/50" : ""}
+                      >
+                        <TableCell className="font-medium text-sm">
+                          <span className="text-muted-foreground mr-1">
+                            SOC {c.job.socCode}
+                          </span>
+                          {c.job.title}
+                        </TableCell>
+                        <TableCell className="text-center text-sm">
+                          {c.job.estimatedHires?.toLocaleString() ?? "\u2014"}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {c.preInjury.canPerform ? (
+                            <CheckCircle className="h-4 w-4 text-green-600 inline" />
+                          ) : (
+                            <XCircle className="h-4 w-4 text-red-500 inline" />
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {c.postInjury.canPerform ? (
+                            <CheckCircle className="h-4 w-4 text-green-600 inline" />
+                          ) : (
+                            <XCircle className="h-4 w-4 text-red-500 inline" />
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {c.accessLost && c.postInjury.failingTraits.length > 0
+                            ? c.postInjury.failingTraits
+                                .map((t) => traitLabelMap[t] ?? t)
+                                .join(", ")
+                            : c.postInjury.canPerform
+                              ? ""
+                              : c.postInjury.failingTraits.length > 0
+                                ? c.postInjury.failingTraits
+                                    .map((t) => traitLabelMap[t] ?? t)
+                                    .join(", ")
+                                : ""}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Legend */}
+              <div className="flex gap-4 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  <CheckCircle className="h-3 w-3 text-green-600" /> Accessible
+                </span>
+                <span className="flex items-center gap-1">
+                  <XCircle className="h-3 w-3 text-red-500" /> Not accessible
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-3 h-3 bg-red-50 border border-red-200 rounded-sm" /> Access lost due to injury
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
+
       {/* Methodology Note */}
       <Card>
         <CardHeader>
@@ -1422,6 +1561,14 @@ export default function ComparisonPage() {
             <strong>Viable Set Quality:</strong> Coherence measures how related the remaining
             viable occupations are by skill profile similarity. Higher coherence indicates a
             focused set; lower coherence indicates a fragmented labor market.
+          </p>
+          <p>
+            <strong>Hired Jobs Access:</strong> The most frequently hired occupation groups are
+            derived from JOLTS industry-level hires distributed via BLS staffing patterns to
+            SOC major groups. Each group is assigned a simplified trait demand profile based on
+            DOT conventions. A worker can perform a job if all 24 trait capacities meet or exceed
+            the demand level (default demand: 1 for unspecified traits; null worker capacity
+            treated as 0).
           </p>
           <Separator />
           <p className="text-xs">
