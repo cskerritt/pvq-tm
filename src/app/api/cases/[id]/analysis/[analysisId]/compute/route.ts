@@ -5,7 +5,7 @@ import { computeSTQ, type SkillTransferInput } from "@/lib/engine/skill-transfer
 import { computeTFQ, buildDOTDemandVector, buildOccupationDemands } from "@/lib/engine/trait-feasibility";
 import { computeVAQ, estimateVAQ, type VocationalAdjustment } from "@/lib/engine/vocational-adjustment";
 import { computeLMQ } from "@/lib/engine/labor-market";
-import { profileToTraitVector } from "@/lib/engine/traits";
+import { profileToTraitVector, STRENGTH_LABELS, mapORSToTraits } from "@/lib/engine/traits";
 import { getPrimaryIndustryForSOC, getIndustryNameForSOC } from "@/lib/engine/industry-mapping";
 import { computeVQ } from "@/lib/engine/vocational-quotient";
 import { computeTSP, type TSPInput } from "@/lib/engine/tsp";
@@ -241,7 +241,40 @@ export async function POST(
         where: { id: { in: allDotCodes } },
       })
     : [];
-  const dotMap = Object.fromEntries(allDotOccs.map((d) => [d.id, d]));
+  const dotMap: Record<string, typeof allDotOccs[0]> = Object.fromEntries(allDotOccs.map((d) => [d.id, d]));
+
+  // ─── Crosswalk lookup for targets without dotCode ──────────────────
+  const targetsNeedingCrosswalk = targets.filter(
+    (t) => !t.dotCode || !dotMap[t.dotCode]
+  );
+  const crosswalkOnetCodes = [
+    ...new Set(targetsNeedingCrosswalk.map((t) => t.onetSocCode)),
+  ];
+
+  const crosswalkMap: Record<string, string> = {}; // onetSocCode → dotCode
+  if (crosswalkOnetCodes.length > 0) {
+    const crosswalks = await prisma.dOTONETCrosswalk.findMany({
+      where: { onetSocCode: { in: crosswalkOnetCodes } },
+      include: { dotOcc: true },
+    });
+    for (const cw of crosswalks) {
+      if (!crosswalkMap[cw.onetSocCode]) {
+        crosswalkMap[cw.onetSocCode] = cw.dotCode;
+        if (!dotMap[cw.dotCode]) {
+          dotMap[cw.dotCode] = cw.dotOcc;
+        }
+      }
+    }
+  }
+
+  // ─── Batch-fetch ORS records for all target O*NET codes ────────────
+  const allTargetOnetCodes = [...new Set(targets.map((t) => t.onetSocCode))];
+  const orsRecords = await prisma.occupationORS.findMany({
+    where: { onetSocCode: { in: allTargetOnetCodes } },
+  });
+  const orsMap = Object.fromEntries(
+    orsRecords.map((o) => [o.onetSocCode, o])
+  );
 
   // Pre-extract PRW DOT data for STQ and VAQ
   const prwDotOccs = prwDotCodes.map((c) => dotMap[c]).filter(Boolean);
@@ -264,7 +297,10 @@ export async function POST(
     : [];
 
   for (const target of targets) {
-    const targetDotOcc = target.dotCode ? dotMap[target.dotCode] : null;
+    // Resolve DOT record: direct dotCode, or via crosswalk
+    const effectiveDotCode =
+      target.dotCode ?? crosswalkMap[target.onetSocCode] ?? null;
+    const targetDotOcc = effectiveDotCode ? dotMap[effectiveDotCode] : null;
 
     // ─── STQ ────────────────────────────────────────────────────────
     const targetDPTDescriptors = targetDotOcc
@@ -316,19 +352,118 @@ export async function POST(
     const stqResult = computeSTQ(stqInput);
 
     // ─── TFQ ────────────────────────────────────────────────────────
+    // Build per-occupation demand vector from DOT + O*NET + ORS data
     let demandVector;
     let demandSources;
 
+    const onetOcc = target.onetOcc;
+    const onetDataForTFQ = onetOcc
+      ? {
+          abilities: onetOcc.abilities,
+          workContext: onetOcc.workContext,
+          svp: onetOcc.jobZone != null ? onetOcc.jobZone + 1 : undefined,
+        }
+      : null;
+
+    const orsRecord = orsMap[target.onetSocCode];
+    const orsTraits = orsRecord
+      ? mapORSToTraits(
+          orsRecord.physicalDemands as Record<
+            string,
+            { t: string; v: string | number }[]
+          > | null,
+          orsRecord.envConditions as Record<
+            string,
+            { t: string; v: string | number }[]
+          > | null
+        )
+      : null;
+
     if (targetDotOcc) {
-      const dotDemands = buildDOTDemandVector(targetDotOcc);
+      const dotDemands = buildDOTDemandVector(
+        targetDotOcc,
+        onetDataForTFQ as Record<string, unknown> | null
+      );
       demandVector = dotDemands.demands;
       demandSources = dotDemands.sources;
+
+      // Override with ORS data where available (ORS > DOT > O*NET)
+      if (orsTraits) {
+        for (const [key, val] of Object.entries(orsTraits)) {
+          if (val !== null && val !== undefined) {
+            (demandVector as Record<string, number | null>)[key] = val;
+            (demandSources as Record<string, string>)[key] = "ORS";
+          }
+        }
+      }
     } else {
-      const { demands, sources } = buildOccupationDemands(null, null, null);
+      // Fallback: use buildOccupationDemands with ORS + O*NET
+      const { demands, sources } = buildOccupationDemands(
+        orsTraits as Record<string, unknown> | null,
+        null,
+        onetDataForTFQ as Record<string, unknown> | null
+      );
       demandVector = demands;
       demandSources = sources;
     }
+
+    // ─── Explicit Physical Demand Gates (VDARE Step 7) ──────────────
+    const gateFailures: string[] = [];
+    const PHYSICAL_GATE_TRAITS = [
+      { key: "strength", label: "Strength" },
+      { key: "climbBalance", label: "Climb/Balance" },
+      { key: "stoopKneel", label: "Stoop/Kneel" },
+      { key: "reachHandle", label: "Reach/Handle" },
+    ] as const;
+
+    for (const gate of PHYSICAL_GATE_TRAITS) {
+      const demand = (demandVector as Record<string, number | null>)[gate.key];
+      const capacity = (workerTraits as Record<string, number | null>)[gate.key];
+
+      if (
+        demand !== null && demand !== undefined &&
+        capacity !== null && capacity !== undefined &&
+        capacity < demand
+      ) {
+        if (gate.key === "strength") {
+          const demandLabel = STRENGTH_LABELS[demand] ?? `Level ${demand}`;
+          const capacityLabel = STRENGTH_LABELS[capacity] ?? `Level ${capacity}`;
+          gateFailures.push(
+            `${gate.label}: occupation requires ${demandLabel} but worker restricted to ${capacityLabel}`
+          );
+        } else {
+          gateFailures.push(
+            `${gate.label}: occupation demands level ${demand} but worker capacity is ${capacity}`
+          );
+        }
+      }
+    }
+
     const tfqResult = computeTFQ(workerTraits, demandVector, demandSources);
+
+    // Merge gate failures into TFQ result
+    if (gateFailures.length > 0 && tfqResult.passes) {
+      // TFQ passed on average margins but explicit gates failed
+      // Override to exclude
+      (tfqResult as { passes: boolean }).passes = false;
+      (tfqResult as { tfq: number }).tfq = 0;
+      (tfqResult as { reserveMargin: number }).reserveMargin = 0;
+      (tfqResult as { failedTraits: unknown[] }).failedTraits = gateFailures.map((reason) => ({
+        trait: reason.split(":")[0],
+        label: reason.split(":")[0],
+        reason,
+        workerCapacity: null,
+        occupationDemand: null,
+        margin: null,
+        passes: false,
+        source: "DOT",
+      }));
+    }
+    // Attach gate failures for reporting
+    const tfqResultWithGates = {
+      ...tfqResult,
+      gateFailures: gateFailures.length > 0 ? gateFailures : undefined,
+    };
 
     // ─── Pre-Injury TFQ (if PRE profile exists) ──────────────────
     let preTfqScore: number | null = null;
@@ -338,7 +473,10 @@ export async function POST(
       const preTfqResult = computeTFQ(preTraits, demandVector, demandSources);
       preTfqScore = preTfqResult.tfq;
       preTfqPasses = preTfqResult.passes;
-      preTfqDetailsJson = JSON.parse(JSON.stringify(preTfqResult));
+      preTfqDetailsJson = JSON.parse(JSON.stringify({
+        ...preTfqResult,
+        gateFailures: undefined, // Pre-injury doesn't apply post-injury gates
+      }));
     }
 
     // ─── JOLTS Industry Lookup ──────────────────────────────────
@@ -538,7 +676,7 @@ export async function POST(
         stq: pvqResult.stq,
         stqDetails: JSON.parse(JSON.stringify(stqResult)),
         tfq: pvqResult.tfq,
-        tfqDetails: JSON.parse(JSON.stringify(tfqResult)),
+        tfqDetails: JSON.parse(JSON.stringify(tfqResultWithGates)),
         vaq: pvqResult.vaq,
         vaqDetails: JSON.parse(JSON.stringify(vaqResult)),
         lmq: pvqResult.lmq,

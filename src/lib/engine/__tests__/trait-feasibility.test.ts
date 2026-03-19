@@ -530,3 +530,153 @@ describe('no-nulls guarantee', () => {
     }
   });
 });
+
+// ─── VDARE Compliance Tests ──────────────────────────────────────────
+
+describe('VDARE compliance: per-occupation demand vectors', () => {
+  it('different DOT occupations produce different demand vectors', () => {
+    // Construction Laborer: Very Heavy, low GED
+    const constructionLaborer = buildDOTDemandVector({
+      gedR: 2, gedM: 1, gedL: 2, strength: 'V', svp: 3,
+    });
+
+    // Office Clerk: Sedentary, moderate GED
+    const officeClerk = buildDOTDemandVector({
+      gedR: 3, gedM: 2, gedL: 3, strength: 'S', svp: 3,
+    });
+
+    // Sheet Metal Worker: Heavy, moderate GED
+    const sheetMetal = buildDOTDemandVector({
+      gedR: 3, gedM: 2, gedL: 3, strength: 'H', svp: 7,
+    });
+
+    // Strength demands MUST differ
+    expect(constructionLaborer.demands.strength).toBe(4); // Very Heavy
+    expect(officeClerk.demands.strength).toBe(0);          // Sedentary
+    expect(sheetMetal.demands.strength).toBe(3);            // Heavy
+
+    // TFQ scores must NOT be equal across these different occupations
+    expect(constructionLaborer.demands.strength).not.toBe(officeClerk.demands.strength);
+    expect(constructionLaborer.demands.strength).not.toBe(sheetMetal.demands.strength);
+  });
+});
+
+describe('VDARE compliance: strength gate', () => {
+  it('worker restricted to Light MUST fail for Very Heavy occupation', () => {
+    // Worker POST: strength=1 (Light), limited stooping
+    const worker = makeVector(3, { strength: 1, stoopKneel: 1 });
+
+    // Construction Laborer: Very Heavy
+    const { demands, sources } = buildDOTDemandVector({
+      gedR: 2, gedM: 1, gedL: 2, strength: 'V', svp: 3,
+    });
+
+    const result = computeTFQ(worker, demands, sources);
+    expect(result.passes).toBe(false);
+    expect(result.failedTraits.some((t) => t.trait === 'strength')).toBe(true);
+
+    // Verify the strength deficit is clear
+    const strengthFail = result.failedTraits.find((t) => t.trait === 'strength');
+    expect(strengthFail).toBeDefined();
+    expect(strengthFail!.workerCapacity).toBe(1);
+    expect(strengthFail!.occupationDemand).toBe(4);
+    expect(strengthFail!.margin).toBe(-3); // 1 - 4 = -3
+  });
+
+  it('worker restricted to Light should PASS for Sedentary occupation', () => {
+    const worker = makeVector(3, { strength: 1, stoopKneel: 1 });
+
+    const { demands, sources } = buildDOTDemandVector({
+      gedR: 3, gedM: 2, gedL: 3, strength: 'S', svp: 3,
+    });
+
+    const result = computeTFQ(worker, demands, sources);
+    expect(result.passes).toBe(true);
+    expect(result.tfq).toBeGreaterThan(0);
+  });
+
+  it('worker restricted to Light MUST fail for Heavy occupation', () => {
+    const worker = makeVector(3, { strength: 1, stoopKneel: 1 });
+
+    // Sheet Metal Worker: Heavy
+    const { demands, sources } = buildDOTDemandVector({
+      gedR: 3, gedM: 2, gedL: 3, strength: 'H', svp: 7,
+    });
+
+    const result = computeTFQ(worker, demands, sources);
+    expect(result.passes).toBe(false);
+    expect(result.failedTraits.some((t) => t.trait === 'strength')).toBe(true);
+  });
+
+  it('Sedentary worker (strength=0) fails all non-Sedentary occupations', () => {
+    const worker = makeVector(4, { strength: 0 });
+
+    for (const [code, expected] of [
+      ['S', true],
+      ['L', false],
+      ['M', false],
+      ['H', false],
+      ['V', false],
+    ] as const) {
+      const { demands, sources } = buildDOTDemandVector({
+        gedR: 3, gedM: 2, gedL: 3, strength: code, svp: 4,
+      });
+
+      const result = computeTFQ(worker, demands, sources);
+      expect(result.passes).toBe(expected);
+
+      if (!expected) {
+        expect(
+          result.failedTraits.some((t) => t.trait === 'strength'),
+          `Strength gate should fail for ${code} occupation when worker is Sedentary`
+        ).toBe(true);
+      }
+    }
+  });
+});
+
+describe('VDARE compliance: physical demand gates', () => {
+  it('stoopKneel failure excludes occupation', () => {
+    // Worker with limited stooping
+    const worker = makeVector(4, { stoopKneel: 0 });
+
+    // Heavy occupation with frequent stooping
+    const { demands, sources } = buildDOTDemandVector({
+      gedR: 2, gedM: 1, gedL: 2, strength: 'H', svp: 4,
+    });
+    // SVP defaults for Heavy/semi give stoopKneel=3
+
+    const result = computeTFQ(worker, demands, sources);
+    // Should fail due to stoopKneel (worker=0, demand=3)
+    if (demands.stoopKneel > 0) {
+      expect(result.passes).toBe(false);
+      expect(result.failedTraits.some((t) => t.trait === 'stoopKneel')).toBe(true);
+    }
+  });
+
+  it('complete VDARE verification scenario', () => {
+    // Worker POST profile: strength=1 (Light), stoopKneel=1 (limited)
+    const worker = makeVector(3, { strength: 1, stoopKneel: 1 });
+
+    // Target 1: Construction Laborer (V, SVP=3) -> MUST be excluded
+    const cl = buildDOTDemandVector({ gedR: 2, gedM: 1, gedL: 2, strength: 'V', svp: 3 });
+    const clResult = computeTFQ(worker, cl.demands, cl.sources);
+    expect(clResult.passes).toBe(false);
+
+    // Target 2: Office Clerk (S, SVP=3) -> should pass
+    const oc = buildDOTDemandVector({ gedR: 3, gedM: 2, gedL: 3, strength: 'S', svp: 3 });
+    const ocResult = computeTFQ(worker, oc.demands, oc.sources);
+    expect(ocResult.passes).toBe(true);
+
+    // Target 3: Sheet Metal Worker (H, SVP=7) -> MUST be excluded
+    const sm = buildDOTDemandVector({ gedR: 3, gedM: 2, gedL: 3, strength: 'H', svp: 7 });
+    const smResult = computeTFQ(worker, sm.demands, sm.sources);
+    expect(smResult.passes).toBe(false);
+
+    // The TFQ scores MUST differ between these occupations
+    // Construction Laborer and Office Clerk should NOT have the same TFQ
+    expect(clResult.tfq).not.toBe(ocResult.tfq);
+    // Sheet Metal and Office Clerk should NOT have the same TFQ
+    expect(smResult.tfq).not.toBe(ocResult.tfq);
+  });
+});
