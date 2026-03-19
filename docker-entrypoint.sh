@@ -16,7 +16,8 @@ if [ -n "$DATABASE_URL" ]; then
     20260318200000_rename_mvqs_to_vqs \
     20260319000000_add_local_demand_columns \
     20260319100000_add_hired_jobs_and_local_demand \
-    20260319110000_add_injury_prw_earnings_trait_sources; do
+    20260319110000_add_injury_prw_earnings_trait_sources \
+    20260319180000_add_labor_market_access; do
     node node_modules/prisma/build/index.js migrate resolve --applied "$migration" 2>/dev/null || true
   done
 
