@@ -103,8 +103,10 @@ interface TargetOcc {
 interface Step1Validation {
   prwCount: number;
   transferableSkillCount: number;
+  totalSkillCount: number;
   postProfileTraitsFilled: number;
   postProfileExists: boolean;
+  missingTraits: string[];
   loading: boolean;
 }
 
@@ -211,8 +213,10 @@ export default function AnalysisPage() {
   const [step1, setStep1] = useState<Step1Validation>({
     prwCount: 0,
     transferableSkillCount: 0,
+    totalSkillCount: 0,
     postProfileTraitsFilled: 0,
     postProfileExists: false,
+    missingTraits: [],
     loading: true,
   });
 
@@ -274,15 +278,15 @@ export default function AnalysisPage() {
 
         const prwCount = Array.isArray(prwData) ? prwData.length : 0;
 
-        // Count transferable skills (isTransferable && svpLevel >= 4)
-        const transferableSkillCount = Array.isArray(skillsData)
-          ? skillsData.filter(
-              (s: { isTransferable?: boolean; svpLevel?: number | null }) =>
-                s.isTransferable && s.svpLevel != null && s.svpLevel >= 4
-            ).length
-          : 0;
+        // Count all skills and transferable skills (isTransferable && svpLevel >= 4)
+        const allSkills = Array.isArray(skillsData) ? skillsData : [];
+        const totalSkillCount = allSkills.length;
+        const transferableSkillCount = allSkills.filter(
+          (s: { isTransferable?: boolean; svpLevel?: number | null }) =>
+            s.isTransferable && s.svpLevel != null && s.svpLevel >= 4
+        ).length;
 
-        // Check POST profile completeness
+        // Check POST profile completeness and track which traits are missing
         const postProfile = Array.isArray(profilesData)
           ? profilesData.find(
               (p: { profileType: string }) => p.profileType === "POST"
@@ -290,6 +294,7 @@ export default function AnalysisPage() {
           : null;
 
         let postProfileTraitsFilled = 0;
+        const missingTraits: string[] = [];
         if (postProfile) {
           for (const field of TRAIT_FIELDS) {
             if (
@@ -297,15 +302,22 @@ export default function AnalysisPage() {
               postProfile[field] !== undefined
             ) {
               postProfileTraitsFilled++;
+            } else {
+              missingTraits.push(field);
             }
           }
+        } else {
+          // All traits missing if no profile exists
+          missingTraits.push(...TRAIT_FIELDS);
         }
 
         setStep1({
           prwCount,
           transferableSkillCount,
+          totalSkillCount,
           postProfileTraitsFilled,
           postProfileExists: !!postProfile,
+          missingTraits,
           loading: false,
         });
       } catch {
@@ -777,17 +789,21 @@ export default function AnalysisPage() {
                               </span>
                             </TooltipTrigger>
                             {!step1AllPassed && !step1.loading && (
-                              <TooltipContent side="bottom" className="max-w-xs">
-                                <p className="text-sm font-medium mb-1">Cannot proceed yet:</p>
-                                <ul className="text-xs space-y-0.5">
+                              <TooltipContent side="bottom" className="max-w-sm">
+                                <p className="text-sm font-semibold mb-2">⚠️ Cannot proceed — complete the checklist above:</p>
+                                <ul className="text-xs space-y-1 list-disc pl-4">
                                   {step1.prwCount < 1 && (
-                                    <li>Add at least one past relevant work entry</li>
+                                    <li><strong>Past Relevant Work:</strong> Add at least one job the evaluee performed</li>
                                   )}
                                   {step1.transferableSkillCount < 1 && (
-                                    <li>Mark at least one acquired skill as transferable (SVP 4+)</li>
+                                    <li><strong>Transferable Skills:</strong> {step1.totalSkillCount > 0
+                                      ? `You have ${step1.totalSkillCount} skills but none are marked transferable with SVP ≥ 4`
+                                      : "Generate or add skills, then mark at least one as transferable with SVP ≥ 4"}</li>
                                   )}
                                   {(!step1.postProfileExists || step1.postProfileTraitsFilled < 24) && (
-                                    <li>Complete all 24 traits on the POST worker profile ({step1.postProfileTraitsFilled}/24 filled)</li>
+                                    <li><strong>Post-Injury Profile:</strong> {!step1.postProfileExists
+                                      ? "Create a POST profile and rate all 24 traits"
+                                      : `Fill in the remaining ${step1.missingTraits.length} traits: ${step1.missingTraits.slice(0, 5).map(t => TRAIT_LABELS[t] || t).join(", ")}${step1.missingTraits.length > 5 ? ` and ${step1.missingTraits.length - 5} more` : ""}`}</li>
                                   )}
                                 </ul>
                               </TooltipContent>
@@ -818,72 +834,139 @@ export default function AnalysisPage() {
                   Step 1 Validation Checklist
                   ═══════════════════════════════════════════════════════════ */}
               {active.step === 1 && (
-                <Card className="border-blue-200 bg-blue-50/30 dark:border-blue-800 dark:bg-blue-950/20">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Pre-Analysis Checklist</CardTitle>
+                <Card className={step1AllPassed ? "border-green-300 bg-green-50/30 dark:border-green-800 dark:bg-green-950/20" : "border-red-300 bg-red-50/30 dark:border-red-800 dark:bg-red-950/20"}>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2">
+                      {step1AllPassed ? (
+                        <CheckCircle2 className="h-5 w-5 text-green-600" />
+                      ) : (
+                        <AlertTriangle className="h-5 w-5 text-red-500" />
+                      )}
+                      {step1AllPassed ? "Ready to Proceed" : "Required: Complete These Steps Before Analysis"}
+                    </CardTitle>
+                    {!step1AllPassed && !step1.loading && (
+                      <p className="text-sm text-muted-foreground mt-1">
+                        All three items below must be completed before the analysis can begin. Click each item to go to the relevant page and complete it.
+                      </p>
+                    )}
                   </CardHeader>
-                  <CardContent className="space-y-2">
+                  <CardContent className="space-y-4">
                     {step1.loading ? (
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
                         <Loader2 className="h-4 w-4 animate-spin" />
                         Checking requirements...
                       </div>
                     ) : (
                       <>
-                        {/* PRW check */}
-                        <Link href={`/cases/${caseId}/prw`} className="flex items-center gap-2 text-sm hover:underline group">
-                          {step1.prwCount >= 1 ? (
-                            <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
-                          ) : (
-                            <XCircle className="h-4 w-4 text-red-500 shrink-0" />
-                          )}
-                          <span className={step1.prwCount >= 1 ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"}>
-                            Past Relevant Work: {step1.prwCount} {step1.prwCount === 1 ? "entry" : "entries"}
-                          </span>
-                          <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </Link>
-                        {step1.prwCount < 1 && (
-                          <p className="text-xs text-muted-foreground ml-6">
-                            Add at least one past relevant work entry to proceed.
-                          </p>
-                        )}
+                        {/* ── 1. PRW Check ── */}
+                        <div className={`rounded-lg border p-4 ${step1.prwCount >= 1 ? "border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/30" : "border-red-200 bg-red-50/50 dark:border-red-800 dark:bg-red-950/30"}`}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              {step1.prwCount >= 1 ? (
+                                <CheckCircle2 className="h-6 w-6 text-green-600 shrink-0" />
+                              ) : (
+                                <XCircle className="h-6 w-6 text-red-500 shrink-0" />
+                              )}
+                              <div>
+                                <p className={`font-semibold ${step1.prwCount >= 1 ? "text-green-800 dark:text-green-300" : "text-red-800 dark:text-red-300"}`}>
+                                  1. Past Relevant Work
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                  {step1.prwCount >= 1
+                                    ? `✓ ${step1.prwCount} ${step1.prwCount === 1 ? "job" : "jobs"} entered`
+                                    : "Enter the evaluee's work history — at least one job is required"}
+                                </p>
+                              </div>
+                            </div>
+                            <Link href={`/cases/${caseId}/prw`}>
+                              <Button variant={step1.prwCount >= 1 ? "outline" : "default"} size="sm" className="gap-1">
+                                {step1.prwCount >= 1 ? "Edit" : "Add Past Work"}
+                                <ArrowRight className="h-3 w-3" />
+                              </Button>
+                            </Link>
+                          </div>
+                        </div>
 
-                        {/* Transferable skills check */}
-                        <Link href={`/cases/${caseId}/skills`} className="flex items-center gap-2 text-sm hover:underline group">
-                          {step1.transferableSkillCount >= 1 ? (
-                            <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
-                          ) : (
-                            <XCircle className="h-4 w-4 text-red-500 shrink-0" />
-                          )}
-                          <span className={step1.transferableSkillCount >= 1 ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"}>
-                            Transferable Skills: {step1.transferableSkillCount} {step1.transferableSkillCount === 1 ? "skill" : "skills"}
-                          </span>
-                          <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </Link>
-                        {step1.transferableSkillCount < 1 && (
-                          <p className="text-xs text-muted-foreground ml-6">
-                            Mark at least one acquired skill as transferable with SVP level 4 or higher.
-                          </p>
-                        )}
+                        {/* ── 2. Skills Check ── */}
+                        <div className={`rounded-lg border p-4 ${step1.transferableSkillCount >= 1 ? "border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/30" : "border-red-200 bg-red-50/50 dark:border-red-800 dark:bg-red-950/30"}`}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              {step1.transferableSkillCount >= 1 ? (
+                                <CheckCircle2 className="h-6 w-6 text-green-600 shrink-0" />
+                              ) : (
+                                <XCircle className="h-6 w-6 text-red-500 shrink-0" />
+                              )}
+                              <div>
+                                <p className={`font-semibold ${step1.transferableSkillCount >= 1 ? "text-green-800 dark:text-green-300" : "text-red-800 dark:text-red-300"}`}>
+                                  2. Transferable Skills
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                  {step1.transferableSkillCount >= 1
+                                    ? `✓ ${step1.transferableSkillCount} transferable ${step1.transferableSkillCount === 1 ? "skill" : "skills"} identified`
+                                    : step1.totalSkillCount > 0
+                                      ? `You have ${step1.totalSkillCount} ${step1.totalSkillCount === 1 ? "skill" : "skills"}, but none are marked as transferable with SVP ≥ 4. Go to the Skills page, select a skill, set "Transferable" to Yes, and set SVP level to 4 or higher.`
+                                      : "No skills entered yet. Go to the Skills page and either generate skills from your PRW entries or add them manually. At least one must be marked transferable with SVP ≥ 4."}
+                                </p>
+                              </div>
+                            </div>
+                            <Link href={`/cases/${caseId}/skills`}>
+                              <Button variant={step1.transferableSkillCount >= 1 ? "outline" : "default"} size="sm" className="gap-1">
+                                {step1.transferableSkillCount >= 1 ? "Edit" : step1.totalSkillCount > 0 ? "Fix Skills" : "Add Skills"}
+                                <ArrowRight className="h-3 w-3" />
+                              </Button>
+                            </Link>
+                          </div>
+                        </div>
 
-                        {/* POST profile check */}
-                        <Link href={`/cases/${caseId}/profiles`} className="flex items-center gap-2 text-sm hover:underline group">
-                          {step1.postProfileExists && step1.postProfileTraitsFilled === 24 ? (
-                            <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
-                          ) : (
-                            <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+                        {/* ── 3. POST Profile Check ── */}
+                        <div className={`rounded-lg border p-4 ${step1.postProfileExists && step1.postProfileTraitsFilled === 24 ? "border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/30" : "border-red-200 bg-red-50/50 dark:border-red-800 dark:bg-red-950/30"}`}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              {step1.postProfileExists && step1.postProfileTraitsFilled === 24 ? (
+                                <CheckCircle2 className="h-6 w-6 text-green-600 shrink-0" />
+                              ) : (
+                                <XCircle className="h-6 w-6 text-red-500 shrink-0" />
+                              )}
+                              <div>
+                                <p className={`font-semibold ${step1.postProfileExists && step1.postProfileTraitsFilled === 24 ? "text-green-800 dark:text-green-300" : "text-red-800 dark:text-red-300"}`}>
+                                  3. Post-Injury Worker Profile ({step1.postProfileTraitsFilled}/24 traits)
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                  {!step1.postProfileExists
+                                    ? "Create a POST worker profile and rate all 24 physical, cognitive, and environmental traits (0-4 scale)."
+                                    : step1.postProfileTraitsFilled === 24
+                                      ? "✓ All 24 traits completed"
+                                      : `Missing ${step1.missingTraits.length} ${step1.missingTraits.length === 1 ? "trait" : "traits"}: ${step1.missingTraits.map(t => TRAIT_LABELS[t] || t).join(", ")}`}
+                                </p>
+                              </div>
+                            </div>
+                            <Link href={`/cases/${caseId}/profiles`}>
+                              <Button variant={step1.postProfileExists && step1.postProfileTraitsFilled === 24 ? "outline" : "default"} size="sm" className="gap-1">
+                                {step1.postProfileExists && step1.postProfileTraitsFilled === 24 ? "Edit" : !step1.postProfileExists ? "Create Profile" : "Complete Profile"}
+                                <ArrowRight className="h-3 w-3" />
+                              </Button>
+                            </Link>
+                          </div>
+                          {step1.missingTraits.length > 0 && step1.missingTraits.length <= 10 && (
+                            <div className="mt-3 ml-9 flex flex-wrap gap-1.5">
+                              {step1.missingTraits.map(t => (
+                                <Badge key={t} variant="outline" className="text-xs border-red-300 text-red-700 bg-red-50 dark:border-red-700 dark:text-red-400 dark:bg-red-950/50">
+                                  ✗ {TRAIT_LABELS[t] || t}
+                                </Badge>
+                              ))}
+                            </div>
                           )}
-                          <span className={step1.postProfileExists && step1.postProfileTraitsFilled === 24 ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"}>
-                            Post-Injury Profile: {step1.postProfileTraitsFilled}/24 traits filled
-                          </span>
-                          <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </Link>
-                        {(!step1.postProfileExists || step1.postProfileTraitsFilled < 24) && (
-                          <p className="text-xs text-muted-foreground ml-6">
-                            {!step1.postProfileExists
-                              ? "Create a POST worker profile and fill all 24 traits."
-                              : `Complete the remaining ${24 - step1.postProfileTraitsFilled} trait${24 - step1.postProfileTraitsFilled === 1 ? "" : "s"} on the POST profile.`}
-                          </p>
+                        </div>
+
+                        {/* Progress bar */}
+                        {!step1AllPassed && (
+                          <div className="pt-2">
+                            <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                              <span>Completion Progress</span>
+                              <span>{[step1.prwCount >= 1, step1.transferableSkillCount >= 1, step1.postProfileExists && step1.postProfileTraitsFilled === 24].filter(Boolean).length} of 3 requirements met</span>
+                            </div>
+                            <Progress value={([step1.prwCount >= 1, step1.transferableSkillCount >= 1, step1.postProfileExists && step1.postProfileTraitsFilled === 24].filter(Boolean).length / 3) * 100} className="h-2" />
+                          </div>
                         )}
                       </>
                     )}
