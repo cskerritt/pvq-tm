@@ -173,6 +173,21 @@ export interface JOLTSIndustryData {
  * Returns a map of NAICS industry code → { name, yearlyData }.
  * Values are in thousands (matching raw BLS format).
  */
+export interface MetroOEWSData {
+  n: string; // Metro area name
+  o: Record<string, number>; // SOC code → employment count
+}
+
+/**
+ * Load metro-area OEWS employment data from bundled JSON.
+ * Returns a map of BLS area code → { name, occupations: { socCode → employment } }
+ * Contains 393 metropolitan areas with per-occupation employment counts.
+ */
+export async function loadMetroOEWSData(): Promise<Record<string, MetroOEWSData>> {
+  const data = await import("@/data/oews-metro-data.json");
+  return data.default as unknown as Record<string, MetroOEWSData>;
+}
+
 export async function loadJOLTSData(): Promise<Record<string, JOLTSIndustryData>> {
   const data = await import("@/data/jolts-data.json");
   return data.default as unknown as Record<string, JOLTSIndustryData>;

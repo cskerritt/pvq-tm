@@ -30,11 +30,16 @@ import {
   loadOEWSData,
   loadDOTData,
   loadORSData,
+  loadMetroOEWSData,
 } from "@/lib/data-loaders";
 
 // ─── Types ──────────────────────────────────────────────────────
 
 export interface LaborMarketAccessResult {
+  // Geographic context
+  metroAreaName?: string;
+  metroAreaCode?: string;
+
   // Totals
   totalOccupationsAnalyzed: number;
 
@@ -170,7 +175,7 @@ export interface LaborMarketAccessInput {
 
   // Pre-loaded data (to avoid re-fetching in compute route)
   crosswalkData: CrosswalkEntry[];
-  areaWageData?: AreaWageEntry[];
+  areaWageData?: AreaWageEntry[]; // Legacy — kept for backward compat
 
   // Pre-loaded DOT records keyed by dotCode
   dotRecords?: Record<string, DOTOccupationData>;
@@ -189,20 +194,19 @@ export interface LaborMarketAccessInput {
 export async function computeLaborMarketAccess(
   input: LaborMarketAccessInput
 ): Promise<LaborMarketAccessResult> {
-  const { preProfile, postProfile, maxSvp, areaCode, crosswalkData, areaWageData } = input;
+  const { preProfile, postProfile, maxSvp, areaCode, crosswalkData } = input;
 
-  // Load datasets
-  const [oewsData, dotData, orsData] = await Promise.all([
+  // Load datasets (including metro-area employment data)
+  const [oewsData, dotData, orsData, metroData] = await Promise.all([
     loadOEWSData(),
     input.dotRecords ? Promise.resolve(input.dotRecords) : loadDOTData(),
     loadORSData(),
+    loadMetroOEWSData(),
   ]);
 
   // Build crosswalk index: SOC base code (e.g., "43-4051") → DOT codes
-  // O*NET codes are "XX-XXXX.XX", SOC codes in OEWS are "XX-XXXX"
   const socToDotCodes = new Map<string, string[]>();
   for (const cw of crosswalkData) {
-    // Extract SOC base from O*NET code: "43-4051.00" → "43-4051"
     const socBase = cw.onetSocCode.replace(/\.\d+$/, "");
     if (!socToDotCodes.has(socBase)) {
       socToDotCodes.set(socBase, []);
@@ -210,14 +214,24 @@ export async function computeLaborMarketAccess(
     socToDotCodes.get(socBase)!.push(cw.dotCode);
   }
 
-  // Build area employment index if available
-  const areaEmploymentMap = new Map<string, number>();
-  if (areaWageData) {
-    for (const aw of areaWageData) {
-      const socBase = aw.onetSocCode.replace(/\.\d+$/, "");
-      if (aw.employment !== null) {
-        // Sum across sub-codes for the same SOC base
-        areaEmploymentMap.set(socBase, (areaEmploymentMap.get(socBase) ?? 0) + aw.employment);
+  // Get metro-area employment data for the worker's geographic region
+  // areaCode format: "0031080" (BLS 7-digit) — metro data uses 5-digit CBSA codes
+  let metroAreaData: Record<string, number> | null = null;
+  let metroAreaName = "";
+  if (areaCode && areaCode !== "0000000") {
+    // BLS area code "00XXXXX" → CBSA code "XXXXX"
+    const cbsaCode = areaCode.replace(/^0+/, "");
+    const metro = metroData[cbsaCode];
+    if (metro) {
+      metroAreaData = metro.o;
+      metroAreaName = metro.n;
+    }
+    // Also try with the raw area code in case formats differ
+    if (!metroAreaData) {
+      const metro2 = metroData[areaCode];
+      if (metro2) {
+        metroAreaData = metro2.o;
+        metroAreaName = metro2.n;
       }
     }
   }
@@ -317,7 +331,8 @@ export async function computeLaborMarketAccess(
     }
 
     // ─── Area employment lookup ───────────────────────────────
-    const areaEmpl = areaEmploymentMap.get(socCode) ?? 0;
+    // Use the metro-area OEWS data (per-occupation employment in the worker's MSA)
+    const areaEmpl = metroAreaData ? (metroAreaData[socCode] ?? 0) : 0;
 
     // ─── PRE-injury access check ──────────────────────────────
     const preCheck = checkAccess(preProfile, demands);
@@ -397,6 +412,8 @@ export async function computeLaborMarketAccess(
   const areaEmploymentLost = preAreaEmployment - postAreaEmployment;
 
   return {
+    metroAreaName: metroAreaName || undefined,
+    metroAreaCode: areaCode || undefined,
     totalOccupationsAnalyzed: totalAnalyzed,
 
     preInjuryAccessible: preAccessible,

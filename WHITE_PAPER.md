@@ -751,6 +751,71 @@ Contextualizes the viable set within the evaluee's geographic labor market:
 - **Industry Trends:** Classification of viable occupations as growing, stable, or declining based on JOLTS trend coefficients
 - **Risk/Opportunity Identification:** Automated flagging of factors that could enhance or reduce practical employability
 
+### 12.5 Comprehensive Labor Market Access Analysis
+
+This module implements the core VDARE (Vocational Diagnosis and Assessment of Residual Employability) concept of comparing the worker's residual profile against ALL occupations in the labor market, not just skill-transfer candidates.
+
+**Methodology (Based on the VDARE Process, Field & Sink, 1981):**
+
+The VDARE process establishes that vocational potential is assessed by:
+1. Building an Unadjusted Vocational Profile (UVP) from work history — equivalent to our PRE-injury profile
+2. Adjusting the UVP to create a Residual Employability Profile (REP) based on documented functional limitations — equivalent to our POST-injury profile
+3. Comparing the REP against job qualifications profiles for all feasible occupations
+
+PVQ-TM automates this comparison at scale:
+
+- **831 BLS OEWS occupations** analyzed (every occupation with published employment data)
+- **Per-occupation DOT demands** loaded via the DOT-to-O*NET crosswalk (12,726 DOT records mapped to SOC codes)
+- **ORS physical demands** override DOT data where available (226 SOC codes with per-occupation survey data)
+- **SVP gate** applied: workers can only access occupations at or below their demonstrated SVP level (per SSR 82-41)
+- **24-trait comparison** for both PRE and POST profiles independently
+- **Geographic employment data**: Real BLS OEWS metro-area employment counts for 393 metropolitan statistical areas, providing the actual number of jobs in the worker's geographic region
+
+**Output Metrics:**
+
+| Metric | Description |
+|--------|-------------|
+| Pre-Injury Accessible | Occupations and employment accessible before injury (national + metro area) |
+| Post-Injury Accessible | Occupations and employment accessible after injury (national + metro area) |
+| Occupations Lost | Count and percentage of occupations no longer accessible |
+| Employment Lost (National) | Total national employment in lost occupations |
+| Employment Lost (Metro Area) | Employment in the worker's specific metro area for lost occupations |
+| By Strength Level | Breakdown of accessible occupations by exertional level (Sedentary through Very Heavy) |
+| Most Common Failing Traits | Which traits cause the most job exclusions |
+| Lost Occupations Detail | Top 50 lost occupations with national and area employment, strength level, and specific failed traits |
+
+**Geographic Precision:**
+
+Metro-area employment comes from BLS OEWS May 2024 data (the same dataset used for national wage estimates, but at the metropolitan statistical area level). This provides per-occupation employment counts for 393 MSAs covering all major U.S. labor markets. When the evaluee's ZIP code maps to a specific MSA, the analysis shows both national and local employment impacts.
+
+Example: A carpenter in the Los Angeles-Long Beach-Anaheim MSA restricted to Light work after a lumbar injury:
+- National: Lost access to 71 occupations representing 11,352,930 jobs (23.1%)
+- LA Metro Area: Lost access to 386,310 jobs in the local labor market (20.7%)
+
+### 12.6 VDARE Process Alignment
+
+PVQ-TM implements the VDARE process (Field & Sink, 1981) through automated computation:
+
+| VDARE Step | PVQ-TM Implementation |
+|------------|----------------------|
+| Step 1: Initial Data Collection | Case creation with demographics, injury description, medical context |
+| Step 2: Client Interview Data | PRW entry with DOT/O*NET crosswalk, SVP, strength, employer, duration |
+| Step 3: Job-Specific Work History | Automated DOT profiling via crosswalk — all 24 worker traits derived |
+| Step 4: Generate UVP | "Analyze PRW" auto-populates all 4 profile rows from demonstrated work capacity (highest level across all PRW, per VDARE rules) |
+| Step 5: Generate REP | User adjusts Evaluative profile based on medical/FCE data; POST profile mirrors changes |
+| Step 6: Evaluation Planning | Pre-analysis checklist validates completeness (PRW, skills, POST profile) |
+| Step 7: Vocational Objective | Candidate generation + TFQ trait filter + PVQ scoring identifies viable placements |
+| Step 8: Treatment/Service Planning | Near-miss analysis identifies retraining potential; RFC narrative summarizes capacity |
+| Step 9: Reporting | PDF report with TOC, methodology, assumptions, signature block |
+| Step 10: Vocational Outcome | Labor Market Access analysis quantifies total job loss with geographic specificity |
+
+**Key VDARE Principles Preserved:**
+- UVP uses the **highest demonstrated level** for each trait across all PRW (not average)
+- REP adjustments are **documented with source** (FCE, physician, testing) via trait source documentation
+- Job matching compares REP against **each occupation's specific DOT demands** (not generic defaults)
+- A **single failed trait** eliminates the occupation (hard exclusion gate)
+- Aptitudes are scored in **inverse order** (DOT: 1=highest, 5=lowest; normalized to 0-4 scale)
+
 ---
 
 ## 13. Confidence Grading System
