@@ -1,5 +1,5 @@
 /**
- * MVQS Vocational Quotient (VQ) Computation
+ * VQS Vocational Quotient (VQ) Computation
  *
  * The Vocational Quotient is a standardized index of overall job difficulty
  * derived from the 24 most vocationally significant worker trait job requirements.
@@ -7,19 +7,19 @@
  * VQ distribution: mean = 100, SD = 15, range ≈ 68 – 158
  *
  * Methodology: Linear regression using 24 trait weights + intercept.
- * Coefficients recovered from MVQS 2016 database (Vocationology, Inc.).
+ * Coefficients recovered from VQS 2016 database (Vocationology, Inc.).
  *
- * Reference: McCroskey, B.J. (2011). MVQS Manual and Quick Start Tutorial.
+ * Reference: McCroskey, B.J. (2011). VQS Manual and Quick Start Tutorial.
  */
 
 import { type TraitKey, type TraitVector, TRAIT_KEYS } from "./traits";
 
-// ─── MVQS VQ Regression Coefficients ─────────────────────────────────────────
-// Source: MVQS codebase server.js lines 175-179
-// Intercept + 24 trait weights in MVQS native-scale order
+// ─── VQS VQ Regression Coefficients ─────────────────────────────────────────
+// Source: VQS codebase server.js lines 175-179
+// Intercept + 24 trait weights in VQS native-scale order
 const VQ_INTERCEPT = 34.56707;
 
-// Weights correspond to MVQS trait order:
+// Weights correspond to VQS trait order:
 // GEDR, GEDM, GEDL, APTS, APTP, APTQ, APTK, APTF, APTM, APTE, APTC,
 // PD1(Strength), PD2(Climb/Bal), PD3(Stoop/Kneel), PD4(Reach/Handle),
 // PD5(Talk/Hear), PD6(See), EC1(Weather), EC2(Cold), EC3(Heat),
@@ -31,7 +31,7 @@ const VQ_WEIGHTS: readonly number[] = Object.freeze([
   1.217675, -0.200072, 0.298293,
 ]);
 
-// Maps our TraitKey order → MVQS weight index (same ordering, verified)
+// Maps our TraitKey order → VQS weight index (same ordering, verified)
 const TRAIT_KEY_TO_WEIGHT_INDEX: Record<TraitKey, number> = {
   reasoning: 0,
   math: 1,
@@ -59,9 +59,9 @@ const TRAIT_KEY_TO_WEIGHT_INDEX: Record<TraitKey, number> = {
   dustsFumes: 23,
 };
 
-// MVQS Default Profile (native scale) for null substitution
-// Source: MVQS traits.js DEFAULT_PROFILE = [3,2,2,2,3,2,3,2,3,2,2,2,0,0,1,0,1,2,0,0,0,1,0,0]
-const MVQS_DEFAULT_PROFILE: readonly number[] = Object.freeze([
+// VQS Default Profile (native scale) for null substitution
+// Source: VQS traits.js DEFAULT_PROFILE = [3,2,2,2,3,2,3,2,3,2,2,2,0,0,1,0,1,2,0,0,0,1,0,0]
+const VQS_DEFAULT_PROFILE: readonly number[] = Object.freeze([
   3, 2, 2, 2, 3, 2, 3, 2, 3, 2, 2, 2, 0, 0, 1, 0, 1, 2, 0, 0, 0, 1, 0, 0,
 ]);
 
@@ -97,9 +97,9 @@ const TRAIT_SCALE: Record<TraitKey, TraitScaleGroup> = {
 };
 
 /**
- * Reverse-map PVQ-TM normalized (0-4) value back to MVQS native DOT scale.
+ * Reverse-map PVQ-TM normalized (0-4) value back to VQS native DOT scale.
  *
- * PVQ-TM → MVQS native:
+ * PVQ-TM → VQS native:
  * - GED (Reasoning/Math/Language):  0-4 → 1-6
  * - APT (8 aptitudes):              0-4 → 1-5
  * - PD1 (Strength):                 0-4 → 1-5
@@ -107,7 +107,7 @@ const TRAIT_SCALE: Record<TraitKey, TraitScaleGroup> = {
  * - EC1 (Weather):                  0-4 → 1-3
  * - EC2-EC7 (binary environmental): 0-4 → 0-1
  */
-function toMvqsNativeScale(key: TraitKey, normalized: number): number {
+function toVqsNativeScale(key: TraitKey, normalized: number): number {
   const scale = TRAIT_SCALE[key];
   switch (scale) {
     case "ged":
@@ -186,7 +186,7 @@ export interface VQResult {
 // ─── Core Functions ──────────────────────────────────────────────────────────
 
 /**
- * Classify a VQ score into one of the 4 MVQS bands.
+ * Classify a VQ score into one of the 4 VQS bands.
  */
 export function classifyVQBand(vq: number): 1 | 2 | 3 | 4 {
   if (vq < 100) return 1;
@@ -196,9 +196,9 @@ export function classifyVQBand(vq: number): 1 | 2 | 3 | 4 {
 }
 
 /**
- * Compute the MVQS Vocational Quotient for an occupation from its trait demand vector.
+ * Compute the VQS Vocational Quotient for an occupation from its trait demand vector.
  *
- * The VQ regression was built on MVQS native DOT scales, so we reverse-map
+ * The VQ regression was built on VQS native DOT scales, so we reverse-map
  * PVQ-TM's 0-4 normalized values before applying the regression weights.
  */
 export function computeVQ(demands: TraitVector): VQResult {
@@ -213,11 +213,11 @@ export function computeVQ(demands: TraitVector): VQResult {
 
     let nativeVal: number;
     if (normalizedVal === null || normalizedVal === undefined) {
-      // Use MVQS default profile for missing traits
-      nativeVal = MVQS_DEFAULT_PROFILE[idx];
+      // Use VQS default profile for missing traits
+      nativeVal = VQS_DEFAULT_PROFILE[idx];
       nullCount++;
     } else {
-      nativeVal = toMvqsNativeScale(key, normalizedVal);
+      nativeVal = toVqsNativeScale(key, normalizedVal);
     }
 
     const contribution = weight * nativeVal;

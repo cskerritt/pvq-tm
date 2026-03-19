@@ -3,13 +3,13 @@
  *
  * Computes the Labor Market Quotient based on:
  * - National employment count
- * - Area-level (metro) employment count
+ * - Local Demand score (ZIP-level composite from postings, structural, hiring momentum)
  * - Wage comparison (target vs prior earnings)
  * - Projected openings & growth
  * - JOLTS trend (industry job openings direction)
  *
  * LMQ = weighted composite of all available scoring components.
- * When optional data (area employment, JOLTS) is unavailable,
+ * When optional data (local demand, JOLTS) is unavailable,
  * weights redistribute proportionally to available components.
  */
 
@@ -24,7 +24,11 @@ export interface LaborMarketInput {
   pct25?: number | null;
   pct75?: number | null;
   pct90?: number | null;
-  // New fields for enhanced LMQ
+  // Local Demand score (0-100) from the Local Demand engine
+  // Replaces the former areaEmployment raw count
+  localDemandScore?: number | null;
+  // Legacy field — still accepted for backward compatibility but
+  // localDemandScore takes precedence when both are provided
   areaEmployment?: number | null;
   joltsTrend?: number | null;       // -1 to +1 normalized trend
   joltsOpenings?: number | null;    // current JOLTS openings (thousands)
@@ -35,6 +39,8 @@ export interface LMQResult {
   lmq: number;
   components: {
     employmentScore: number;
+    localDemandScore: number | null;
+    /** @deprecated Use localDemandScore. Kept for backward compatibility. */
     areaEmploymentScore: number | null;
     wageScore: number;
     projectionsScore: number;
@@ -42,6 +48,8 @@ export interface LMQResult {
   };
   details: {
     employment: number | null;
+    localDemandScore: number | null;
+    /** @deprecated Use localDemandScore */
     areaEmployment: number | null;
     medianWage: number | null;
     meanWage: number | null;
@@ -92,6 +100,8 @@ function scoreEmployment(employment: number | null): number {
  * > 500    = 40
  * > 100    = 20
  * <= 100   = 10
+ *
+ * @deprecated Used as fallback when localDemandScore is not available.
  */
 function scoreAreaEmployment(areaEmployment: number | null): number {
   if (areaEmployment === null) return -1; // signal: no data
@@ -133,6 +143,16 @@ function scoreWage(
 
 /**
  * Score projected employment (0-100).
+ *
+ * Scores growth and openings independently, then averages.
+ * This prevents penalizing high-growth fields with moderate
+ * openings (or vice versa).
+ *
+ * Growth scoring:
+ *   > 10% = 100, > 5% = 80, > 0% = 60, > -5% = 40, <= -5% = 20
+ *
+ * Openings scoring:
+ *   > 10,000 = 100, > 5,000 = 80, > 1,000 = 60, > 500 = 40, <= 500 = 20
  */
 function scoreProjections(
   projectedOpenings: number | null,
@@ -140,14 +160,37 @@ function scoreProjections(
 ): number {
   if (projectedOpenings === null && projectedGrowthPct === null) return 50;
 
-  const openings = projectedOpenings ?? 0;
-  const growth = projectedGrowthPct ?? 0;
+  let growthScore: number;
+  if (projectedGrowthPct === null) {
+    growthScore = 50;
+  } else if (projectedGrowthPct > 10) {
+    growthScore = 100;
+  } else if (projectedGrowthPct > 5) {
+    growthScore = 80;
+  } else if (projectedGrowthPct > 0) {
+    growthScore = 60;
+  } else if (projectedGrowthPct > -5) {
+    growthScore = 40;
+  } else {
+    growthScore = 20;
+  }
 
-  if (growth > 10 && openings > 10000) return 100;
-  if (growth > 5 && openings > 5000) return 80;
-  if (growth > 0 && openings > 1000) return 60;
-  if (growth <= 0 && openings < 1000) return 20;
-  return 40;
+  let openingsScore: number;
+  if (projectedOpenings === null) {
+    openingsScore = 50;
+  } else if (projectedOpenings > 10000) {
+    openingsScore = 100;
+  } else if (projectedOpenings > 5000) {
+    openingsScore = 80;
+  } else if (projectedOpenings > 1000) {
+    openingsScore = 60;
+  } else if (projectedOpenings > 500) {
+    openingsScore = 40;
+  } else {
+    openingsScore = 20;
+  }
+
+  return Math.round((growthScore + openingsScore) / 2);
 }
 
 /**
@@ -169,16 +212,34 @@ function scoreJOLTSTrend(trend: number | null): number {
 }
 
 /**
+ * Resolve the local demand component score.
+ *
+ * Priority:
+ *   1. localDemandScore (pre-computed by Local Demand engine) — used directly
+ *   2. areaEmployment (legacy raw count) — scored via scoreAreaEmployment()
+ *   3. Neither available — returns -1 (signal: no data, weight redistributes)
+ */
+function resolveLocalDemandScore(input: LaborMarketInput): number {
+  // If the new Local Demand score is provided, use it directly (already 0-100)
+  if (input.localDemandScore !== undefined && input.localDemandScore !== null) {
+    return Math.max(0, Math.min(100, input.localDemandScore));
+  }
+
+  // Fall back to legacy area employment scoring
+  return scoreAreaEmployment(input.areaEmployment ?? null);
+}
+
+/**
  * Compute the Labor Market Quotient (LMQ).
  *
  * Base weights (when all data available):
  * - 25% national employment score
- * - 15% area employment score
+ * - 15% local demand score (ZIP market composite)
  * - 25% wage score
  * - 20% projections score
  * - 15% JOLTS trend score
  *
- * When optional components (area, JOLTS) are unavailable,
+ * When optional components (local demand, JOLTS) are unavailable,
  * their weights redistribute proportionally to the core components.
  */
 export function computeLMQ(input: LaborMarketInput): LMQResult {
@@ -192,7 +253,7 @@ export function computeLMQ(input: LaborMarketInput): LMQResult {
     input.projectedGrowthPct
   );
 
-  const areaScore = scoreAreaEmployment(input.areaEmployment ?? null);
+  const localScore = resolveLocalDemandScore(input);
   const trendScore = scoreJOLTSTrend(input.joltsTrend ?? null);
 
   // Build weighted components dynamically based on available data
@@ -202,11 +263,11 @@ export function computeLMQ(input: LaborMarketInput): LMQResult {
     { name: "projections", weight: 0.20, score: projectionsScore },
   ];
 
-  const hasArea = areaScore >= 0;
+  const hasLocal = localScore >= 0;
   const hasTrend = trendScore >= 0;
 
-  if (hasArea) {
-    components.push({ name: "areaEmployment", weight: 0.15, score: areaScore });
+  if (hasLocal) {
+    components.push({ name: "localDemand", weight: 0.15, score: localScore });
   }
   if (hasTrend) {
     components.push({ name: "joltsTrend", weight: 0.15, score: trendScore });
@@ -226,13 +287,16 @@ export function computeLMQ(input: LaborMarketInput): LMQResult {
     lmq: Math.round(lmq * 100) / 100,
     components: {
       employmentScore,
-      areaEmploymentScore: hasArea ? areaScore : null,
+      localDemandScore: hasLocal ? localScore : null,
+      // Backward compatibility: mirror localDemandScore into areaEmploymentScore
+      areaEmploymentScore: hasLocal ? localScore : null,
       wageScore,
       projectionsScore,
       joltsTrendScore: hasTrend ? trendScore : null,
     },
     details: {
       employment: input.employment,
+      localDemandScore: input.localDemandScore ?? null,
       areaEmployment: input.areaEmployment ?? null,
       medianWage: input.medianWage,
       meanWage: input.meanWage,

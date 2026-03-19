@@ -274,11 +274,18 @@ model Analysis {
   stateFips                String? // state FIPS code used for JOLTS lookup
   stateName                String? // state name
 
-  // ─── MVQS Earning Capacity Aggregates ──────────────────────
-  mvqsPostEcMedian     Float?  // Weighted avg earning capacity (post-injury viable)
-  mvqsPreEcMedian      Float?  // Weighted avg earning capacity (pre-injury viable)
-  mvqsEcLoss           Float?  // Earning capacity loss (pre - post) $/hr
-  mvqsEcLossPct        Float?  // Earning capacity loss as percentage
+  // ─── VQS Earning Capacity Aggregates ──────────────────────
+  vqsPostEcMedian     Float?  // Weighted avg earning capacity (post-injury viable)
+  vqsPreEcMedian      Float?  // Weighted avg earning capacity (pre-injury viable)
+  vqsEcLoss           Float?  // Earning capacity loss (pre - post) $/hr
+  vqsEcLossPct        Float?  // Earning capacity loss as percentage
+
+  // ─── Comprehensive Analysis Results ──────────────────────
+  nearMissAnalysis     Json?   // Near-miss/retrainability analysis results
+  rfcNarrative         Json?   // Residual Functional Capacity narrative
+  viableSetAnalysis    Json?   // Viable set coherence/clustering analysis
+  confidenceExplanation Json?  // Detailed confidence grade breakdown
+  regionalLaborMarket  Json?   // Regional labor market context narrative
 
   case              Case               @relation(fields: [caseId], references: [id], onDelete: Cascade)
   targetOccupations TargetOccupation[]
@@ -319,18 +326,22 @@ model TargetOccupation {
   areaEmployment         Int?     // employment count in evaluee's metro area
   areaMedianWage         Float?   // median wage in evaluee's metro area
 
-  // ─── MVQS: Vocational Quotient ─────────────────────────────
-  vqScore        Float?   // MVQS VQ score (68-158 scale, mean=100, SD=15)
+  // ─── Local Demand (ZIP market composite) ────────────────────
+  localDemandScore       Float?   // 0-100 composite from postings, structural, hiring momentum
+  localDemandDetails     Json?    // full LocalDemandResult breakdown
+
+  // ─── VQS: Vocational Quotient ─────────────────────────────
+  vqScore        Float?   // VQS VQ score (68-158 scale, mean=100, SD=15)
   vqBand         Int?     // VQ Band (1-4)
   vqDetails      Json?    // Full VQ computation breakdown
 
-  // ─── MVQS: Transferable Skills Percent ─────────────────────
+  // ─── VQS: Transferable Skills Percent ─────────────────────
   tspScore       Float?   // TSP score (0-97%)
   tspTier        Int?     // TSP Tier (1-5)
   tspLabel       String?  // Qualitative label
   tspDetails     Json?    // Full TSP computation breakdown
 
-  // ─── MVQS: Earning Capacity ────────────────────────────────
+  // ─── VQS: Earning Capacity ────────────────────────────────
   ecMedian       Float?   // Earning capacity median $/hr
   ecMean         Float?   // Earning capacity mean $/hr
   ec10           Float?   // 10th percentile $/hr
@@ -343,10 +354,19 @@ model TargetOccupation {
   ecGeoAdjusted  Boolean? // Whether ECLR geographic adjustment applied
   ecDetails      Json?    // Full EC breakdown
 
-  // ─── MVQS: Pre-Injury ─────────────────────────────────────
+  // ─── VQS: Pre-Injury ─────────────────────────────────────
   preVqScore     Float?   // Pre-injury VQ (occupation-based, same as post)
   preEcMedian    Float?   // Pre-injury earning capacity median
   preEcDetails   Json?
+
+  // ─── Near-Miss / Retrainability ────────────────────────────
+  nearMissSeverity   String?  // "marginal" | "moderate" | "significant" | null (if viable)
+  nearMissDetails    Json?    // detailed near-miss analysis for excluded occupations
+
+  // ─── Trait Margin Details (for viable occupations) ─────────
+  traitMarginMin     Float?   // minimum trait margin (closest to failing)
+  traitMarginAvg     Float?   // average trait margin across all rated traits
+  closestFailTrait   String?  // trait name that is closest to failing
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

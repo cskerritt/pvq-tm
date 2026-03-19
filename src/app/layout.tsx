@@ -18,7 +18,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "PVQ-TM | Public Vocational Quotient Transferability Method",
   description:
-    "MVQS-compatible vocational analysis system for forensic vocational experts",
+    "VQS-compatible vocational analysis system for forensic vocational experts",
 };
 
 export default function RootLayout({

@@ -142,9 +142,9 @@ describe('buildDOTDemandVector', () => {
       strength: 'M',
     });
 
-    expect(demands.reasoning).toBe(2); // normalizeDOTGED(3) = 2
-    expect(demands.math).toBe(1);      // normalizeDOTGED(2) = 1
-    expect(demands.language).toBe(2);   // normalizeDOTGED(4) = 2
+    expect(demands.reasoning).toBe(1.6); // normalizeDOTGED(3) = 1.6
+    expect(demands.math).toBe(0.8);     // normalizeDOTGED(2) = 0.8
+    expect(demands.language).toBe(2.4); // normalizeDOTGED(4) = 2.4
     expect(demands.strength).toBe(2);   // normalizeDOTStrength('M') = 2
 
     expect(sources.reasoning).toBe('DOT');

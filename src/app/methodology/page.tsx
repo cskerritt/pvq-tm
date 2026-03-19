@@ -198,10 +198,10 @@ export default function MethodologyPage() {
               { id: "lmq", num: "9", label: "Labor Market Quotient (LMQ)" },
               { id: "pvq", num: "10", label: "PVQ Composite Score" },
               { id: "reproducibility", num: "11", label: "Reproducibility & Audit Trail" },
-              { id: "mvqs-vq", num: "12", label: "MVQS Vocational Quotient (VQ)" },
-              { id: "mvqs-tsp", num: "13", label: "MVQS Transferable Skills Percent (TSP)" },
-              { id: "mvqs-ec", num: "14", label: "MVQS Earning Capacity Estimation" },
-              { id: "mvqs-validity", num: "15", label: "MVQS Validity & Daubert Compliance" },
+              { id: "vqs-vq", num: "12", label: "VQS Vocational Quotient (VQ)" },
+              { id: "vqs-tsp", num: "13", label: "VQS Transferable Skills Percent (TSP)" },
+              { id: "vqs-ec", num: "14", label: "VQS Earning Capacity Estimation" },
+              { id: "vqs-validity", num: "15", label: "VQS Validity & Daubert Compliance" },
             ].map((item) => (
               <a
                 key={item.id}
@@ -857,11 +857,11 @@ export default function MethodologyPage() {
         </SubSection>
       </Section>
 
-      {/* ─── Section 12: MVQS Vocational Quotient ──────────────────────── */}
-      <Section id="mvqs-vq" number="12" title="MVQS Vocational Quotient (VQ)">
+      {/* ─── Section 12: VQS Vocational Quotient ──────────────────────── */}
+      <Section id="vqs-vq" number="12" title="VQS Vocational Quotient (VQ)">
         <p>
           The Vocational Quotient (VQ) is a standardized job difficulty index derived from the
-          McCroskey Vocational Quotient System (MVQS). It quantifies occupational complexity
+          McCroskey Vocational Quotient System (VQS). It quantifies occupational complexity
           on a normalized scale (mean=100, SD=15, range 68-158), enabling direct comparison
           of job difficulty across all occupations.
         </p>
@@ -870,7 +870,7 @@ export default function MethodologyPage() {
           <p>
             VQ is computed via linear regression using 24 occupational trait demands in their
             native DOT scales. PVQ-TM first reverse-maps its normalized 0-4 trait values back
-            to native DOT scales before applying the MVQS regression weights.
+            to native DOT scales before applying the VQS regression weights.
           </p>
         </SubSection>
 
@@ -941,10 +941,10 @@ export default function MethodologyPage() {
         </SubSection>
       </Section>
 
-      {/* ─── Section 13: MVQS TSP ─────────────────────────────────────── */}
-      <Section id="mvqs-tsp" number="13" title="MVQS Transferable Skills Percent (TSP)">
+      {/* ─── Section 13: VQS TSP ─────────────────────────────────────── */}
+      <Section id="vqs-tsp" number="13" title="VQS Transferable Skills Percent (TSP)">
         <p>
-          The Transferable Skills Percent (TSP) provides a MVQS-compatible measure of skill
+          The Transferable Skills Percent (TSP) provides a VQS-compatible measure of skill
           transferability between a worker&rsquo;s past relevant work (PRW) and target occupations.
           TSP uses a five-tier classification system (0-97%) incorporating DOT and O*NET
           occupational code prefix matching, trait similarity, and vocational proximity metrics.
@@ -1018,8 +1018,8 @@ export default function MethodologyPage() {
         </SubSection>
       </Section>
 
-      {/* ─── Section 14: MVQS Earning Capacity ────────────────────────── */}
-      <Section id="mvqs-ec" number="14" title="MVQS Earning Capacity Estimation">
+      {/* ─── Section 14: VQS Earning Capacity ────────────────────────── */}
+      <Section id="vqs-ec" number="14" title="VQS Earning Capacity Estimation">
         <p>
           Earning capacity is estimated using VQ band-level regression combined with real
           OEWS (Occupational Employment and Wage Statistics) wage data. Geographic adjustments
@@ -1052,7 +1052,7 @@ export default function MethodologyPage() {
           formula={"CI = median \u00b1 1.96 \u00d7 SEE\nwhere SEE = VQ Band Standard Error of Estimate"}
         >
           <p>
-            The SEE values (Standard Error of Estimate) are derived from published MVQS
+            The SEE values (Standard Error of Estimate) are derived from published VQS
             validity research (McCroskey et al., 2011) and represent the prediction accuracy
             within each VQ band. Lower bands (simpler jobs) have smaller SEE values.
           </p>
@@ -1074,10 +1074,10 @@ export default function MethodologyPage() {
         </SubSection>
       </Section>
 
-      {/* ─── Section 15: MVQS Validity & Daubert ─────────────────────── */}
-      <Section id="mvqs-validity" number="15" title="MVQS Validity & Daubert Compliance">
+      {/* ─── Section 15: VQS Validity & Daubert ─────────────────────── */}
+      <Section id="vqs-validity" number="15" title="VQS Validity & Daubert Compliance">
         <p>
-          The MVQS methodology incorporated in PVQ-TM has been subject to extensive empirical
+          The VQS methodology incorporated in PVQ-TM has been subject to extensive empirical
           validation. The VQ scoring system demonstrates strong predictive validity for
           earning capacity estimation across all four VQ bands.
         </p>
@@ -1093,7 +1093,7 @@ export default function MethodologyPage() {
 
         <SubSection title="Daubert Standard Compliance">
           <p>
-            The MVQS methodology meets the Daubert standard requirements for admissibility
+            The VQS methodology meets the Daubert standard requirements for admissibility
             of scientific evidence:
           </p>
           <ol className="list-decimal pl-6 space-y-1">
@@ -1106,9 +1106,9 @@ export default function MethodologyPage() {
         </SubSection>
 
         <SubSection title="Key References">
-          <p>The following research supports the MVQS methodology used in PVQ-TM:</p>
+          <p>The following research supports the VQS methodology used in PVQ-TM:</p>
           <ul className="list-disc pl-6 space-y-1">
-            <li>McCroskey, Dennis, Wilkinson, et al. (2011). Predictive Validity and Standard Errors of Estimate for the MVQS VQ Job Difficulty Index.</li>
+            <li>McCroskey, Dennis, Wilkinson, et al. (2011). Predictive Validity and Standard Errors of Estimate for the VQS VQ Job Difficulty Index.</li>
             <li>McCroskey, B.J. (2001). Development and field testing of the McCroskey Vocational Quotient System.</li>
             <li>U.S. Department of Labor. Revised Handbook for Analyzing Jobs (RHAJ, 1991).</li>
             <li>U.S. Bureau of Labor Statistics. Occupational Employment and Wage Statistics (OEWS).</li>
@@ -1121,11 +1121,11 @@ export default function MethodologyPage() {
 
       <footer className="text-sm text-muted-foreground text-center pb-8">
         <p>
-          PVQ-TM Methodology Document &mdash; Version 2.0 (MVQS Integration)
+          PVQ-TM Methodology Document &mdash; Version 2.0 (VQS Integration)
         </p>
         <p className="mt-1">
           This document describes a public, transparent methodology. All formulas and thresholds
-          are published for independent verification and replication. MVQS components are
+          are published for independent verification and replication. VQS components are
           derived from published McCroskey Vocational Quotient System research.
         </p>
       </footer>

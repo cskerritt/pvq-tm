@@ -1,11 +1,11 @@
 /**
- * MVQS Earning Capacity Estimation
+ * VQS Earning Capacity Estimation
  *
- * Uses VQ Band structure with published MVQS validity research (SEE and Rxy)
+ * Uses VQ Band structure with published VQS validity research (SEE and Rxy)
  * combined with real OEWS wage data to produce earning capacity estimates
  * with confidence intervals and geographic adjustments (ECLR).
  *
- * VQ Band SEE values from published MVQS research:
+ * VQ Band SEE values from published VQS research:
  *   McCroskey, Dennis, Wilkinson, et al. (2011 draft).
  *   Year 2007 SOC Data curvilinear regression results.
  *
@@ -15,12 +15,12 @@
  *
  * References:
  *   McCroskey et al. (2011). Predictive Validity (Rxy) and Standard Errors
- *     of Estimate (SEE) for the MVQS VQ Job Difficulty Index.
+ *     of Estimate (SEE) for the VQS VQ Job Difficulty Index.
  *   U.S. DOL Occupational Employment Statistics (OES) program.
  */
 
-// ─── Published MVQS Band-Level Statistics ────────────────────────────────────
-// Source: MVQS methodology document §4, Table 4a
+// ─── Published VQS Band-Level Statistics ────────────────────────────────────
+// Source: VQS methodology document §4, Table 4a
 
 export interface VQBandStats {
   band: 1 | 2 | 3 | 4;
@@ -145,7 +145,7 @@ function annualToHourly(annual: number | null): number | null {
  * Compute earning capacity estimate for an occupation.
  *
  * Uses real OEWS wage data as the base, applies ECLR geographic adjustment,
- * and adds VQ-band-specific SEE and confidence intervals from MVQS research.
+ * and adds VQ-band-specific SEE and confidence intervals from VQS research.
  *
  * @param band - VQ Band (1-4) for the occupation
  * @param wages - OEWS wage data (national level, annual)

@@ -22,8 +22,13 @@ import {
   XCircle,
   Minus,
   TrendingDown,
+  TrendingUp,
   BarChart3,
   DollarSign,
+  MapPin,
+  Target,
+  Layers,
+  Activity,
 } from "lucide-react";
 import { toast } from "sonner";
 import { CaseBreadcrumb } from "@/components/case-breadcrumb";
@@ -63,6 +68,7 @@ interface TargetOcc {
   svp: number | null;
   pvq: number | null;
   tfq: number | null;
+  stq: number | null;
   excluded: boolean;
   exclusionReason: string | null;
   preTfq: number | null;
@@ -71,21 +77,30 @@ interface TargetOcc {
   joltsIndustryName: string | null;
   joltsCurrentOpenings: number | null;
   joltsPreInjuryOpenings: number | null;
-  // MVQS fields
+  // VQS fields
   vqScore: number | null;
   vqBand: number | null;
   tspScore: number | null;
   tspTier: number | null;
   tspLabel: string | null;
   ecMedian: number | null;
+  ecMean: number | null;
+  ec10: number | null;
+  ec25: number | null;
+  ec75: number | null;
+  ec90: number | null;
   ecConfLow: number | null;
   ecConfHigh: number | null;
   ecSee: number | null;
   ecGeoAdjusted: boolean | null;
   preVqScore: number | null;
   preEcMedian: number | null;
+  // Near-miss fields
+  nearMissSeverity: string | null;
+  nearMissDetails: Record<string, unknown> | null;
 }
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 interface AnalysisData {
   id: string;
   name: string | null;
@@ -95,14 +110,25 @@ interface AnalysisData {
   postInjuryViableCount: number | null;
   postInjuryTotalEmployment: number | null;
   postInjuryJoltsOpenings: number | null;
-  // MVQS aggregates
-  mvqsPostEcMedian: number | null;
-  mvqsPreEcMedian: number | null;
-  mvqsEcLoss: number | null;
-  mvqsEcLossPct: number | null;
+  // Area employment
+  preInjuryAreaEmployment: number | null;
+  postInjuryAreaEmployment: number | null;
+  stateJoltsCurrent: number | null;
+  stateJoltsPreInjury: number | null;
+  stateName: string | null;
+  // VQS aggregates
+  vqsPostEcMedian: number | null;
+  vqsPreEcMedian: number | null;
+  vqsEcLoss: number | null;
+  vqsEcLossPct: number | null;
+  // JSON analysis fields
+  nearMissAnalysis: any;
+  viableSetAnalysis: any;
+  regionalLaborMarket: any;
   case: { clientName: string; id: string; dateOfInjury: string | null };
   targetOccupations: TargetOcc[];
 }
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 /** 24 traits in display order */
 const TRAIT_DEFS: { key: keyof Profile; label: string; category: string }[] = [
@@ -145,12 +171,27 @@ function formatHourly(val: number | null): string {
   return `$${val.toFixed(2)}`;
 }
 
+function formatAnnual(hourly: number | null): string {
+  if (hourly === null) return "\u2014";
+  return `$${(hourly * 2080).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+}
+
 function getVQBandColor(band: number | null): string {
   switch (band) {
     case 1: return "bg-blue-100 text-blue-800";
     case 2: return "bg-green-100 text-green-800";
     case 3: return "bg-amber-100 text-amber-800";
     case 4: return "bg-red-100 text-red-800";
+    default: return "";
+  }
+}
+
+function getVQBandLabel(band: number | null): string {
+  switch (band) {
+    case 1: return "High";
+    case 2: return "Above Average";
+    case 3: return "Below Average";
+    case 4: return "Low";
     default: return "";
   }
 }
@@ -164,6 +205,28 @@ function getTSPTierColor(tier: number | null): string {
     case 1: return "bg-red-100 text-red-800";
     default: return "";
   }
+}
+
+/** Strength level labels for narrative */
+function strengthLabel(val: number | null): string {
+  switch (val) {
+    case 0: return "Unlimited";
+    case 1: return "Heavy";
+    case 2: return "Medium";
+    case 3: return "Light";
+    case 4: return "Sedentary";
+    default: return String(val ?? "\u2014");
+  }
+}
+
+/** Safe JSON parse helper */
+function safeJson(val: unknown): Record<string, unknown> | null {
+  if (val === null || val === undefined) return null;
+  if (typeof val === "object") return val as Record<string, unknown>;
+  if (typeof val === "string") {
+    try { return JSON.parse(val); } catch { return null; }
+  }
+  return null;
 }
 
 export default function ComparisonPage() {
@@ -260,6 +323,38 @@ export default function ComparisonPage() {
     .filter(([code]) => code !== "unknown")
     .sort((a, b) => (b[1].preAccess - b[1].postAccess) - (a[1].preAccess - a[1].postAccess));
 
+  // --- Trait Delta Analysis ---
+  const traitDeltas = preProfile && postProfile
+    ? TRAIT_DEFS.map(({ key, label }) => {
+        const pre = preProfile[key] as number | null;
+        const post = postProfile[key] as number | null;
+        const delta = pre !== null && post !== null ? post - pre : null;
+        // Count occupations lost due to this trait (rough: check exclusion reasons)
+        const occsLost = delta !== null && delta > 0
+          ? lostAccess.filter((t) => {
+              const reason = t.exclusionReason ?? "";
+              return reason.toLowerCase().includes(key.toLowerCase()) ||
+                     reason.toLowerCase().includes(label.toLowerCase().split(" ")[0].toLowerCase());
+            }).length
+          : 0;
+        return { key, label, pre, post, delta, occsLost };
+      }).filter((d) => d.delta !== null)
+    : [];
+
+  const criticalChanges = traitDeltas.filter((d) => d.delta !== null && d.delta >= 2);
+  const moderateChanges = traitDeltas.filter((d) => d.delta !== null && d.delta === 1);
+  const unchangedTraits = traitDeltas.filter((d) => d.delta !== null && d.delta <= 0);
+
+  // --- Near-Miss Data ---
+  const nearMissData = safeJson(analysis?.nearMissAnalysis);
+  const nearMissOccs = targets.filter((t) => t.nearMissSeverity === "marginal" || t.nearMissSeverity === "moderate");
+
+  // --- Viable Set Data ---
+  const viableSetData = safeJson(analysis?.viableSetAnalysis);
+
+  // --- Regional Labor Market Data ---
+  const regionalData = safeJson(analysis?.regionalLaborMarket);
+
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <CaseBreadcrumb caseId={caseId} currentPage="Pre/Post Comparison" />
@@ -326,6 +421,57 @@ export default function ComparisonPage() {
               <p className="text-xs text-muted-foreground">of labor market</p>
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* Section 6: Area Employment Comparison Cards */}
+      {(analysis?.preInjuryAreaEmployment != null || analysis?.postInjuryAreaEmployment != null ||
+        analysis?.stateJoltsCurrent != null || analysis?.stateJoltsPreInjury != null) && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {analysis?.preInjuryAreaEmployment != null && (
+            <Card className="bg-blue-50 dark:bg-blue-950/30">
+              <CardContent className="pt-4 pb-4 text-center">
+                <p className="text-xs text-muted-foreground">Area Employment (Pre)</p>
+                <p className="text-2xl font-bold text-blue-600">
+                  {analysis.preInjuryAreaEmployment.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                </p>
+                <p className="text-xs text-muted-foreground">jobs in metro area</p>
+              </CardContent>
+            </Card>
+          )}
+          {analysis?.postInjuryAreaEmployment != null && (
+            <Card className="bg-amber-50 dark:bg-amber-950/30">
+              <CardContent className="pt-4 pb-4 text-center">
+                <p className="text-xs text-muted-foreground">Area Employment (Post)</p>
+                <p className="text-2xl font-bold text-amber-600">
+                  {analysis.postInjuryAreaEmployment.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                </p>
+                <p className="text-xs text-muted-foreground">jobs in metro area</p>
+              </CardContent>
+            </Card>
+          )}
+          {analysis?.stateJoltsPreInjury != null && (
+            <Card className="bg-slate-50 dark:bg-slate-950/30">
+              <CardContent className="pt-4 pb-4 text-center">
+                <p className="text-xs text-muted-foreground">State JOLTS at Injury</p>
+                <p className="text-2xl font-bold text-slate-600">
+                  {analysis.stateJoltsPreInjury.toLocaleString("en-US", { maximumFractionDigits: 1 })}K
+                </p>
+                <p className="text-xs text-muted-foreground">{analysis.stateName ?? "State"} openings</p>
+              </CardContent>
+            </Card>
+          )}
+          {analysis?.stateJoltsCurrent != null && (
+            <Card className="bg-slate-50 dark:bg-slate-950/30">
+              <CardContent className="pt-4 pb-4 text-center">
+                <p className="text-xs text-muted-foreground">State JOLTS Current</p>
+                <p className="text-2xl font-bold text-slate-600">
+                  {analysis.stateJoltsCurrent.toLocaleString("en-US", { maximumFractionDigits: 1 })}K
+                </p>
+                <p className="text-xs text-muted-foreground">{analysis.stateName ?? "State"} openings</p>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
 
@@ -417,6 +563,100 @@ export default function ComparisonPage() {
         </Card>
       )}
 
+      {/* Section 3: Trait Delta Narrative */}
+      {preProfile && postProfile && (criticalChanges.length > 0 || moderateChanges.length > 0) && (
+        <Card className="border-orange-200 bg-orange-50/20 dark:border-orange-800 dark:bg-orange-950/10">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5 text-orange-600" />
+              Trait Change Impact Analysis
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Summary of trait changes between pre-injury and post-injury profiles, grouped by severity of impact.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Critical Changes */}
+            {criticalChanges.length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-red-700 mb-2 flex items-center gap-1">
+                  <AlertTriangle className="h-4 w-4" />
+                  Critical Changes (Reduced by 2+)
+                </h3>
+                <div className="space-y-2">
+                  {criticalChanges.map((d) => (
+                    <div key={d.key} className="rounded-lg border border-red-200 bg-red-50/50 dark:bg-red-950/20 p-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-medium text-sm">{d.label}</span>
+                        <Badge className="bg-red-100 text-red-800 text-xs" variant="outline">
+                          +{d.delta} (more restricted)
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {d.key === "strength" ? (
+                          <>
+                            Strength reduced from {strengthLabel(d.pre)} ({d.pre}) to {strengthLabel(d.post)} ({d.post}),
+                            {d.occsLost > 0
+                              ? ` contributing to loss of access to ${d.occsLost} occupation${d.occsLost !== 1 ? "s" : ""} requiring higher physical demands.`
+                              : " potentially eliminating access to occupations requiring medium or heavier physical demands."}
+                          </>
+                        ) : (
+                          <>
+                            {d.label} changed from {d.pre} to {d.post} (increased restriction of {d.delta} level{(d.delta ?? 0) > 1 ? "s" : ""}).
+                            {d.occsLost > 0
+                              ? ` This change contributed to the loss of ${d.occsLost} occupation${d.occsLost !== 1 ? "s" : ""}.`
+                              : " This significant change may limit access to occupations with higher demands in this trait."}
+                          </>
+                        )}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Moderate Changes */}
+            {moderateChanges.length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-amber-700 mb-2">
+                  Moderate Changes (Reduced by 1)
+                </h3>
+                <div className="space-y-2">
+                  {moderateChanges.map((d) => (
+                    <div key={d.key} className="rounded-lg border border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 p-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-medium text-sm">{d.label}</span>
+                        <Badge className="bg-amber-100 text-amber-800 text-xs" variant="outline">
+                          +1 (more restricted)
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {d.label} changed from {d.pre} to {d.post}.
+                        {d.occsLost > 0
+                          ? ` This change contributed to the loss of ${d.occsLost} occupation${d.occsLost !== 1 ? "s" : ""}.`
+                          : " This change may marginally reduce access to occupations at the threshold."}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Unchanged Summary */}
+            {unchangedTraits.length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-green-700 mb-1">
+                  Unchanged / Improved ({unchangedTraits.length} trait{unchangedTraits.length !== 1 ? "s" : ""})
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  {unchangedTraits.map((d) => d.label).join(", ")} remained at the same level or improved post-injury.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Occupation Access Matrix */}
       {targets.length > 0 && (
         <Card>
@@ -446,7 +686,7 @@ export default function ComparisonPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {/* Lost Access (red) — sorted first */}
+                  {/* Lost Access (red) -- sorted first */}
                   {lostAccess.map((t) => (
                     <TableRow key={t.id} className="bg-red-50/50 dark:bg-red-950/10">
                       <TableCell className="font-medium">{t.title}</TableCell>
@@ -553,6 +793,121 @@ export default function ComparisonPage() {
         </Card>
       )}
 
+      {/* Section 4: Near-Miss Occupations */}
+      {(nearMissOccs.length > 0 || nearMissData) && (
+        <Card className="border-amber-200 bg-amber-50/20 dark:border-amber-800 dark:bg-amber-950/10">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Target className="h-5 w-5 text-amber-600" />
+              Near-Miss Occupations
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Occupations that narrowly failed post-injury TFQ. These represent potential retraining or accommodation targets.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Summary counts */}
+            <div className="flex gap-4 flex-wrap">
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-center min-w-[120px]">
+                <p className="text-xs text-muted-foreground">Marginal Near-Misses</p>
+                <p className="text-2xl font-bold text-amber-600">
+                  {nearMissOccs.filter((t) => t.nearMissSeverity === "marginal").length}
+                </p>
+              </div>
+              <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-center min-w-[120px]">
+                <p className="text-xs text-muted-foreground">Moderate Near-Misses</p>
+                <p className="text-2xl font-bold text-orange-600">
+                  {nearMissOccs.filter((t) => t.nearMissSeverity === "moderate").length}
+                </p>
+              </div>
+            </div>
+
+            {/* Limiting traits from nearMissAnalysis JSON */}
+            {nearMissData && Array.isArray((nearMissData as Record<string, unknown>).limitingTraits) && (
+              <div>
+                <h3 className="text-sm font-semibold mb-2">Most Limiting Traits</h3>
+                <div className="flex gap-2 flex-wrap">
+                  {((nearMissData as Record<string, unknown>).limitingTraits as Array<{ trait?: string; count?: number }>).map(
+                    (lt: { trait?: string; count?: number }, i: number) => (
+                      <Badge key={i} variant="outline" className="bg-amber-100 text-amber-800">
+                        {lt.trait ?? "Unknown"}: {lt.count ?? 0} exclusion{(lt.count ?? 0) !== 1 ? "s" : ""}
+                      </Badge>
+                    )
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Near-miss occupation list */}
+            {nearMissOccs.length > 0 && (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="md:min-w-[180px]">Occupation</TableHead>
+                      <TableHead>SOC</TableHead>
+                      <TableHead className="text-center">Severity</TableHead>
+                      <TableHead>Failed Traits</TableHead>
+                      <TableHead>Retrainability Notes</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {nearMissOccs.map((t) => {
+                      const details = safeJson(t.nearMissDetails);
+                      const failedTraits = details
+                        ? (Array.isArray((details as Record<string, unknown>).failedTraits)
+                          ? ((details as Record<string, unknown>).failedTraits as string[])
+                          : [])
+                        : [];
+                      const retrainNotes = details
+                        ? (typeof (details as Record<string, unknown>).retrainability === "string"
+                          ? (details as Record<string, unknown>).retrainability as string
+                          : typeof (details as Record<string, unknown>).notes === "string"
+                            ? (details as Record<string, unknown>).notes as string
+                            : null)
+                        : null;
+                      return (
+                        <TableRow
+                          key={t.id}
+                          className={
+                            t.nearMissSeverity === "marginal"
+                              ? "bg-amber-50/50 dark:bg-amber-950/10"
+                              : "bg-orange-50/50 dark:bg-orange-950/10"
+                          }
+                        >
+                          <TableCell className="font-medium text-sm">{t.title}</TableCell>
+                          <TableCell className="font-mono text-xs">{t.onetSocCode}</TableCell>
+                          <TableCell className="text-center">
+                            <Badge
+                              variant="outline"
+                              className={
+                                t.nearMissSeverity === "marginal"
+                                  ? "bg-amber-100 text-amber-800 text-xs"
+                                  : "bg-orange-100 text-orange-800 text-xs"
+                              }
+                            >
+                              {t.nearMissSeverity === "marginal" ? "Marginal" : "Moderate"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            {failedTraits.length > 0
+                              ? failedTraits.join(", ")
+                              : t.exclusionReason ?? "\u2014"}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {retrainNotes ?? "\u2014"}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* JOLTS Industry Summary */}
       {industrySummary.length > 0 && (
         <Card>
@@ -630,8 +985,145 @@ export default function ComparisonPage() {
         </Card>
       )}
 
-      {/* Earning Capacity Impact */}
-      {(analysis?.mvqsPostEcMedian !== null || analysis?.mvqsPreEcMedian !== null) && (
+      {/* Section 1: Regional Labor Market */}
+      {regionalData && (
+        <Card className="border-indigo-200 bg-indigo-50/20 dark:border-indigo-800 dark:bg-indigo-950/10">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MapPin className="h-5 w-5 text-indigo-600" />
+              Regional Labor Market
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Local labor market context for the evaluee&apos;s geographic area.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Location summary */}
+            {typeof (regionalData as Record<string, unknown>).locationSummary === "string" && (
+              <p className="text-sm">{(regionalData as Record<string, unknown>).locationSummary as string}</p>
+            )}
+
+            {/* Wage premium badge */}
+            {(regionalData as Record<string, unknown>).wagePremiumPct != null && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">Wage Premium:</span>
+                {(() => {
+                  const pct = Number((regionalData as Record<string, unknown>).wagePremiumPct);
+                  const isAbove = pct >= 0;
+                  return (
+                    <Badge
+                      variant="outline"
+                      className={isAbove ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}
+                    >
+                      {isAbove ? <TrendingUp className="h-3 w-3 mr-1" /> : <TrendingDown className="h-3 w-3 mr-1" />}
+                      {isAbove ? "Above" : "Below"} average by {Math.abs(pct).toFixed(1)}%
+                    </Badge>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* Employment concentration */}
+            {typeof (regionalData as Record<string, unknown>).employmentConcentration === "string" && (
+              <div>
+                <h3 className="text-sm font-semibold mb-1">Employment Concentration</h3>
+                <p className="text-sm text-muted-foreground">
+                  {(regionalData as Record<string, unknown>).employmentConcentration as string}
+                </p>
+              </div>
+            )}
+
+            {/* State JOLTS narrative */}
+            {typeof (regionalData as Record<string, unknown>).stateJoltsNarrative === "string" && (
+              <div>
+                <h3 className="text-sm font-semibold mb-1">State JOLTS Trends</h3>
+                <p className="text-sm text-muted-foreground">
+                  {(regionalData as Record<string, unknown>).stateJoltsNarrative as string}
+                  {(regionalData as Record<string, unknown>).stateJoltsChangePct != null && (
+                    <span className="ml-1 font-medium">
+                      ({Number((regionalData as Record<string, unknown>).stateJoltsChangePct) >= 0 ? "+" : ""}
+                      {Number((regionalData as Record<string, unknown>).stateJoltsChangePct).toFixed(1)}% change)
+                    </span>
+                  )}
+                </p>
+              </div>
+            )}
+
+            {/* Risks and Opportunities */}
+            {(Array.isArray((regionalData as Record<string, unknown>).risks) ||
+              Array.isArray((regionalData as Record<string, unknown>).opportunities)) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {Array.isArray((regionalData as Record<string, unknown>).risks) &&
+                  ((regionalData as Record<string, unknown>).risks as string[]).length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-red-700 mb-2">Risks</h3>
+                    <ul className="space-y-1">
+                      {((regionalData as Record<string, unknown>).risks as string[]).map((r: string, i: number) => (
+                        <li key={i} className="text-sm flex items-start gap-2">
+                          <span className="text-red-500 mt-1 shrink-0">&#x2022;</span>
+                          <span className="text-muted-foreground">{r}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {Array.isArray((regionalData as Record<string, unknown>).opportunities) &&
+                  ((regionalData as Record<string, unknown>).opportunities as string[]).length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-green-700 mb-2">Opportunities</h3>
+                    <ul className="space-y-1">
+                      {((regionalData as Record<string, unknown>).opportunities as string[]).map((o: string, i: number) => (
+                        <li key={i} className="text-sm flex items-start gap-2">
+                          <span className="text-green-500 mt-1 shrink-0">&#x2022;</span>
+                          <span className="text-muted-foreground">{o}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Growing vs Declining Occupations */}
+            {(Array.isArray((regionalData as Record<string, unknown>).growingOccupations) ||
+              Array.isArray((regionalData as Record<string, unknown>).decliningOccupations)) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {Array.isArray((regionalData as Record<string, unknown>).growingOccupations) &&
+                  ((regionalData as Record<string, unknown>).growingOccupations as string[]).length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-green-700 mb-2 flex items-center gap-1">
+                      <TrendingUp className="h-4 w-4" />
+                      Growing Occupations
+                    </h3>
+                    <ul className="space-y-1">
+                      {((regionalData as Record<string, unknown>).growingOccupations as string[]).map((o: string, i: number) => (
+                        <li key={i} className="text-sm text-muted-foreground">{o}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {Array.isArray((regionalData as Record<string, unknown>).decliningOccupations) &&
+                  ((regionalData as Record<string, unknown>).decliningOccupations as string[]).length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-red-700 mb-2 flex items-center gap-1">
+                      <TrendingDown className="h-4 w-4" />
+                      Declining Occupations
+                    </h3>
+                    <ul className="space-y-1">
+                      {((regionalData as Record<string, unknown>).decliningOccupations as string[]).map((o: string, i: number) => (
+                        <li key={i} className="text-sm text-muted-foreground">{o}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Earning Capacity Impact (Enhanced - Section 2) */}
+      {(analysis?.vqsPostEcMedian !== null || analysis?.vqsPreEcMedian !== null) && (
         <Card className="border-green-200 bg-green-50/30 dark:border-green-800 dark:bg-green-950/20">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -639,55 +1131,60 @@ export default function ComparisonPage() {
               Earning Capacity Impact
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              MVQS-based earning capacity estimates per target occupation. Shows VQ band, TSP tier, and EC with 95% confidence intervals.
+              VQS-based earning capacity estimates per target occupation. Shows VQ band, TSP tier, full percentile distribution, and EC with 95% confidence intervals.
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
             {/* EC Summary Cards */}
-            {analysis?.mvqsPreEcMedian !== null && analysis?.mvqsPostEcMedian !== null && (
+            {analysis?.vqsPreEcMedian !== null && analysis?.vqsPostEcMedian !== null && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                 <div className="rounded-lg border p-3 text-center">
                   <p className="text-xs text-muted-foreground">Pre-Injury EC</p>
-                  <p className="text-xl font-bold text-blue-600">{formatHourly(analysis?.mvqsPreEcMedian ?? null)}/hr</p>
-                  <p className="text-xs text-muted-foreground">${((analysis?.mvqsPreEcMedian ?? 0) * 2080).toLocaleString("en-US", { maximumFractionDigits: 0 })}/yr</p>
+                  <p className="text-xl font-bold text-blue-600">{formatHourly(analysis?.vqsPreEcMedian ?? null)}/hr</p>
+                  <p className="text-xs text-muted-foreground">{formatAnnual(analysis?.vqsPreEcMedian ?? null)}/yr</p>
                 </div>
                 <div className="rounded-lg border p-3 text-center">
                   <p className="text-xs text-muted-foreground">Post-Injury EC</p>
-                  <p className="text-xl font-bold text-amber-600">{formatHourly(analysis?.mvqsPostEcMedian ?? null)}/hr</p>
-                  <p className="text-xs text-muted-foreground">${((analysis?.mvqsPostEcMedian ?? 0) * 2080).toLocaleString("en-US", { maximumFractionDigits: 0 })}/yr</p>
+                  <p className="text-xl font-bold text-amber-600">{formatHourly(analysis?.vqsPostEcMedian ?? null)}/hr</p>
+                  <p className="text-xs text-muted-foreground">{formatAnnual(analysis?.vqsPostEcMedian ?? null)}/yr</p>
                 </div>
-                {analysis?.mvqsEcLoss !== null && (
+                {analysis?.vqsEcLoss !== null && (
                   <div className="rounded-lg border p-3 text-center">
                     <p className="text-xs text-muted-foreground">EC Loss</p>
-                    <p className={`text-xl font-bold ${(analysis?.mvqsEcLoss ?? 0) > 0 ? "text-red-600" : "text-green-600"}`}>
-                      {(analysis?.mvqsEcLoss ?? 0) > 0 ? "-" : "+"}{formatHourly(Math.abs(analysis?.mvqsEcLoss ?? 0))}/hr
+                    <p className={`text-xl font-bold ${(analysis?.vqsEcLoss ?? 0) > 0 ? "text-red-600" : "text-green-600"}`}>
+                      {(analysis?.vqsEcLoss ?? 0) > 0 ? "-" : "+"}{formatHourly(Math.abs(analysis?.vqsEcLoss ?? 0))}/hr
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatAnnual(Math.abs(analysis?.vqsEcLoss ?? 0))}/yr
                     </p>
                   </div>
                 )}
-                {analysis?.mvqsEcLossPct !== null && (
+                {analysis?.vqsEcLossPct !== null && (
                   <div className="rounded-lg border p-3 text-center">
                     <p className="text-xs text-muted-foreground">Loss %</p>
-                    <p className={`text-xl font-bold ${(analysis?.mvqsEcLossPct ?? 0) > 0 ? "text-red-600" : "text-green-600"}`}>
-                      {analysis?.mvqsEcLossPct?.toFixed(1)}%
+                    <p className={`text-xl font-bold ${(analysis?.vqsEcLossPct ?? 0) > 0 ? "text-red-600" : "text-green-600"}`}>
+                      {analysis?.vqsEcLossPct?.toFixed(1)}%
                     </p>
                   </div>
                 )}
               </div>
             )}
 
-            {/* Per-occupation EC table */}
+            {/* Enhanced Per-occupation EC table with percentile distribution */}
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="md:min-w-[180px]">Occupation</TableHead>
+                    <TableHead className="md:min-w-[160px]">Occupation</TableHead>
                     <TableHead className="text-center">VQ</TableHead>
                     <TableHead className="text-center">Band</TableHead>
                     <TableHead className="text-center">TSP</TableHead>
                     <TableHead className="text-right">EC Median</TableHead>
+                    <TableHead className="text-right">Annual EC</TableHead>
+                    <TableHead className="text-center min-w-[200px]">Percentile Distribution</TableHead>
                     <TableHead className="text-right">95% CI</TableHead>
-                    <TableHead className="text-center">Pre Access</TableHead>
-                    <TableHead className="text-center">Post Access</TableHead>
+                    <TableHead className="text-center">Pre</TableHead>
+                    <TableHead className="text-center">Post</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -696,6 +1193,17 @@ export default function ComparisonPage() {
                     .sort((a, b) => (b.ecMedian ?? 0) - (a.ecMedian ?? 0))
                     .map((t) => {
                       const lost = t.preTfqPasses === true && t.excluded;
+                      const p10 = t.ec10;
+                      const p25 = t.ec25;
+                      const med = t.ecMedian;
+                      const p75 = t.ec75;
+                      const p90 = t.ec90;
+                      // Calculate range bar percentages
+                      const rangeMin = p10 ?? p25 ?? med ?? 0;
+                      const rangeMax = p90 ?? p75 ?? med ?? 0;
+                      const range = rangeMax - rangeMin;
+                      const medPos = range > 0 && med !== null ? ((med - rangeMin) / range) * 100 : 50;
+
                       return (
                         <TableRow key={t.id} className={lost ? "bg-red-50/50 dark:bg-red-950/10" : ""}>
                           <TableCell>
@@ -707,7 +1215,7 @@ export default function ComparisonPage() {
                           <TableCell className="text-center font-mono text-sm">{t.vqScore?.toFixed(0) ?? "\u2014"}</TableCell>
                           <TableCell className="text-center">
                             <Badge className={`${getVQBandColor(t.vqBand)} text-xs`} variant="outline">
-                              B{t.vqBand}
+                              B{t.vqBand} {getVQBandLabel(t.vqBand)}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-center">
@@ -719,6 +1227,45 @@ export default function ComparisonPage() {
                           </TableCell>
                           <TableCell className="text-right font-mono text-sm font-semibold text-green-700">
                             {formatHourly(t.ecMedian)}
+                          </TableCell>
+                          <TableCell className="text-right text-xs text-muted-foreground">
+                            {formatAnnual(t.ecMedian)}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {(p10 !== null || p25 !== null) && (p90 !== null || p75 !== null) ? (
+                              <div className="space-y-1">
+                                {/* Horizontal range bar */}
+                                <div className="relative h-3 bg-gray-100 rounded-full overflow-hidden mx-auto max-w-[180px]">
+                                  <div
+                                    className="absolute h-full bg-green-200 rounded-full"
+                                    style={{ left: "0%", width: "100%" }}
+                                  />
+                                  {/* P25-P75 range */}
+                                  {p25 !== null && p75 !== null && range > 0 && (
+                                    <div
+                                      className="absolute h-full bg-green-400 rounded-full"
+                                      style={{
+                                        left: `${((p25 - rangeMin) / range) * 100}%`,
+                                        width: `${((p75 - p25) / range) * 100}%`,
+                                      }}
+                                    />
+                                  )}
+                                  {/* Median marker */}
+                                  <div
+                                    className="absolute top-0 h-full w-0.5 bg-green-800"
+                                    style={{ left: `${medPos}%` }}
+                                  />
+                                </div>
+                                {/* Labels */}
+                                <div className="flex justify-between text-[10px] text-muted-foreground font-mono max-w-[180px] mx-auto">
+                                  <span>{formatHourly(p10 ?? p25)}</span>
+                                  <span className="font-semibold">{formatHourly(med)}</span>
+                                  <span>{formatHourly(p90 ?? p75)}</span>
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">{"\u2014"}</span>
+                            )}
                           </TableCell>
                           <TableCell className="text-right text-xs text-muted-foreground">
                             [{formatHourly(t.ecConfLow)}, {formatHourly(t.ecConfHigh)}]
@@ -749,6 +1296,99 @@ export default function ComparisonPage() {
         </Card>
       )}
 
+      {/* Section 5: Viable Set Quality */}
+      {viableSetData && (
+        <Card className="border-purple-200 bg-purple-50/20 dark:border-purple-800 dark:bg-purple-950/10">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Layers className="h-5 w-5 text-purple-600" />
+              Viable Set Quality
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Analysis of the coherence and quality of the post-injury viable occupation set.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Coherence score */}
+            {(viableSetData as Record<string, unknown>).coherenceScore != null && (
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium">Coherence Score:</span>
+                <span className="text-2xl font-bold text-purple-600">
+                  {Number((viableSetData as Record<string, unknown>).coherenceScore).toFixed(1)}
+                </span>
+                {typeof (viableSetData as Record<string, unknown>).coherenceLabel === "string" && (
+                  <Badge variant="outline" className="bg-purple-100 text-purple-800">
+                    {(viableSetData as Record<string, unknown>).coherenceLabel as string}
+                  </Badge>
+                )}
+              </div>
+            )}
+
+            {/* Core vs Peripheral occupations */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Core occupations (high STQ) */}
+              {(() => {
+                const coreOccs = targets
+                  .filter((t) => !t.excluded && t.stq != null && t.stq >= 70)
+                  .sort((a, b) => (b.stq ?? 0) - (a.stq ?? 0));
+                if (coreOccs.length === 0) return null;
+                return (
+                  <div>
+                    <h3 className="text-sm font-semibold text-purple-700 mb-2">
+                      Core Occupations (High STQ)
+                    </h3>
+                    <div className="space-y-1">
+                      {coreOccs.map((t) => (
+                        <div key={t.id} className="flex items-center justify-between rounded border p-2 bg-purple-50/50">
+                          <span className="text-sm">{t.title}</span>
+                          <Badge variant="outline" className="bg-purple-100 text-purple-800 text-xs">
+                            STQ {t.stq?.toFixed(0)}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Peripheral occupations (low STQ) */}
+              {(() => {
+                const peripheralOccs = targets
+                  .filter((t) => !t.excluded && t.stq != null && t.stq < 70)
+                  .sort((a, b) => (a.stq ?? 0) - (b.stq ?? 0));
+                if (peripheralOccs.length === 0) return null;
+                return (
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-600 mb-2">
+                      Peripheral Occupations (Low STQ)
+                    </h3>
+                    <div className="space-y-1">
+                      {peripheralOccs.map((t) => (
+                        <div key={t.id} className="flex items-center justify-between rounded border p-2 bg-slate-50/50">
+                          <span className="text-sm">{t.title}</span>
+                          <Badge variant="outline" className="text-xs">
+                            STQ {t.stq?.toFixed(0)}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Narrative summary */}
+            {typeof (viableSetData as Record<string, unknown>).narrative === "string" && (
+              <div className="rounded-lg border p-3 bg-purple-50/30">
+                <p className="text-sm text-muted-foreground">
+                  {(viableSetData as Record<string, unknown>).narrative as string}
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Methodology Note */}
       <Card>
         <CardHeader>
@@ -768,9 +1408,20 @@ export default function ComparisonPage() {
             represent monthly averages in thousands for the calendar year.
           </p>
           <p>
-            <strong>MVQS Earning Capacity:</strong> Based on VQ band-level regression with OEWS
+            <strong>VQS Earning Capacity:</strong> Based on VQ band-level regression with OEWS
             wage data, geographic ECLR adjustments, and published Standard Errors of Estimate
-            from MVQS validity research (McCroskey et al., 2011).
+            from VQS validity research (McCroskey et al., 2011).
+          </p>
+          <p>
+            <strong>Near-Miss Analysis:</strong> Occupations that narrowly fail one or more
+            TFQ traits are classified by severity (marginal = 1 trait off by 1 level,
+            moderate = 2 traits or 1 trait off by 2 levels). These may represent retraining
+            or accommodation opportunities.
+          </p>
+          <p>
+            <strong>Viable Set Quality:</strong> Coherence measures how related the remaining
+            viable occupations are by skill profile similarity. Higher coherence indicates a
+            focused set; lower coherence indicates a fragmented labor market.
           </p>
           <Separator />
           <p className="text-xs">

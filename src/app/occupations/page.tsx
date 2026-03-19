@@ -2,42 +2,59 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Search, Loader2 } from "lucide-react";
 
 interface OccResult {
-  code: string;
+  dotCode: string | null;
+  onetCode: string | null;
   title: string;
-  relevance_score?: number;
-  cached?: boolean;
-  jobZone?: number;
+  svp: number | null;
+  strength: string | null;
+  skillLevel: string | null;
+  gedR: number | null;
+  gedM: number | null;
+  gedL: number | null;
+  source: string;
 }
 
 export default function OccupationsPage() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<OccResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [counts, setCounts] = useState<{ dot: number; onet: number; total: number } | null>(null);
 
   async function handleSearch() {
     if (!query.trim()) return;
     setSearching(true);
-    const res = await fetch(
-      `/api/occupations/search?q=${encodeURIComponent(query)}`
-    );
-    const data = await res.json();
-    // Deduplicate by code, preferring O*NET API results over local cached
-    const merged = [...(data.onet ?? []), ...(data.local ?? [])];
-    const seen = new Set<string>();
-    const deduped = merged.filter((r: OccResult) => {
-      if (seen.has(r.code)) return false;
-      seen.add(r.code);
-      return true;
-    });
-    setResults(deduped);
+    try {
+      const res = await fetch(
+        `/api/occupations/combined-search?q=${encodeURIComponent(query)}`
+      );
+      const data = await res.json();
+      setResults(data.results ?? []);
+      setCounts(data.counts ?? null);
+    } catch {
+      setResults([]);
+      setCounts(null);
+    }
     setSearching(false);
+  }
+
+  function getDetailLink(r: OccResult): string {
+    // Prefer O*NET code for detail pages (richer data), fall back to DOT code
+    if (r.onetCode) return `/occupations/${r.onetCode}`;
+    if (r.dotCode) return `/occupations/${r.dotCode}`;
+    return "#";
+  }
+
+  function strengthLabel(s: string | null): string {
+    if (!s) return "";
+    const labels: Record<string, string> = { S: "Sedentary", L: "Light", M: "Medium", H: "Heavy", V: "Very Heavy" };
+    return labels[s] ?? s;
   }
 
   return (
@@ -46,7 +63,7 @@ export default function OccupationsPage() {
         <div>
           <h1 className="text-2xl font-bold">Occupation Browser</h1>
           <p className="text-muted-foreground">
-            Search O*NET occupations by title, DOT code, or keyword
+            Search DOT and O*NET occupations by title, code, or keyword
           </p>
         </div>
         <Link href="/occupations/crosswalk">
@@ -60,7 +77,7 @@ export default function OccupationsPage() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search occupations (e.g., accountant, welder, 13-2011)..."
+            placeholder="Search occupations (e.g., construction worker, accountant, 869.664-014, 47-2061)..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) =>
@@ -78,29 +95,72 @@ export default function OccupationsPage() {
         </Button>
       </div>
 
+      {/* Result counts */}
+      {counts && (
+        <div className="flex gap-2 text-sm text-muted-foreground">
+          <span>{counts.total} results</span>
+          {counts.dot > 0 && <Badge variant="outline" className="text-xs">DOT: {counts.dot}</Badge>}
+          {counts.onet > 0 && <Badge variant="outline" className="text-xs">O*NET: {counts.onet}</Badge>}
+        </div>
+      )}
+
       {results.length > 0 ? (
         <div className="space-y-2">
-          {results.map((r) => (
-            <Link key={r.code} href={`/occupations/${r.code}`}>
+          {results.map((r, i) => (
+            <Link key={`${r.dotCode ?? r.onetCode ?? i}`} href={getDetailLink(r)}>
               <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
                 <CardContent className="flex items-center justify-between py-3">
-                  <div>
-                    <span className="font-mono text-sm mr-3 text-muted-foreground">
-                      {r.code}
-                    </span>
-                    <span className="font-medium">{r.title}</span>
+                  <div className="flex items-center gap-3 min-w-0">
+                    {/* Codes */}
+                    <div className="flex flex-col gap-0.5 shrink-0">
+                      {r.dotCode && (
+                        <span className="font-mono text-xs text-muted-foreground">
+                          DOT {r.dotCode}
+                        </span>
+                      )}
+                      {r.onetCode && (
+                        <span className="font-mono text-xs text-muted-foreground">
+                          O*NET {r.onetCode}
+                        </span>
+                      )}
+                    </div>
+                    {/* Title */}
+                    <span className="font-medium truncate">{r.title}</span>
                   </div>
-                  <div className="flex gap-2">
-                    {r.cached && (
-                      <Badge variant="secondary">Cached</Badge>
+                  <div className="flex gap-2 items-center shrink-0 ml-2">
+                    {/* Source badge */}
+                    <Badge
+                      variant={r.source === "DOT+O*NET" ? "default" : "secondary"}
+                      className="text-xs"
+                    >
+                      {r.source}
+                    </Badge>
+                    {/* SVP */}
+                    {r.svp != null && (
+                      <Badge variant="outline" className="text-xs">
+                        SVP {r.svp}
+                      </Badge>
                     )}
-                    {r.jobZone && (
-                      <Badge variant="outline">Zone {r.jobZone}</Badge>
+                    {/* Strength */}
+                    {r.strength && (
+                      <Badge variant="outline" className="text-xs">
+                        {strengthLabel(r.strength)}
+                      </Badge>
                     )}
-                    {r.relevance_score && (
-                      <span className="text-xs text-muted-foreground">
-                        {(r.relevance_score * 100).toFixed(0)}% match
-                      </span>
+                    {/* Skill level */}
+                    {r.skillLevel && (
+                      <Badge
+                        variant="outline"
+                        className={`text-xs ${
+                          r.skillLevel === "skilled"
+                            ? "border-blue-500 text-blue-600"
+                            : r.skillLevel === "semiskilled"
+                            ? "border-amber-500 text-amber-600"
+                            : "border-gray-400 text-gray-500"
+                        }`}
+                      >
+                        {r.skillLevel}
+                      </Badge>
                     )}
                   </div>
                 </CardContent>
@@ -114,7 +174,7 @@ export default function OccupationsPage() {
             <CardContent className="py-8 text-center">
               <Search className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
               <p className="text-muted-foreground">
-                Search for an occupation to view its details
+                Search for an occupation by title (e.g., &quot;construction worker&quot;), DOT code, or O*NET code
               </p>
             </CardContent>
           </Card>

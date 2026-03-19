@@ -103,10 +103,16 @@ export async function GET(
       name: analysis.name,
       ageRule: analysis.ageRule,
       priorEarnings: analysis.priorEarnings,
-      mvqsPostEcMedian: analysis.mvqsPostEcMedian,
-      mvqsPreEcMedian: analysis.mvqsPreEcMedian,
-      mvqsEcLoss: analysis.mvqsEcLoss,
-      mvqsEcLossPct: analysis.mvqsEcLossPct,
+      vqsPostEcMedian: analysis.vqsPostEcMedian,
+      vqsPreEcMedian: analysis.vqsPreEcMedian,
+      vqsEcLoss: analysis.vqsEcLoss,
+      vqsEcLossPct: analysis.vqsEcLossPct,
+      // Comprehensive analysis JSON fields
+      rfcNarrative: analysis.rfcNarrative as Record<string, unknown> | null,
+      nearMissAnalysis: analysis.nearMissAnalysis as Record<string, unknown> | null,
+      viableSetAnalysis: analysis.viableSetAnalysis as Record<string, unknown> | null,
+      confidenceExplanation: analysis.confidenceExplanation as Record<string, unknown> | null,
+      regionalLaborMarket: analysis.regionalLaborMarket as Record<string, unknown> | null,
     },
     targets: analysis.targetOccupations.map((t) => ({
       title: t.title,
@@ -123,7 +129,7 @@ export async function GET(
       tfqDetails: t.tfqDetails,
       vaqDetails: t.vaqDetails,
       lmqDetails: t.lmqDetails,
-      // MVQS fields
+      // VQS fields
       vqScore: t.vqScore,
       vqBand: t.vqBand,
       tspScore: t.tspScore,
@@ -136,6 +142,12 @@ export async function GET(
       ecSee: t.ecSee,
       ecGeoAdjusted: t.ecGeoAdjusted,
       preEcMedian: t.preEcMedian,
+      // Near-miss & trait margin fields
+      nearMissSeverity: t.nearMissSeverity,
+      nearMissDetails: t.nearMissDetails,
+      traitMarginMin: t.traitMarginMin,
+      traitMarginAvg: t.traitMarginAvg,
+      closestFailTrait: t.closestFailTrait,
     })),
   };
 

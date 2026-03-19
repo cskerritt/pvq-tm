@@ -1,5 +1,5 @@
 /**
- * MVQS Transferable Skills Percent (TSP) Computation
+ * VQS Transferable Skills Percent (TSP) Computation
  *
  * The TSP rates target jobs on a 0–97% scale in terms of transferable skills
  * relative to a reference job (typically the evaluee's work history).
@@ -17,7 +17,7 @@
  * References:
  *   Grimley, Williams, Hahn, Dennis (2000). Scientific Prediction of
  *     Transferable Skills. JOFV 6(1), pp. 7-16.
- *   McCroskey (2015). The MVQS Theory of Transferable Skills.
+ *   McCroskey (2015). The VQS Theory of Transferable Skills.
  */
 
 import { type TraitKey, type TraitVector, TRAIT_KEYS } from "./traits";
@@ -39,7 +39,7 @@ export const TSP_TIERS: readonly TSPTier[] = Object.freeze([
   { tier: 5, min: 80, max: 97, label: "Semi-skilled to skilled, high transferable skills" },
 ]);
 
-// ─── V2 Component Weights (MVQS calibrated) ────────────────────────────────
+// ─── V2 Component Weights (VQS calibrated) ────────────────────────────────
 
 const W_TRAIT_SIMILARITY = 0.30;
 const W_TRAIT_COVERAGE = 0.16;
@@ -206,7 +206,7 @@ function computeTraitCoverage(
 // ─── Tier Determination ─────────────────────────────────────────────────────
 
 /**
- * Determine the MVQS TSP Tier using DOT/O*NET prefix matching rules.
+ * Determine the VQS TSP Tier using DOT/O*NET prefix matching rules.
  *
  * Tier 5 (80-97%): DOT 3-digit match AND full O*NET match
  * Tier 4 (60-79%): DOT 3 OR O*NET full OR (DOT 2 AND O*NET 4-digit)
@@ -269,7 +269,7 @@ function determineTier(input: TSPInput): { tier: 1 | 2 | 3 | 4 | 5; reason: stri
 // ─── Main TSP Computation ───────────────────────────────────────────────────
 
 /**
- * Compute the MVQS Transferable Skills Percent for a source-target pair.
+ * Compute the VQS Transferable Skills Percent for a source-target pair.
  */
 export function computeTSP(input: TSPInput): TSPResult {
   // Determine tier

@@ -1,7 +1,7 @@
 /**
  * PVQ-TM 24-Trait System
  *
- * The 24-trait vector is MVQS-compatible and covers:
+ * The 24-trait vector is VQS-compatible and covers:
  * - 6 Aptitude traits (Reasoning, Math, Language, Spatial, Form, Clerical)
  * - 11 Physical traits (Motor Coord, Finger Dex, Manual Dex, Eye-Hand-Foot,
  *   Color Discrim, Strength, Climb/Balance, Stoop/Kneel, Reach/Handle,
@@ -167,18 +167,16 @@ export function normalizeDOTStrength(code: string): number {
 
 /**
  * Normalize DOT GED level (1-6) to 0-4 scale.
- * Maps: 1→0, 2→1, 3→2, 4→2, 5→3, 6→4
+ * Linear mapping: (gedLevel - 1) × 0.8
+ * Maps: 1→0, 2→0.8, 3→1.6, 4→2.4, 5→3.2, 6→4.0
+ *
+ * Preserves full 6-level resolution without collapsing
+ * GED 3 and 4 into the same value.
  */
 export function normalizeDOTGED(gedLevel: number): number {
-  const map: Record<number, number> = {
-    1: 0,
-    2: 1,
-    3: 2,
-    4: 2,
-    5: 3,
-    6: 4,
-  };
-  return map[gedLevel] ?? 0;
+  if (gedLevel < 1) return 0;
+  if (gedLevel > 6) return 4;
+  return Math.round(((gedLevel - 1) * (4 / 5)) * 100) / 100;
 }
 
 /**
@@ -487,7 +485,8 @@ const ONET_ABILITY_TO_TRAIT: Record<string, TraitKey> = {
  * Convert O*NET ability level (0-7 scale) to 0-4 trait scale.
  */
 function normalizeONETLevel(level: number): number {
-  return Math.round(Math.min(4, Math.max(0, (level / 7) * 4)));
+  // Linear mapping preserving precision (2 decimal places)
+  return Math.round(Math.min(4, Math.max(0, (level / 7) * 4)) * 100) / 100;
 }
 
 export function mapONETAbilitiesToTraits(
@@ -569,6 +568,10 @@ export function passesAllTraits(
  * Calculate the reserve margin across all 24 traits.
  * This becomes the basis for TFQ scoring among surviving occupations.
  * Returns average margin as a percentage of the 0-4 scale.
+ *
+ * Always normalizes against ALL 24 traits to prevent inflation
+ * when only a few traits have data. Unrated traits contribute
+ * a margin of 0 (neutral), not excluded from the denominator.
  */
 export function calculateReserveMargin(
   workerProfile: TraitVector,
@@ -586,8 +589,10 @@ export function calculateReserveMargin(
     0
   );
 
-  // Normalize: max possible margin is 4 per trait
-  return (totalMargin / (ratedTraits.length * 4)) * 100;
+  // Normalize against ALL 24 traits, not just rated ones.
+  // This prevents TFQ inflation when only a few traits have data.
+  // Unrated traits implicitly contribute margin=0 (neutral).
+  return (totalMargin / (TRAIT_KEYS.length * 4)) * 100;
 }
 
 /**

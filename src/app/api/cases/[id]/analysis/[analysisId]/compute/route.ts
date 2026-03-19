@@ -12,6 +12,15 @@ import { computeTSP, type TSPInput } from "@/lib/engine/tsp";
 import { computeEarningCapacity, computeECLR, type OEWSWageData } from "@/lib/engine/earning-capacity";
 import { computeJOLTSTrend } from "@/lib/engine/jolts-trend";
 import { getStateFipsFromZip, getStateNameFromZip } from "@/lib/geo/state-fips";
+import { analyzeNearMisses } from "@/lib/engine/near-miss";
+import { generateRFCNarrative } from "@/lib/engine/rfc-narrative";
+import { analyzeViableSet, type ViableOccupationInput } from "@/lib/engine/viable-set";
+import { explainConfidence } from "@/lib/engine/confidence-explanation";
+import { analyzeRegionalLaborMarket, type OccupationRegionalDetail } from "@/lib/engine/regional-labor-market";
+import { type PVQResult } from "@/lib/engine/pvq";
+import { type STQResult } from "@/lib/engine/skill-transfer";
+import { type TFQResult } from "@/lib/engine/trait-feasibility";
+import { type LMQResult } from "@/lib/engine/labor-market";
 
 /**
  * DPT (Data-People-Things) code labels from the DOT classification system.
@@ -463,10 +472,10 @@ export async function POST(
     // ─── PVQ Composite ──────────────────────────────────────────────
     const pvqResult = computePVQ(stqResult, tfqResult, vaqResult, lmqResult);
 
-    // ─── MVQS: VQ Computation ─────────────────────────────────────
+    // ─── VQS: VQ Computation ─────────────────────────────────────
     const vqResult = computeVQ(demandVector);
 
-    // ─── MVQS: TSP Computation ────────────────────────────────────
+    // ─── VQS: TSP Computation ────────────────────────────────────
     // Build source traits from best PRW DOT data
     const bestPrwDotOcc = prwDotOccs[0];
     let sourceTraitsForTSP = workerTraits; // fallback to worker profile
@@ -494,7 +503,7 @@ export async function POST(
     };
     const tspResult = computeTSP(tspInput);
 
-    // ─── MVQS: Earning Capacity ──────────────────────────────────
+    // ─── VQS: Earning Capacity ──────────────────────────────────
     const ecWageData: OEWSWageData = {
       medianWage: wages?.medianWage ?? null,
       meanWage: wages?.meanWage ?? null,
@@ -552,16 +561,16 @@ export async function POST(
         // Area-level employment
         areaEmployment: targetAreaEmployment,
         areaMedianWage: targetAreaMedianWage,
-        // MVQS: VQ
+        // VQS: VQ
         vqScore: vqResult.vq,
         vqBand: vqResult.band,
         vqDetails: JSON.parse(JSON.stringify(vqResult)),
-        // MVQS: TSP
+        // VQS: TSP
         tspScore: tspResult.tsp,
         tspTier: tspResult.tier,
         tspLabel: tspResult.qualitativeLabel,
         tspDetails: JSON.parse(JSON.stringify(tspResult)),
-        // MVQS: Earning Capacity
+        // VQS: Earning Capacity
         ecMedian: ecResult.median,
         ecMean: ecResult.mean,
         ec10: ecResult.p10,
@@ -573,7 +582,7 @@ export async function POST(
         ecConfHigh: ecResult.confHigh,
         ecGeoAdjusted: ecResult.eclrApplied,
         ecDetails: JSON.parse(JSON.stringify(ecResult)),
-        // MVQS: Pre-Injury
+        // VQS: Pre-Injury
         preVqScore,
         preEcMedian,
         preEcDetails: preEcDetailsJson ? JSON.parse(JSON.stringify(preEcDetailsJson)) : null,
@@ -638,25 +647,25 @@ export async function POST(
     }
   }
 
-  // ─── MVQS Earning Capacity Aggregates ──────────────────────
+  // ─── VQS Earning Capacity Aggregates ──────────────────────
   const viableWithEC = updatedTargets.filter(t => !t.excluded && t.ecMedian !== null);
-  const mvqsPostEcMedian = viableWithEC.length > 0
+  const vqsPostEcMedian = viableWithEC.length > 0
     ? Math.round((viableWithEC.reduce((sum, t) => sum + (t.ecMedian ?? 0), 0) / viableWithEC.length) * 100) / 100
     : null;
 
-  let mvqsPreEcMedian: number | null = null;
+  let vqsPreEcMedian: number | null = null;
   if (hasPreProfile) {
     const preViableWithEC = updatedTargets.filter(t => t.preTfqPasses && t.preEcMedian !== null);
-    mvqsPreEcMedian = preViableWithEC.length > 0
+    vqsPreEcMedian = preViableWithEC.length > 0
       ? Math.round((preViableWithEC.reduce((sum, t) => sum + (t.preEcMedian ?? 0), 0) / preViableWithEC.length) * 100) / 100
       : null;
   }
 
-  const mvqsEcLoss = (mvqsPreEcMedian !== null && mvqsPostEcMedian !== null)
-    ? Math.round((mvqsPreEcMedian - mvqsPostEcMedian) * 100) / 100
+  const vqsEcLoss = (vqsPreEcMedian !== null && vqsPostEcMedian !== null)
+    ? Math.round((vqsPreEcMedian - vqsPostEcMedian) * 100) / 100
     : null;
-  const mvqsEcLossPct = (mvqsPreEcMedian !== null && mvqsEcLoss !== null && mvqsPreEcMedian > 0)
-    ? Math.round((mvqsEcLoss / mvqsPreEcMedian) * 10000) / 100
+  const vqsEcLossPct = (vqsPreEcMedian !== null && vqsEcLoss !== null && vqsPreEcMedian > 0)
+    ? Math.round((vqsEcLoss / vqsPreEcMedian) * 10000) / 100
     : null;
 
   await prisma.analysis.update({
@@ -678,11 +687,253 @@ export async function POST(
       stateJoltsPreInjury,
       stateFips,
       stateName,
-      // MVQS aggregates
-      mvqsPostEcMedian,
-      mvqsPreEcMedian,
-      mvqsEcLoss,
-      mvqsEcLossPct,
+      // VQS aggregates
+      vqsPostEcMedian,
+      vqsPreEcMedian,
+      vqsEcLoss,
+      vqsEcLossPct,
+    },
+  });
+
+  // ─── Comprehensive Analysis ───────────────────────────────────────
+  // Run after aggregates are computed
+
+  const sourceSvp = Math.max(...prwList.map((p) => p.svp ?? 2), 2);
+
+  // ── 1. Near-Miss Analysis for Excluded Occupations ──────────────
+  const excludedTargets = updatedTargets.filter((t) => t.excluded);
+  let nearMissResult = null;
+
+  if (excludedTargets.length > 0) {
+    const excludedForNearMiss = excludedTargets
+      .filter((t) => t.stqDetails && t.tfqDetails && t.vaqDetails && t.lmqDetails)
+      .map((t) => {
+        const stqDetails = t.stqDetails as unknown as STQResult;
+        const tfqDetails = t.tfqDetails as unknown as TFQResult;
+        const vaqDetails = t.vaqDetails as unknown;
+        const lmqDetails = t.lmqDetails as unknown as LMQResult;
+
+        const pvqResult: PVQResult = {
+          pvq: t.pvq ?? 0,
+          stq: t.stq ?? 0,
+          tfq: t.tfq ?? 0,
+          vaq: t.vaq ?? 0,
+          lmq: t.lmq ?? 0,
+          excluded: t.excluded,
+          exclusionReason: t.exclusionReason ?? undefined,
+          confidenceGrade: (t.confidenceGrade as "A" | "B" | "C" | "D") ?? "D",
+          components: {
+            stqResult: stqDetails,
+            tfqResult: tfqDetails,
+            vaqResult: vaqDetails as PVQResult["components"]["vaqResult"],
+            lmqResult: lmqDetails,
+          },
+        };
+
+        return {
+          pvqResult,
+          occupationTitle: t.title,
+          dotCode: t.dotCode ?? undefined,
+          onetCode: t.onetSocCode,
+          targetSvp: t.svp ?? 2,
+          sourceSvp,
+        };
+      });
+
+    if (excludedForNearMiss.length > 0) {
+      nearMissResult = analyzeNearMisses(excludedForNearMiss);
+
+      // Update excluded targets with near-miss per-occupation data
+      for (const nm of nearMissResult.nearMisses) {
+        const matchingTarget = excludedTargets.find(
+          (t) =>
+            t.title === nm.occupationTitle &&
+            (t.dotCode === nm.dotCode || (!t.dotCode && !nm.dotCode))
+        );
+        if (matchingTarget) {
+          await prisma.targetOccupation.update({
+            where: { id: matchingTarget.id },
+            data: {
+              nearMissSeverity: nm.severity,
+              nearMissDetails: JSON.parse(JSON.stringify(nm)),
+            },
+          });
+        }
+      }
+
+      // Also tag significant exclusions that aren't near-misses
+      for (const t of excludedTargets) {
+        const isNearMiss = nearMissResult.nearMisses.some(
+          (nm) =>
+            nm.occupationTitle === t.title &&
+            (nm.dotCode === t.dotCode || (!nm.dotCode && !t.dotCode))
+        );
+        if (!isNearMiss && t.nearMissSeverity === null) {
+          await prisma.targetOccupation.update({
+            where: { id: t.id },
+            data: { nearMissSeverity: "significant" },
+          });
+        }
+      }
+    }
+  }
+
+  // ── 2. Trait Margins for Viable Occupations ─────────────────────
+  const viableTargets = updatedTargets.filter((t) => !t.excluded);
+
+  for (const viable of viableTargets) {
+    const tfqDetails = viable.tfqDetails as { traitComparisons?: Array<{ margin?: number | null; trait?: string; label?: string; occupationDemand?: number | null }> } | null;
+    if (!tfqDetails?.traitComparisons) continue;
+
+    const ratedComparisons = tfqDetails.traitComparisons.filter(
+      (c) => c.margin !== null && c.margin !== undefined && c.occupationDemand !== null
+    );
+
+    if (ratedComparisons.length === 0) continue;
+
+    const margins = ratedComparisons.map((c) => c.margin as number);
+    const traitMarginMin = Math.round(Math.min(...margins) * 100) / 100;
+    const traitMarginAvg = Math.round((margins.reduce((s, m) => s + m, 0) / margins.length) * 100) / 100;
+
+    // Find the trait with the smallest margin (closest to failing)
+    let closestFailTrait: string | null = null;
+    let minMargin = Infinity;
+    for (const c of ratedComparisons) {
+      if ((c.margin as number) < minMargin) {
+        minMargin = c.margin as number;
+        closestFailTrait = c.label ?? c.trait ?? null;
+      }
+    }
+
+    await prisma.targetOccupation.update({
+      where: { id: viable.id },
+      data: {
+        traitMarginMin,
+        traitMarginAvg,
+        closestFailTrait,
+      },
+    });
+  }
+
+  // ── 3. RFC Narrative ────────────────────────────────────────────
+  const viableCount = viableTargets.length;
+  const excludedCount = excludedTargets.length;
+  const rfcResult = generateRFCNarrative(
+    workerTraits,
+    preTraits,
+    viableCount,
+    excludedCount
+  );
+
+  // ── 4. Viable Set Analysis ──────────────────────────────────────
+  let viableSetResult = null;
+
+  if (viableTargets.length > 0) {
+    const viableInputs: ViableOccupationInput[] = viableTargets
+      .filter((t) => t.stqDetails && t.tfqDetails && t.vaqDetails && t.lmqDetails)
+      .map((t) => {
+        const stqDetails = t.stqDetails as unknown as STQResult;
+        const tfqDetails = t.tfqDetails as unknown as TFQResult;
+        const vaqDetails = t.vaqDetails as unknown;
+        const lmqDetails = t.lmqDetails as unknown as LMQResult;
+
+        const pvqResult: PVQResult = {
+          pvq: t.pvq ?? 0,
+          stq: t.stq ?? 0,
+          tfq: t.tfq ?? 0,
+          vaq: t.vaq ?? 0,
+          lmq: t.lmq ?? 0,
+          excluded: t.excluded,
+          exclusionReason: t.exclusionReason ?? undefined,
+          confidenceGrade: (t.confidenceGrade as "A" | "B" | "C" | "D") ?? "D",
+          components: {
+            stqResult: stqDetails,
+            tfqResult: tfqDetails,
+            vaqResult: vaqDetails as PVQResult["components"]["vaqResult"],
+            lmqResult: lmqDetails,
+          },
+        };
+
+        // Build trait demands from tfqDetails traitComparisons
+        const traitDemands: Record<string, number | null> = {};
+        if (tfqDetails.traitComparisons) {
+          for (const c of tfqDetails.traitComparisons) {
+            traitDemands[c.trait] = c.occupationDemand ?? null;
+          }
+        }
+
+        return {
+          title: t.title,
+          pvqResult,
+          traitDemands,
+          socCode: t.onetSocCode,
+          dotCode: t.dotCode ?? undefined,
+        };
+      });
+
+    if (viableInputs.length > 0) {
+      viableSetResult = analyzeViableSet(viableInputs);
+    }
+  }
+
+  // ── 5. Confidence Explanation ───────────────────────────────────
+  // Use the first viable target as the representative occupation
+  let confResult = null;
+  const representativeTarget = viableTargets.find(
+    (t) => t.stqDetails && t.tfqDetails && t.lmqDetails
+  );
+
+  if (representativeTarget) {
+    const repStq = representativeTarget.stqDetails as unknown as STQResult;
+    const repTfq = representativeTarget.tfqDetails as unknown as TFQResult;
+    const repLmq = representativeTarget.lmqDetails as unknown as LMQResult;
+
+    confResult = explainConfidence(repStq, repTfq, repLmq);
+  }
+
+  // ── 6. Regional Labor Market ────────────────────────────────────
+  let regionResult = null;
+
+  const occupationDetails: OccupationRegionalDetail[] = viableTargets.map((t) => {
+    const w = wageMap.get(t.onetSocCode);
+    return {
+      title: t.title,
+      nationalEmployment: w?.employment ?? null,
+      areaEmployment: t.areaEmployment ?? null,
+      nationalMedianWage: w?.medianWage ?? null,
+      areaMedianWage: t.areaMedianWage ?? null,
+      joltsCurrentOpenings: t.joltsCurrentOpenings ?? null,
+      joltsTrendLabel: t.joltsTrendLabel ?? null,
+      projectedGrowthPct: null, // projections were fetched per-target in the loop; use trend label instead
+    };
+  });
+
+  regionResult = analyzeRegionalLaborMarket({
+    stateName: stateName ?? null,
+    metroAreaName: eclrAreaName ?? null,
+    postViableCount: postInjuryViableCount,
+    postTotalEmployment: postInjuryTotalEmployment,
+    preViableCount: preInjuryViableCount,
+    preTotalEmployment: preInjuryTotalEmployment,
+    postAreaEmployment: postInjuryAreaEmployment > 0 ? postInjuryAreaEmployment : null,
+    preAreaEmployment: hasPreProfile && preInjuryAreaEmployment !== null && preInjuryAreaEmployment > 0
+      ? preInjuryAreaEmployment
+      : null,
+    stateJoltsCurrent,
+    stateJoltsPreInjury,
+    eclrFactor,
+    occupationDetails,
+  });
+
+  // ── Save Comprehensive Analysis Results ─────────────────────────
+  await prisma.analysis.update({
+    where: { id: analysisId },
+    data: {
+      nearMissAnalysis: nearMissResult ? JSON.parse(JSON.stringify(nearMissResult)) : null,
+      rfcNarrative: rfcResult ? JSON.parse(JSON.stringify(rfcResult)) : null,
+      viableSetAnalysis: viableSetResult ? JSON.parse(JSON.stringify(viableSetResult)) : null,
+      confidenceExplanation: confResult ? JSON.parse(JSON.stringify(confResult)) : null,
+      regionalLaborMarket: regionResult ? JSON.parse(JSON.stringify(regionResult)) : null,
     },
   });
 
