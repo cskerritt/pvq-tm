@@ -34,6 +34,8 @@ import {
   Pencil,
   Check,
   X,
+  MapPin,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { CaseBreadcrumb } from "@/components/case-breadcrumb";
@@ -111,6 +113,12 @@ export default function AnalysisPage() {
   const [savingEarnings, setSavingEarnings] = useState(false);
   const [editingAgeRule, setEditingAgeRule] = useState(false);
   const [ageRuleInput, setAgeRuleInput] = useState("");
+  const [caseData, setCaseData] = useState<{
+    zipCode?: string | null;
+    metroAreaCode?: string | null;
+    metroAreaName?: string | null;
+  } | null>(null);
+  const [overrideLocation, setOverrideLocation] = useState(false);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/cases/${caseId}/analysis`);
@@ -126,18 +134,46 @@ export default function AnalysisPage() {
     load();
   }, [load]);
 
+  // Fetch case data for ZIP/metro auto-population
+  useEffect(() => {
+    async function fetchCase() {
+      try {
+        const res = await fetch(`/api/cases/${caseId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setCaseData({
+            zipCode: data.zipCode,
+            metroAreaCode: data.metroAreaCode,
+            metroAreaName: data.metroAreaName,
+          });
+        }
+      } catch {
+        // Non-critical — form still works without case data
+      }
+    }
+    fetchCase();
+  }, [caseId]);
+
   async function createAnalysis(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setCreating(true);
     const form = new FormData(e.currentTarget);
+    // Use override fields if user chose to override, otherwise use case data
+    const targetArea = overrideLocation
+      ? (form.get("targetArea") as string) || null
+      : caseData?.metroAreaCode || null;
+    const targetAreaName = overrideLocation
+      ? (form.get("targetAreaName") as string) || null
+      : caseData?.metroAreaName || null;
+
     const data = {
       name: form.get("name") || null,
       ageRule: form.get("ageRule") || "standard",
       priorEarnings: form.get("priorEarnings")
         ? parseFloat(form.get("priorEarnings") as string)
         : null,
-      targetArea: form.get("targetArea") || null,
-      targetAreaName: form.get("targetAreaName") || null,
+      targetArea,
+      targetAreaName,
     };
 
     const res = await fetch(`/api/cases/${caseId}/analysis`, {
@@ -317,15 +353,59 @@ export default function AnalysisPage() {
                   </p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="targetArea">Target Metro Area Code</Label>
-                  <Input
-                    id="targetArea"
-                    name="targetArea"
-                    placeholder="e.g. 0000000 for national"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Leave blank or use 0000000 for national-level labor market data
-                  </p>
+                  <Label>Target Metro Area</Label>
+                  {caseData?.metroAreaCode && !overrideLocation ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 text-sm">
+                        <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <span>
+                          Location: ZIP {caseData.zipCode ?? "—"} — {caseData.metroAreaName ?? caseData.metroAreaCode} metro area
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground hover:underline cursor-pointer"
+                        onClick={() => setOverrideLocation(true)}
+                      >
+                        Use a different area
+                      </button>
+                    </div>
+                  ) : !caseData?.metroAreaCode && !overrideLocation ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 rounded-md border border-yellow-300 bg-yellow-50 dark:border-yellow-700 dark:bg-yellow-950/30 px-3 py-2 text-sm text-yellow-800 dark:text-yellow-200">
+                        <AlertTriangle className="h-4 w-4 shrink-0" />
+                        <span>No ZIP/metro area set on case. National-level data will be used, or specify an area below.</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground hover:underline cursor-pointer"
+                        onClick={() => setOverrideLocation(true)}
+                      >
+                        Specify a metro area manually
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Input
+                        id="targetArea"
+                        name="targetArea"
+                        placeholder="e.g. 0000000 for national"
+                        defaultValue={caseData?.metroAreaCode ?? ""}
+                      />
+                      <Input
+                        name="targetAreaName"
+                        placeholder="Area name (optional)"
+                        defaultValue={caseData?.metroAreaName ?? ""}
+                      />
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground hover:underline cursor-pointer"
+                        onClick={() => setOverrideLocation(false)}
+                      >
+                        {caseData?.metroAreaCode ? "Use case location instead" : "Cancel"}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
               <Button type="submit" disabled={creating}>
