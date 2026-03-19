@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +26,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Play,
   CheckCircle,
   Loader2,
@@ -36,9 +43,15 @@ import {
   X,
   MapPin,
   AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  XCircle,
+  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { CaseBreadcrumb } from "@/components/case-breadcrumb";
+
+// ─── Types ──────────────────────────────────────────────────────
 
 interface AnalysisData {
   id: string;
@@ -50,6 +63,24 @@ interface AnalysisData {
   targetArea: string | null;
   targetAreaName: string | null;
   targetOccupations: TargetOcc[];
+}
+
+interface TraitComparisonDetail {
+  trait: string;
+  label: string;
+  workerCapacity: number | null;
+  occupationDemand: number | null;
+  margin: number | null;
+  passes: boolean;
+  source: string;
+}
+
+interface TfqDetailsShape {
+  tfq?: number;
+  passes?: boolean;
+  failedTraits?: TraitComparisonDetail[];
+  traitComparisons?: TraitComparisonDetail[];
+  reserveMargin?: number;
 }
 
 interface TargetOcc {
@@ -65,7 +96,60 @@ interface TargetOcc {
   excluded: boolean;
   exclusionReason: string | null;
   confidenceGrade: string | null;
+  tfqDetails: TfqDetailsShape | null;
 }
+
+interface Step1Validation {
+  prwCount: number;
+  transferableSkillCount: number;
+  postProfileTraitsFilled: number;
+  postProfileExists: boolean;
+  loading: boolean;
+}
+
+// ─── Trait Labels ───────────────────────────────────────────────
+
+const TRAIT_LABELS: Record<string, string> = {
+  reasoning: "Reasoning (GED-R)",
+  math: "Math (GED-M)",
+  language: "Language (GED-L)",
+  spatialPerception: "Spatial",
+  formPerception: "Form",
+  clericalPerception: "Clerical",
+  motorCoordination: "Motor Coord.",
+  fingerDexterity: "Finger Dex.",
+  manualDexterity: "Manual Dex.",
+  eyeHandFoot: "Eye-Hand-Foot",
+  colorDiscrimination: "Color Disc.",
+  strength: "Strength",
+  climbBalance: "Climb/Balance",
+  stoopKneel: "Stoop/Kneel",
+  reachHandle: "Reach/Handle",
+  talkHear: "Talk/Hear",
+  see: "See",
+  workLocation: "Work Location",
+  extremeCold: "Extreme Cold",
+  extremeHeat: "Extreme Heat",
+  wetnessHumidity: "Wet/Humidity",
+  noiseVibration: "Noise/Vibration",
+  hazards: "Hazards",
+  dustsFumes: "Dusts/Fumes",
+};
+
+const COGNITIVE_TRAITS = new Set([
+  "reasoning", "math", "language", "spatialPerception",
+  "formPerception", "clericalPerception",
+]);
+
+const TRAIT_FIELDS = [
+  "reasoning", "math", "language", "spatialPerception", "formPerception",
+  "clericalPerception", "motorCoordination", "fingerDexterity", "manualDexterity",
+  "eyeHandFoot", "colorDiscrimination", "strength", "climbBalance", "stoopKneel",
+  "reachHandle", "talkHear", "see", "workLocation", "extremeCold", "extremeHeat",
+  "wetnessHumidity", "noiseVibration", "hazards", "dustsFumes",
+];
+
+// ─── Steps ──────────────────────────────────────────────────────
 
 const STEPS = [
   {
@@ -100,6 +184,8 @@ const STEPS = [
   },
 ];
 
+// ─── Main Component ─────────────────────────────────────────────
+
 export default function AnalysisPage() {
   const params = useParams();
   const router = useRouter();
@@ -119,6 +205,20 @@ export default function AnalysisPage() {
     metroAreaName?: string | null;
   } | null>(null);
   const [overrideLocation, setOverrideLocation] = useState(false);
+
+  // Step 1 validation state
+  const [step1, setStep1] = useState<Step1Validation>({
+    prwCount: 0,
+    transferableSkillCount: 0,
+    postProfileTraitsFilled: 0,
+    postProfileExists: false,
+    loading: true,
+  });
+
+  // Intermediate review state
+  const [showAllCandidates, setShowAllCandidates] = useState(false);
+  const [showExcludedDetails, setShowExcludedDetails] = useState(false);
+  const [expandedExcluded, setExpandedExcluded] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/cases/${caseId}/analysis`);
@@ -153,6 +253,73 @@ export default function AnalysisPage() {
     }
     fetchCase();
   }, [caseId]);
+
+  // Step 1 validation: fetch PRW, skills, and profile data
+  useEffect(() => {
+    if (!active || active.step !== 1) return;
+
+    async function fetchValidation() {
+      setStep1((prev) => ({ ...prev, loading: true }));
+      try {
+        const [prwRes, skillsRes, profilesRes] = await Promise.all([
+          fetch(`/api/cases/${caseId}/prw`),
+          fetch(`/api/cases/${caseId}/skills`),
+          fetch(`/api/cases/${caseId}/profiles`),
+        ]);
+
+        const prwData = prwRes.ok ? await prwRes.json() : [];
+        const skillsData = skillsRes.ok ? await skillsRes.json() : [];
+        const profilesData = profilesRes.ok ? await profilesRes.json() : [];
+
+        const prwCount = Array.isArray(prwData) ? prwData.length : 0;
+
+        // Count transferable skills (isTransferable && svpLevel >= 4)
+        const transferableSkillCount = Array.isArray(skillsData)
+          ? skillsData.filter(
+              (s: { isTransferable?: boolean; svpLevel?: number | null }) =>
+                s.isTransferable && s.svpLevel != null && s.svpLevel >= 4
+            ).length
+          : 0;
+
+        // Check POST profile completeness
+        const postProfile = Array.isArray(profilesData)
+          ? profilesData.find(
+              (p: { profileType: string }) => p.profileType === "POST"
+            )
+          : null;
+
+        let postProfileTraitsFilled = 0;
+        if (postProfile) {
+          for (const field of TRAIT_FIELDS) {
+            if (
+              postProfile[field] !== null &&
+              postProfile[field] !== undefined
+            ) {
+              postProfileTraitsFilled++;
+            }
+          }
+        }
+
+        setStep1({
+          prwCount,
+          transferableSkillCount,
+          postProfileTraitsFilled,
+          postProfileExists: !!postProfile,
+          loading: false,
+        });
+      } catch {
+        setStep1((prev) => ({ ...prev, loading: false }));
+      }
+    }
+
+    fetchValidation();
+  }, [caseId, active]);
+
+  const step1AllPassed =
+    step1.prwCount >= 1 &&
+    step1.transferableSkillCount >= 1 &&
+    step1.postProfileExists &&
+    step1.postProfileTraitsFilled === 24;
 
   async function createAnalysis(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -285,6 +452,11 @@ export default function AnalysisPage() {
     }
   }
 
+  // Compute intermediate review data
+  const totalOccs = active?.targetOccupations?.length ?? 0;
+  const viableOccs = active?.targetOccupations?.filter((t) => !t.excluded) ?? [];
+  const excludedOccs = active?.targetOccupations?.filter((t) => t.excluded) ?? [];
+
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <CaseBreadcrumb caseId={caseId} currentPage="Analysis" />
@@ -359,7 +531,7 @@ export default function AnalysisPage() {
                       <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 text-sm">
                         <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
                         <span>
-                          Location: ZIP {caseData.zipCode ?? "—"} — {caseData.metroAreaName ?? caseData.metroAreaCode} metro area
+                          Location: ZIP {caseData.zipCode ?? "\u2014"} \u2014 {caseData.metroAreaName ?? caseData.metroAreaCode} metro area
                         </span>
                       </div>
                       <button
@@ -450,7 +622,7 @@ export default function AnalysisPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5" />
-                {active.name ?? "Analysis"} — Step {active.step} of 5
+                {active.name ?? "Analysis"} \u2014 Step {active.step} of 5
               </CardTitle>
               <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                 {/* Age Rule - inline editable */}
@@ -539,7 +711,6 @@ export default function AnalysisPage() {
                 {STEPS.map((s) => {
                   const isCurrent = s.num === active.step;
                   const isComplete = s.num < active.step;
-                  const isFuture = s.num > active.step;
 
                   return (
                     <div
@@ -567,6 +738,7 @@ export default function AnalysisPage() {
                           {s.desc}
                         </p>
                       </div>
+                      {/* Step 2 & 3: Run button */}
                       {isCurrent && s.action && (
                         <Button
                           size="sm"
@@ -581,16 +753,44 @@ export default function AnalysisPage() {
                           Run
                         </Button>
                       )}
+                      {/* Step 1: Continue with validation gate */}
                       {isCurrent && !s.action && s.num === 1 && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => runStep(2)}
-                          disabled={running}
-                        >
-                          Continue
-                          <ArrowRight className="ml-1 h-3 w-3" />
-                        </Button>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <span>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => runStep(2)}
+                                  disabled={running || step1.loading || !step1AllPassed}
+                                >
+                                  {step1.loading ? (
+                                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                  ) : null}
+                                  Continue
+                                  <ArrowRight className="ml-1 h-3 w-3" />
+                                </Button>
+                              </span>
+                            </TooltipTrigger>
+                            {!step1AllPassed && !step1.loading && (
+                              <TooltipContent side="bottom" className="max-w-xs">
+                                <p className="text-sm font-medium mb-1">Cannot proceed yet:</p>
+                                <ul className="text-xs space-y-0.5">
+                                  {step1.prwCount < 1 && (
+                                    <li>Add at least one past relevant work entry</li>
+                                  )}
+                                  {step1.transferableSkillCount < 1 && (
+                                    <li>Mark at least one acquired skill as transferable (SVP 4+)</li>
+                                  )}
+                                  {(!step1.postProfileExists || step1.postProfileTraitsFilled < 24) && (
+                                    <li>Complete all 24 traits on the POST worker profile ({step1.postProfileTraitsFilled}/24 filled)</li>
+                                  )}
+                                </ul>
+                              </TooltipContent>
+                            )}
+                          </Tooltip>
+                        </TooltipProvider>
                       )}
                       {isCurrent && !s.action && s.num === 4 && (
                         <Button
@@ -610,6 +810,231 @@ export default function AnalysisPage() {
                   );
                 })}
               </div>
+
+              {/* ═══════════════════════════════════════════════════════════
+                  Step 1 Validation Checklist
+                  ═══════════════════════════════════════════════════════════ */}
+              {active.step === 1 && (
+                <Card className="border-blue-200 bg-blue-50/30 dark:border-blue-800 dark:bg-blue-950/20">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Pre-Analysis Checklist</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {step1.loading ? (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Checking requirements...
+                      </div>
+                    ) : (
+                      <>
+                        {/* PRW check */}
+                        <Link href={`/cases/${caseId}/prw`} className="flex items-center gap-2 text-sm hover:underline group">
+                          {step1.prwCount >= 1 ? (
+                            <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+                          ) : (
+                            <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+                          )}
+                          <span className={step1.prwCount >= 1 ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"}>
+                            Past Relevant Work: {step1.prwCount} {step1.prwCount === 1 ? "entry" : "entries"}
+                          </span>
+                          <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </Link>
+                        {step1.prwCount < 1 && (
+                          <p className="text-xs text-muted-foreground ml-6">
+                            Add at least one past relevant work entry to proceed.
+                          </p>
+                        )}
+
+                        {/* Transferable skills check */}
+                        <Link href={`/cases/${caseId}/skills`} className="flex items-center gap-2 text-sm hover:underline group">
+                          {step1.transferableSkillCount >= 1 ? (
+                            <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+                          ) : (
+                            <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+                          )}
+                          <span className={step1.transferableSkillCount >= 1 ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"}>
+                            Transferable Skills: {step1.transferableSkillCount} {step1.transferableSkillCount === 1 ? "skill" : "skills"}
+                          </span>
+                          <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </Link>
+                        {step1.transferableSkillCount < 1 && (
+                          <p className="text-xs text-muted-foreground ml-6">
+                            Mark at least one acquired skill as transferable with SVP level 4 or higher.
+                          </p>
+                        )}
+
+                        {/* POST profile check */}
+                        <Link href={`/cases/${caseId}/profiles`} className="flex items-center gap-2 text-sm hover:underline group">
+                          {step1.postProfileExists && step1.postProfileTraitsFilled === 24 ? (
+                            <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+                          ) : (
+                            <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+                          )}
+                          <span className={step1.postProfileExists && step1.postProfileTraitsFilled === 24 ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"}>
+                            Post-Injury Profile: {step1.postProfileTraitsFilled}/24 traits filled
+                          </span>
+                          <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </Link>
+                        {(!step1.postProfileExists || step1.postProfileTraitsFilled < 24) && (
+                          <p className="text-xs text-muted-foreground ml-6">
+                            {!step1.postProfileExists
+                              ? "Create a POST worker profile and fill all 24 traits."
+                              : `Complete the remaining ${24 - step1.postProfileTraitsFilled} trait${24 - step1.postProfileTraitsFilled === 1 ? "" : "s"} on the POST profile.`}
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* ═══════════════════════════════════════════════════════════
+                  Intermediate Review: After Step 2 (before Step 3)
+                  Shows candidate generation summary
+                  ═══════════════════════════════════════════════════════════ */}
+              {active.step === 3 && totalOccs > 0 && (
+                <Card className="border-green-200 bg-green-50/30 dark:border-green-800 dark:bg-green-950/20">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      Step 2 Complete: {totalOccs} candidate occupations generated
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="space-y-1">
+                      {(active.targetOccupations ?? [])
+                        .slice(0, showAllCandidates ? undefined : 10)
+                        .map((t) => (
+                          <div key={t.id} className="flex items-center gap-2 text-xs">
+                            <span className="font-mono text-muted-foreground w-24 shrink-0">{t.onetSocCode}</span>
+                            <span>{t.title}</span>
+                          </div>
+                        ))}
+                    </div>
+                    {totalOccs > 10 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs"
+                        onClick={() => setShowAllCandidates(!showAllCandidates)}
+                      >
+                        {showAllCandidates ? (
+                          <>Show less <ChevronUp className="ml-1 h-3 w-3" /></>
+                        ) : (
+                          <>View all {totalOccs} candidates <ChevronDown className="ml-1 h-3 w-3" /></>
+                        )}
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* ═══════════════════════════════════════════════════════════
+                  Intermediate Review: After Step 3 (before Step 4)
+                  Trait Filter Results with Failure Drill-Down
+                  ═══════════════════════════════════════════════════════════ */}
+              {active.step === 4 && totalOccs > 0 && (
+                <Card className="border-amber-200 bg-amber-50/30 dark:border-amber-800 dark:bg-amber-950/20">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      Step 3 Complete: Trait Filter Results
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-lg border p-3 text-center bg-green-50 dark:bg-green-950/30">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Passed</p>
+                        <p className="text-2xl font-bold text-green-600">{viableOccs.length}</p>
+                        <p className="text-[10px] text-muted-foreground">occupations viable</p>
+                      </div>
+                      <div className="rounded-lg border p-3 text-center bg-red-50 dark:bg-red-950/30">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Excluded</p>
+                        <p className="text-2xl font-bold text-red-600">{excludedOccs.length}</p>
+                        <p className="text-[10px] text-muted-foreground">trait failures</p>
+                      </div>
+                    </div>
+
+                    {/* Excluded occupations drill-down */}
+                    {excludedOccs.length > 0 && (
+                      <div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs w-full justify-between"
+                          onClick={() => setShowExcludedDetails(!showExcludedDetails)}
+                        >
+                          <span className="text-red-600 font-medium">
+                            View {excludedOccs.length} excluded {excludedOccs.length === 1 ? "occupation" : "occupations"} with trait failure details
+                          </span>
+                          {showExcludedDetails ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                        </Button>
+                        {showExcludedDetails && (
+                          <div className="space-y-1 mt-2">
+                            {excludedOccs.map((t) => {
+                              const isExpanded = expandedExcluded === t.id;
+                              const tfqData = t.tfqDetails as TfqDetailsShape | null;
+                              const failedTraits = tfqData?.failedTraits ?? [];
+
+                              return (
+                                <div key={t.id} className="rounded border bg-white dark:bg-gray-950">
+                                  <button
+                                    className="w-full flex items-center gap-2 p-2 text-left text-xs hover:bg-muted/50"
+                                    onClick={() => setExpandedExcluded(isExpanded ? null : t.id)}
+                                  >
+                                    {isExpanded ? <ChevronUp className="h-3 w-3 shrink-0" /> : <ChevronDown className="h-3 w-3 shrink-0" />}
+                                    <span className="font-mono text-muted-foreground w-24 shrink-0">{t.onetSocCode}</span>
+                                    <span className="flex-1 font-medium">{t.title}</span>
+                                    <Badge variant="destructive" className="text-[10px]">
+                                      {failedTraits.length} failed {failedTraits.length === 1 ? "trait" : "traits"}
+                                    </Badge>
+                                  </button>
+                                  {isExpanded && failedTraits.length > 0 && (
+                                    <div className="px-4 pb-3 pt-1 border-t">
+                                      <p className="text-xs font-medium text-red-600 mb-2">Failed Trait Comparisons</p>
+                                      <div className="space-y-1.5">
+                                        {failedTraits.map((ft, i) => {
+                                          const deficit = ft.margin != null ? ft.margin : (ft.workerCapacity != null && ft.occupationDemand != null ? ft.workerCapacity - ft.occupationDemand : null);
+                                          const isLearnable = COGNITIVE_TRAITS.has(ft.trait);
+                                          return (
+                                            <div key={i} className="flex items-center gap-2 text-xs">
+                                              <div className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+                                              <span className="font-medium w-28 shrink-0">{ft.label || TRAIT_LABELS[ft.trait] || ft.trait}</span>
+                                              <span className="text-muted-foreground">Worker:</span>
+                                              <span className="font-mono w-6 text-right">{ft.workerCapacity ?? "\u2014"}</span>
+                                              <span className="text-muted-foreground">Demand:</span>
+                                              <span className="font-mono w-6 text-right">{ft.occupationDemand ?? "\u2014"}</span>
+                                              {deficit != null && (
+                                                <span className="font-mono text-red-600 font-semibold">
+                                                  {deficit >= 0 ? `+${deficit}` : deficit}
+                                                </span>
+                                              )}
+                                              <Badge
+                                                variant="outline"
+                                                className={`text-[10px] px-1 ${isLearnable ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-orange-50 text-orange-700 border-orange-200"}`}
+                                              >
+                                                {isLearnable ? "Cognitive" : "Physical/Env"}
+                                              </Badge>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                      {/* Show exclusion reason text */}
+                                      {t.exclusionReason && (
+                                        <p className="text-xs text-red-600 mt-2 italic">{t.exclusionReason}</p>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
 
               {active.status === "completed" && (
                 <div className="flex flex-col gap-2 sm:flex-row pt-2">

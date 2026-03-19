@@ -149,6 +149,18 @@ model Case {
   metroAreaName  String?
   notes          String?
   status         String    @default("active")
+
+  // Injury & Medical Context
+  injuryDescription  String?
+  bodyPartsAffected  String[]
+  treatingPhysician  String?
+  physicianSpecialty String?
+  mmiDate            DateTime?
+  fceDate            DateTime?
+  fceProvider        String?
+  surgeryDates       String?
+  medicalNotes       String?
+
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -188,8 +200,9 @@ model WorkerProfile {
   hazards             Int?
   dustsFumes          Int?
 
-  notes   String?
-  sources String?
+  notes        String?
+  sources      String?
+  traitSources Json?     // Record<string, { source: string, date?: string, notes?: string }>
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -214,6 +227,10 @@ model PastRelevantWork {
   durationMonths       Int?
   dutiesDescription    String?
   isSubstantialGainful Boolean   @default(true)
+  actualWageHourly     Float?    // What the worker actually earned per hour
+  actualWageAnnual     Float?    // What the worker actually earned annually
+  wageYear             Int?      // Year of the reported wage
+  hoursPerWeek         Float?    // Hours worked per week (for hourly->annual conversion)
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 

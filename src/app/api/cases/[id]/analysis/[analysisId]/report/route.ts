@@ -53,6 +53,13 @@ export async function GET(
       dateOfInjury: caseData.dateOfInjury,
       dateOfEval: caseData.dateOfEval,
       notes: caseData.notes,
+      // Injury & Medical Context
+      injuryDescription: caseData.injuryDescription,
+      bodyPartsAffected: caseData.bodyPartsAffected,
+      treatingPhysician: caseData.treatingPhysician,
+      physicianSpecialty: caseData.physicianSpecialty,
+      mmiDate: caseData.mmiDate,
+      fceDate: caseData.fceDate,
     },
     profiles: caseData.profiles.map((p) => ({
       profileType: p.profileType,

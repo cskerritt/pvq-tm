@@ -11,6 +11,7 @@ import {
   CheckCircle,
   Clock,
   Zap,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -99,6 +100,38 @@ export default function DataSyncPage() {
 
   const isSyncingAny = Object.values(syncing).some(Boolean) || autoSync?.isSyncing;
 
+  function getFreshnessInfo(lastSync: string | null): { color: string; label: string; bgClass: string; textClass: string } {
+    if (!lastSync) return { color: "gray", label: "Never synced", bgClass: "bg-gray-100 dark:bg-gray-800", textClass: "text-gray-600 dark:text-gray-400" };
+    const now = new Date();
+    const syncDate = new Date(lastSync);
+    const monthsAgo = (now.getTime() - syncDate.getTime()) / (1000 * 60 * 60 * 24 * 30);
+    if (monthsAgo < 3) return { color: "green", label: "Fresh", bgClass: "bg-green-100 dark:bg-green-900/30", textClass: "text-green-700 dark:text-green-400" };
+    if (monthsAgo < 12) return { color: "yellow", label: "Aging", bgClass: "bg-yellow-100 dark:bg-yellow-900/30", textClass: "text-yellow-700 dark:text-yellow-400" };
+    return { color: "red", label: "Stale", bgClass: "bg-red-100 dark:bg-red-900/30", textClass: "text-red-700 dark:text-red-400" };
+  }
+
+  function getDaysSinceSync(lastSync: string | null): string {
+    if (!lastSync) return "Never";
+    const now = new Date();
+    const syncDate = new Date(lastSync);
+    const days = Math.floor((now.getTime() - syncDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (days === 0) return "Today";
+    if (days === 1) return "1 day ago";
+    if (days < 30) return `${days} days ago`;
+    const months = Math.floor(days / 30);
+    if (months === 1) return "1 month ago";
+    if (months < 12) return `${months} months ago`;
+    const years = Math.floor(months / 12);
+    return years === 1 ? "1 year ago" : `${years} years ago`;
+  }
+
+  async function syncAll() {
+    const sources = statuses.map((s) => s.source);
+    for (const source of sources) {
+      await triggerSync(source);
+    }
+  }
+
   return (
     <div className="p-6 space-y-6">
       <div>
@@ -107,6 +140,72 @@ export default function DataSyncPage() {
           Manage cached occupational data from external sources
         </p>
       </div>
+
+      {/* Data Freshness Dashboard */}
+      {!loading && statuses.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4" />
+                Data Freshness
+              </CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={syncAll}
+                disabled={!!isSyncingAny}
+              >
+                {isSyncingAny ? (
+                  <><Loader2 className="mr-1 h-3 w-3 animate-spin" />Syncing...</>
+                ) : (
+                  <><RefreshCw className="mr-1 h-3 w-3" />Sync All</>
+                )}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              {statuses.map((s) => {
+                const freshness = getFreshnessInfo(s.lastSync);
+                return (
+                  <div
+                    key={s.source}
+                    className={`rounded-lg p-3 ${freshness.bgClass}`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-medium">{s.source}</span>
+                      <Badge
+                        variant="outline"
+                        className={`text-xs ${freshness.textClass} border-current`}
+                      >
+                        {freshness.label}
+                      </Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground space-y-0.5">
+                      <p>{getDaysSinceSync(s.lastSync)}</p>
+                      <p className="font-medium">
+                        {s.recordCount.toLocaleString()} records
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-3 pt-3 border-t flex items-center gap-4 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-green-500" /> Fresh (&lt;3 months)
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-yellow-500" /> Aging (3-12 months)
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-red-500" /> Stale (&gt;12 months)
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Auto-Sync Status Card */}
       {autoSync && (

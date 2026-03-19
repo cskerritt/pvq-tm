@@ -31,6 +31,16 @@ export async function POST(req: NextRequest) {
         metroAreaCode: body.metroAreaCode || null,
         metroAreaName: body.metroAreaName || null,
         notes: body.notes,
+        // Injury & Medical fields
+        injuryDescription: body.injuryDescription || null,
+        bodyPartsAffected: body.bodyPartsAffected ?? [],
+        treatingPhysician: body.treatingPhysician || null,
+        physicianSpecialty: body.physicianSpecialty || null,
+        mmiDate: body.mmiDate ? new Date(body.mmiDate) : null,
+        fceDate: body.fceDate ? new Date(body.fceDate) : null,
+        fceProvider: body.fceProvider || null,
+        surgeryDates: body.surgeryDates || null,
+        medicalNotes: body.medicalNotes || null,
       },
     });
     return NextResponse.json(newCase, { status: 201 });

@@ -8,7 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, Loader2 } from "lucide-react";
+import { MapPin, Loader2, X, Stethoscope } from "lucide-react";
+
+const COMMON_BODY_PARTS = [
+  "back", "neck", "shoulder", "knee", "wrist", "hip", "ankle",
+  "elbow", "hand", "foot", "spine", "head",
+];
 
 export default function NewCasePage() {
   const router = useRouter();
@@ -17,6 +22,8 @@ export default function NewCasePage() {
   const [metroAreaCode, setMetroAreaCode] = useState("");
   const [metroAreaName, setMetroAreaName] = useState("");
   const [lookingUpZip, setLookingUpZip] = useState(false);
+  const [bodyParts, setBodyParts] = useState<string[]>([]);
+  const [bodyPartInput, setBodyPartInput] = useState("");
 
   async function lookupZip(zip: string) {
     setZipCode(zip);
@@ -39,6 +46,18 @@ export default function NewCasePage() {
     }
   }
 
+  function addBodyPart(part: string) {
+    const p = part.trim().toLowerCase();
+    if (p && !bodyParts.includes(p)) {
+      setBodyParts([...bodyParts, p]);
+    }
+    setBodyPartInput("");
+  }
+
+  function removeBodyPart(part: string) {
+    setBodyParts(bodyParts.filter((p) => p !== part));
+  }
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSaving(true);
@@ -54,6 +73,16 @@ export default function NewCasePage() {
       metroAreaCode: metroAreaCode || null,
       metroAreaName: metroAreaName || null,
       notes: form.get("notes") || null,
+      // Injury & Medical fields
+      injuryDescription: form.get("injuryDescription") || null,
+      bodyPartsAffected: bodyParts,
+      treatingPhysician: form.get("treatingPhysician") || null,
+      physicianSpecialty: form.get("physicianSpecialty") || null,
+      mmiDate: form.get("mmiDate") || null,
+      fceDate: form.get("fceDate") || null,
+      fceProvider: form.get("fceProvider") || null,
+      surgeryDates: form.get("surgeryDates") || null,
+      medicalNotes: form.get("medicalNotes") || null,
     };
 
     const res = await fetch("/api/cases", {
@@ -70,14 +99,16 @@ export default function NewCasePage() {
   }
 
   return (
-    <div className="p-4 md:p-6 max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">New Case</h1>
-      <Card>
-        <CardHeader>
-          <CardTitle>Case Information</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+    <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-6">
+      <h1 className="text-2xl font-bold">New Case</h1>
+
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Case Information */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Case Information</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div className="space-y-2">
                 <Label htmlFor="clientName">Client Name *</Label>
@@ -148,19 +179,140 @@ export default function NewCasePage() {
 
             <div className="space-y-2">
               <Label htmlFor="notes">Notes</Label>
-              <Textarea id="notes" name="notes" rows={4} />
+              <Textarea id="notes" name="notes" rows={3} />
             </div>
-            <div className="flex justify-end gap-3">
-              <Button type="button" variant="outline" onClick={() => router.back()}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? "Creating..." : "Create Case"}
-              </Button>
+          </CardContent>
+        </Card>
+
+        {/* Injury Details */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-1.5">
+              <Stethoscope className="h-4 w-4" />
+              Injury Details
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="injuryDescription">Injury Description</Label>
+              <Textarea
+                id="injuryDescription"
+                name="injuryDescription"
+                rows={3}
+                placeholder="Narrative of what happened..."
+              />
             </div>
-          </form>
-        </CardContent>
-      </Card>
+            <div className="space-y-2">
+              <Label>Body Parts Affected</Label>
+              <div className="flex flex-wrap gap-1 mb-2">
+                {bodyParts.map((p) => (
+                  <Badge key={p} variant="secondary" className="text-xs gap-1">
+                    {p}
+                    <button type="button" onClick={() => removeBodyPart(p)} className="hover:text-red-500">
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <Input
+                  value={bodyPartInput}
+                  onChange={(e) => setBodyPartInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { e.preventDefault(); addBodyPart(bodyPartInput); }
+                  }}
+                  placeholder="Type and press Enter"
+                  className="flex-1"
+                />
+              </div>
+              <div className="flex flex-wrap gap-1 mt-1">
+                {COMMON_BODY_PARTS.filter((bp) => !bodyParts.includes(bp)).map((bp) => (
+                  <button
+                    key={bp}
+                    type="button"
+                    onClick={() => addBodyPart(bp)}
+                    className="text-xs border rounded px-1.5 py-0.5 hover:bg-muted"
+                  >
+                    + {bp}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="treatingPhysician">Treating Physician</Label>
+                <Input id="treatingPhysician" name="treatingPhysician" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="physicianSpecialty">Physician Specialty</Label>
+                <Input
+                  id="physicianSpecialty"
+                  name="physicianSpecialty"
+                  placeholder="e.g. orthopedic, neurological"
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Medical Dates */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Medical Dates</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="mmiDate">MMI Date</Label>
+                <Input id="mmiDate" name="mmiDate" type="date" />
+                <p className="text-xs text-muted-foreground">Maximum Medical Improvement</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="fceDate">FCE Date</Label>
+                <Input id="fceDate" name="fceDate" type="date" />
+                <p className="text-xs text-muted-foreground">Functional Capacity Evaluation</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="fceProvider">FCE Provider</Label>
+                <Input id="fceProvider" name="fceProvider" placeholder="Who performed the FCE" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="surgeryDates">Surgery Dates</Label>
+                <Input id="surgeryDates" name="surgeryDates" placeholder="Description of surgeries and dates" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Medical Notes */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Medical Notes</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <Textarea
+                id="medicalNotes"
+                name="medicalNotes"
+                rows={4}
+                placeholder="Additional medical context..."
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Actions */}
+        <div className="flex justify-end gap-3">
+          <Button type="button" variant="outline" onClick={() => router.back()}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={saving}>
+            {saving ? "Creating..." : "Create Case"}
+          </Button>
+        </div>
+      </form>
     </div>
   );
 }

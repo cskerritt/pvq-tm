@@ -15,6 +15,13 @@ export interface ReportData {
     dateOfInjury?: Date | null;
     dateOfEval?: Date | null;
     notes?: string | null;
+    // Injury & Medical Context
+    injuryDescription?: string | null;
+    bodyPartsAffected?: string[] | null;
+    treatingPhysician?: string | null;
+    physicianSpecialty?: string | null;
+    mmiDate?: Date | null;
+    fceDate?: Date | null;
   };
   profiles: Array<{ profileType: string; [key: string]: unknown }>;
   prw: Array<{
@@ -227,13 +234,21 @@ function jsonArr(obj: Record<string, unknown> | null | undefined, key: string): 
   return obj[key] as unknown[];
 }
 
-function addFooter(doc: jsPDF, pageNum: number, totalPages: number): void {
+function addFooter(doc: jsPDF, pageNum: number, totalPages: number, reportDate: string): void {
   doc.setFontSize(8);
   doc.setTextColor(...COLORS.mutedText);
 
+  doc.setDrawColor(...COLORS.mutedText);
+  doc.setLineWidth(0.2);
   doc.line(MARGIN, FOOTER_Y - 2, PAGE_WIDTH - MARGIN, FOOTER_Y - 2);
 
   doc.text("PVQ-TM Report \u2014 Confidential", MARGIN, FOOTER_Y);
+  doc.text(
+    `Report Generated: ${reportDate}`,
+    PAGE_WIDTH / 2,
+    FOOTER_Y,
+    { align: "center" }
+  );
   doc.text(
     `Page ${pageNum} of ${totalPages}`,
     PAGE_WIDTH - MARGIN,
@@ -301,6 +316,25 @@ function renderParagraph(
   return y + lines.length * lineHeight + 2;
 }
 
+/** Table of Contents section labels (matching final report sections) */
+const TOC_SECTIONS = [
+  "Case Summary",
+  "Past Relevant Work",
+  "Acquired Skills",
+  "Worker Profile \u2014 24-Trait Assessment",
+  "Residual Functional Capacity",
+  "Analysis Results \u2014 Viable Occupations",
+  "Near-Miss & Retrainability Analysis",
+  "Excluded Occupation Detail",
+  "Earning Capacity Analysis",
+  "Viable Set Coherence",
+  "Regional Labor Market Context",
+  "Confidence Grade Analysis",
+  "Methodology Summary",
+  "Assumptions & Limitations",
+  "Certification & Signature",
+];
+
 // ---------------------------------------------------------------------------
 // Section renderers
 // ---------------------------------------------------------------------------
@@ -355,7 +389,7 @@ function renderCoverPage(doc: jsPDF, data: ReportData): void {
   }
 
   doc.text(
-    `Date Generated: ${format(new Date(), "MMMM d, yyyy")}`,
+    `Report Generated: ${format(new Date(), "MMMM d, yyyy")}`,
     PAGE_WIDTH / 2,
     metaY,
     { align: "center" }
@@ -441,6 +475,62 @@ function renderCaseSummary(doc: jsPDF, data: ReportData): void {
     const splitNotes = doc.splitTextToSize(data.case.notes, CONTENT_WIDTH);
     doc.text(splitNotes, MARGIN, notesY + 7);
   }
+
+  // Injury & Medical Context subsection (if injury data exists)
+  const hasInjuryData =
+    data.case.injuryDescription ||
+    (data.case.bodyPartsAffected && data.case.bodyPartsAffected.length > 0) ||
+    data.case.treatingPhysician ||
+    data.case.mmiDate ||
+    data.case.fceDate;
+
+  if (hasInjuryData) {
+    let injY = getLastTableY(doc, y + 60) + 12;
+    injY = checkPageBreak(doc, injY, 50);
+    injY = addSubsectionTitle(doc, "Injury & Medical Context", injY);
+
+    const injuryRows: RowInput[] = [];
+    if (data.case.injuryDescription) {
+      injuryRows.push(["Injury Description", data.case.injuryDescription]);
+    }
+    if (data.case.bodyPartsAffected && data.case.bodyPartsAffected.length > 0) {
+      injuryRows.push(["Body Parts Affected", data.case.bodyPartsAffected.join(", ")]);
+    }
+    if (data.case.treatingPhysician) {
+      const physInfo = data.case.physicianSpecialty
+        ? `${data.case.treatingPhysician} (${data.case.physicianSpecialty})`
+        : data.case.treatingPhysician;
+      injuryRows.push(["Treating Physician", physInfo]);
+    }
+    if (data.case.dateOfInjury) {
+      injuryRows.push(["Date of Injury", fmtDate(data.case.dateOfInjury)]);
+    }
+    if (data.case.mmiDate) {
+      injuryRows.push(["Maximum Medical Improvement", fmtDate(data.case.mmiDate)]);
+    }
+    if (data.case.fceDate) {
+      injuryRows.push(["Functional Capacity Evaluation", fmtDate(data.case.fceDate)]);
+    }
+    if (data.case.dateOfEval) {
+      injuryRows.push(["Date of Evaluation", fmtDate(data.case.dateOfEval)]);
+    }
+
+    if (injuryRows.length > 0) {
+      autoTable(doc, {
+        startY: injY,
+        head: [],
+        body: injuryRows,
+        theme: "plain",
+        margin: { left: MARGIN, right: MARGIN },
+        columnStyles: {
+          0: { fontStyle: "bold", cellWidth: 55, textColor: COLORS.primary },
+          1: { cellWidth: CONTENT_WIDTH - 55 },
+        },
+        styles: { fontSize: 9, cellPadding: 3, textColor: COLORS.darkText },
+        alternateRowStyles: { fillColor: COLORS.lightGray },
+      });
+    }
+  }
 }
 
 function renderPastRelevantWork(doc: jsPDF, data: ReportData): void {
@@ -498,7 +588,7 @@ function renderAcquiredSkills(doc: jsPDF, data: ReportData): void {
   doc.addPage();
   let y = MARGIN + 5;
 
-  y = addSectionTitle(doc, "3. Acquired Skills Inventory", y);
+  y = addSectionTitle(doc, "3. Acquired Skills", y);
 
   if (data.skills.length === 0) {
     doc.setFontSize(10);
@@ -562,7 +652,7 @@ function renderWorkerProfiles(doc: jsPDF, data: ReportData): void {
   doc.addPage();
   let y = MARGIN + 5;
 
-  y = addSectionTitle(doc, "4. Worker Profile Comparison", y);
+  y = addSectionTitle(doc, "4. Worker Profile \u2014 24-Trait Assessment", y);
 
   if (data.profiles.length === 0) {
     doc.setFontSize(10);
@@ -631,7 +721,7 @@ function renderWorkerProfiles(doc: jsPDF, data: ReportData): void {
 }
 
 // ---------------------------------------------------------------------------
-// Section 4b: Residual Functional Capacity
+// Section 5: Residual Functional Capacity
 // ---------------------------------------------------------------------------
 
 function renderRFCNarrative(doc: jsPDF, data: ReportData): void {
@@ -641,7 +731,7 @@ function renderRFCNarrative(doc: jsPDF, data: ReportData): void {
   doc.addPage();
   let y = MARGIN + 5;
 
-  y = addSectionTitle(doc, "4b. Residual Functional Capacity", y);
+  y = addSectionTitle(doc, "5. Residual Functional Capacity", y);
 
   // Functional level heading
   const funcLevelLabel = jsonStr(rfc, "functionalLevelLabel");
@@ -825,14 +915,14 @@ function renderRFCNarrative(doc: jsPDF, data: ReportData): void {
 }
 
 // ---------------------------------------------------------------------------
-// Section 5: Target Occupation Rankings (existing)
+// Section 6: Analysis Results - Viable Occupations
 // ---------------------------------------------------------------------------
 
 function renderTargetRankings(doc: jsPDF, data: ReportData): void {
   doc.addPage();
   let y = MARGIN + 5;
 
-  y = addSectionTitle(doc, "5. Target Occupation Rankings", y);
+  y = addSectionTitle(doc, "6. Analysis Results \u2014 Viable Occupations", y);
 
   if (data.targets.length === 0) {
     doc.setFontSize(10);
@@ -907,7 +997,7 @@ function renderTargetRankings(doc: jsPDF, data: ReportData): void {
 }
 
 // ---------------------------------------------------------------------------
-// Section 5b: Near-Miss & Retrainability Analysis
+// Section 7: Near-Miss & Retrainability Analysis
 // ---------------------------------------------------------------------------
 
 function renderNearMissAnalysis(doc: jsPDF, data: ReportData): void {
@@ -917,7 +1007,7 @@ function renderNearMissAnalysis(doc: jsPDF, data: ReportData): void {
   doc.addPage();
   let y = MARGIN + 5;
 
-  y = addSectionTitle(doc, "5b. Near-Miss & Retrainability Analysis", y);
+  y = addSectionTitle(doc, "7. Near-Miss & Retrainability Analysis", y);
 
   // Summary: total near-misses and count by severity
   const totalExcluded = jsonNum(nm, "totalExcluded") ?? 0;
@@ -1117,7 +1207,7 @@ function renderNearMissAnalysis(doc: jsPDF, data: ReportData): void {
 }
 
 // ---------------------------------------------------------------------------
-// Section 6: Quotient Detail (enhanced with trait analysis)
+// Section 6 detail & Section 8: Excluded Occupation Detail
 // ---------------------------------------------------------------------------
 
 function renderQuotientDetails(doc: jsPDF, data: ReportData): void {
@@ -1126,11 +1216,11 @@ function renderQuotientDetails(doc: jsPDF, data: ReportData): void {
 
   if (includedTargets.length === 0 && excludedTargets.length === 0) return;
 
-  // ---- Included targets ----
+  // ---- Included targets (part of Section 6) ----
   if (includedTargets.length > 0) {
     doc.addPage();
     let y = MARGIN + 5;
-    y = addSectionTitle(doc, "6. Quotient Detail \u2014 Included Targets", y);
+    y = addSectionTitle(doc, "6a. Quotient Detail \u2014 Included Targets", y);
 
     for (const target of includedTargets) {
       y = checkPageBreak(doc, y, 60);
@@ -1178,7 +1268,7 @@ function renderQuotientDetails(doc: jsPDF, data: ReportData): void {
   if (excludedTargets.length > 0) {
     doc.addPage();
     let y = MARGIN + 5;
-    y = addSectionTitle(doc, "6a. Excluded Occupation Detail", y);
+    y = addSectionTitle(doc, "8. Excluded Occupation Detail", y);
 
     for (const target of excludedTargets) {
       y = checkPageBreak(doc, y, 45);
@@ -1474,7 +1564,7 @@ function summarizeObject(obj: Record<string, unknown>): string {
 }
 
 // ---------------------------------------------------------------------------
-// Section 7: VQS Vocational Analysis (existing)
+// Section 9: Earning Capacity Analysis
 // ---------------------------------------------------------------------------
 
 function renderVQSAnalysis(doc: jsPDF, data: ReportData): void {
@@ -1485,7 +1575,7 @@ function renderVQSAnalysis(doc: jsPDF, data: ReportData): void {
   doc.addPage();
   let y = MARGIN + 5;
 
-  y = addSectionTitle(doc, "7. VQS Vocational Analysis", y);
+  y = addSectionTitle(doc, "9. Earning Capacity Analysis", y);
 
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
@@ -1595,7 +1685,7 @@ function renderVQSAnalysis(doc: jsPDF, data: ReportData): void {
 }
 
 // ---------------------------------------------------------------------------
-// Section 7b: Viable Set Analysis
+// Section 10: Viable Set Coherence
 // ---------------------------------------------------------------------------
 
 function renderViableSetAnalysis(doc: jsPDF, data: ReportData): void {
@@ -1605,7 +1695,7 @@ function renderViableSetAnalysis(doc: jsPDF, data: ReportData): void {
   doc.addPage();
   let y = MARGIN + 5;
 
-  y = addSectionTitle(doc, "7b. Viable Set Analysis", y);
+  y = addSectionTitle(doc, "10. Viable Set Coherence", y);
 
   // Total viable count
   const totalViable = jsonNum(vs, "totalViable") ?? 0;
@@ -1795,7 +1885,7 @@ function renderViableSetAnalysis(doc: jsPDF, data: ReportData): void {
 }
 
 // ---------------------------------------------------------------------------
-// Section 7c: Regional Labor Market
+// Section 11: Regional Labor Market Context
 // ---------------------------------------------------------------------------
 
 function renderRegionalLaborMarket(doc: jsPDF, data: ReportData): void {
@@ -1805,7 +1895,7 @@ function renderRegionalLaborMarket(doc: jsPDF, data: ReportData): void {
   doc.addPage();
   let y = MARGIN + 5;
 
-  y = addSectionTitle(doc, "7c. Regional Labor Market Context", y);
+  y = addSectionTitle(doc, "11. Regional Labor Market Context", y);
 
   // Full narrative summary (covers location, wages, employment, JOLTS, pre/post)
   const fullNarrative = jsonStr(rlm, "fullNarrative");
@@ -1974,7 +2064,7 @@ function renderRegionalLaborMarket(doc: jsPDF, data: ReportData): void {
 }
 
 // ---------------------------------------------------------------------------
-// Section 8: Confidence Grade Detail
+// Section 12: Confidence Grade Analysis
 // ---------------------------------------------------------------------------
 
 function renderConfidenceDetail(doc: jsPDF, data: ReportData): void {
@@ -1984,7 +2074,7 @@ function renderConfidenceDetail(doc: jsPDF, data: ReportData): void {
   doc.addPage();
   let y = MARGIN + 5;
 
-  y = addSectionTitle(doc, "8. Confidence Grade Analysis", y);
+  y = addSectionTitle(doc, "12. Confidence Grade Analysis", y);
 
   // Grade and numeric score
   const grade = jsonStr(ce, "grade");
@@ -2121,48 +2211,217 @@ function renderConfidenceDetail(doc: jsPDF, data: ReportData): void {
 }
 
 // ---------------------------------------------------------------------------
-// Section 9: Methodology Disclosure (existing)
+// Section 13: Methodology Summary
 // ---------------------------------------------------------------------------
 
 function renderMethodology(doc: jsPDF): void {
   doc.addPage();
   let y = MARGIN + 5;
 
-  y = addSectionTitle(doc, "9. Methodology Disclosure", y);
+  y = addSectionTitle(doc, "13. Methodology Summary", y);
+
+  // System overview
+  y = addSubsectionTitle(doc, "System Overview", y);
+  y = renderParagraph(
+    doc,
+    "The PVQ-TM Vocational Analysis System is a comprehensive, data-driven platform for " +
+    "evaluating post-injury vocational placement viability. It integrates worker trait profiles, " +
+    "skill transferability analysis, and labor market data to produce objective, defensible " +
+    "vocational assessments suitable for forensic and litigation settings.",
+    y
+  );
+  y += 4;
+
+  // Composite formula
+  y = checkPageBreak(doc, y, 30);
+  y = addSubsectionTitle(doc, "PVQ Composite Formula", y);
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...COLORS.secondary);
+  doc.text("PVQ = 0.45\u00d7STQ + 0.25\u00d7TFQ + 0.15\u00d7VAQ + 0.15\u00d7LMQ", MARGIN + 4, y);
+  y += 8;
+
+  // Quotient explanations
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...COLORS.darkText);
+
+  const quotients = [
+    ["STQ (Skill Transferability Quotient, 45%)",
+      "Measures the degree to which acquired skills from past relevant work transfer to each " +
+      "target occupation, accounting for SVP overlap, DOT/O*NET skill alignment, and industry relatedness."],
+    ["TFQ (Trait-Factor Quotient, 25%)",
+      "Evaluates the match between the worker's 24-trait functional capacity profile (aptitudes, " +
+      "physical demands, environmental tolerances) and the requirements of the target occupation."],
+    ["VAQ (Vocational Adjustment Quotient, 15%)",
+      "Considers age, education, prior earnings, and other vocational adjustment factors relevant " +
+      "to the worker's ability to transition into a new occupation."],
+    ["LMQ (Labor Market Quotient, 15%)",
+      "Incorporates BLS wage data, employment projections, and regional labor market conditions " +
+      "to assess the economic viability of each target occupation."],
+  ];
+
+  for (const [title, desc] of quotients) {
+    y = checkPageBreak(doc, y, 14);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...COLORS.primary);
+    doc.text(`\u2022 ${title}`, MARGIN + 2, y);
+    y += 4;
+    y = renderParagraph(doc, desc, y, { fontSize: 9 });
+    y += 2;
+  }
+
+  // 24-trait framework
+  y = checkPageBreak(doc, y, 20);
+  y += 2;
+  y = addSubsectionTitle(doc, "24-Trait Worker Profile Framework", y);
+  y = renderParagraph(
+    doc,
+    "Each worker is profiled across 24 traits organized into three domains: " +
+    "Cognitive/Aptitude (Reasoning, Math, Language, Spatial, Form, Clerical Perception), " +
+    "Physical/Psychomotor (Motor Coordination, Finger Dexterity, Manual Dexterity, Eye-Hand-Foot, " +
+    "Color Discrimination, Strength, Climb/Balance, Stoop/Kneel, Reach/Handle, Talk/Hear, See), " +
+    "and Environmental Tolerances (Work Location, Extreme Cold, Extreme Heat, Wetness/Humidity, " +
+    "Noise/Vibration, Hazards, Dusts/Fumes). Trait values are compared against occupation demands " +
+    "to determine fitness for each target occupation.",
+    y,
+    { fontSize: 9 }
+  );
+  y += 4;
+
+  // Data sources
+  y = checkPageBreak(doc, y, 20);
+  y = addSubsectionTitle(doc, "Data Sources", y);
+  const dataSources = [
+    "Dictionary of Occupational Titles (DOT) \u2014 1991 Revised 4th Edition",
+    "O*NET OnLine \u2014 Current occupation data and skill taxonomies",
+    "Occupational Requirements Survey (ORS) \u2014 BLS physical/cognitive demand data",
+    "Occupational Employment and Wage Statistics (OEWS) \u2014 BLS wage and employment data",
+    "Job Openings and Labor Turnover Survey (JOLTS) \u2014 BLS labor market dynamics",
+  ];
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...COLORS.darkText);
+  for (const src of dataSources) {
+    y = checkPageBreak(doc, y, 6);
+    const bullet = `  \u2022  ${src}`;
+    const splitBullet = doc.splitTextToSize(bullet, CONTENT_WIDTH - 8);
+    doc.text(splitBullet, MARGIN, y);
+    y += splitBullet.length * 3.8 + 1;
+  }
+  y += 3;
+
+  // VQS reference
+  y = checkPageBreak(doc, y, 14);
+  y = renderParagraph(
+    doc,
+    "VQS Analysis: The McCroskey Vocational Quotient System (VQS) components (VQ, TSP, EC) " +
+    "use published regression weights and Standard Errors of Estimate from VQS validity research " +
+    "(McCroskey et al., 2011). Earning capacity estimates incorporate real OEWS wage data with " +
+    "ECLR geographic adjustments and VQ band-specific 95% confidence intervals.",
+    y,
+    { fontSize: 9 }
+  );
+  y += 4;
+
+  // White paper note
+  y = checkPageBreak(doc, y, 10);
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "italic");
+  doc.setTextColor(...COLORS.mutedText);
+  const wpNote = "Note: A full technical methodology white paper is available upon request " +
+    "and provides detailed descriptions of all scoring algorithms, validation studies, and " +
+    "statistical methodology.";
+  const splitWp = doc.splitTextToSize(wpNote, CONTENT_WIDTH);
+  doc.text(splitWp, MARGIN, y);
+}
+
+// ---------------------------------------------------------------------------
+// Section 14: Assumptions & Limitations
+// ---------------------------------------------------------------------------
+
+function renderAssumptionsLimitations(doc: jsPDF, data: ReportData): void {
+  doc.addPage();
+  let y = MARGIN + 5;
+
+  y = addSectionTitle(doc, "14. Assumptions & Limitations", y);
+
+  const reportDate = format(new Date(), "MMMM d, yyyy");
+
+  const disclaimers = [
+    `Analysis based on data available as of ${reportDate}.`,
+    "Null worker traits (traits without evaluator-supplied values) are treated as non-limiting " +
+    "for scoring purposes. The confidence grade reflects the extent of missing trait data and " +
+    "the resulting impact on analysis reliability.",
+    "DOT occupational data derives from the 1991 Revised Fourth Edition of the Dictionary " +
+    "of Occupational Titles. This data is supplemented by current O*NET occupational " +
+    "information and Occupational Requirements Survey (ORS) data to reflect contemporary " +
+    "workplace demands.",
+    "Wage estimates are drawn from the Bureau of Labor Statistics Occupational Employment " +
+    "and Wage Statistics (OEWS) program and are subject to sampling error. Geographic " +
+    "adjustments are applied where available but may not capture all local wage variation.",
+    "Geographic analysis is based on Metropolitan Statistical Area (MSA) boundaries as " +
+    "defined by the U.S. Office of Management and Budget. Workers residing outside defined " +
+    "MSAs are compared against non-metropolitan or statewide data.",
+    "This analysis is a vocational tool intended to inform professional vocational opinions. " +
+    "Clinical judgment from qualified medical and vocational professionals should supplement " +
+    "these automated results. The PVQ-TM system does not render medical opinions.",
+    "Labor market conditions are inherently dynamic. All employment projections, wage data, " +
+    "and JOLTS indicators reflect conditions at the time of analysis and may change " +
+    "as economic conditions evolve.",
+  ];
 
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(...COLORS.darkText);
 
-  const methodologyText =
-    "The Placement Viability Quotient (PVQ) is a composite index derived from four " +
-    "sub-quotients, each measuring a distinct dimension of vocational placement viability. " +
-    "The final PVQ score is computed using the following weighted formula:\n\n" +
-    "PVQ = 0.45 \u00d7 STQ + 0.25 \u00d7 TFQ + 0.15 \u00d7 VAQ + 0.15 \u00d7 LMQ\n\n" +
-    "where:\n" +
-    "  \u2022 STQ (Skill Transferability Quotient, weight 45%) \u2014 Measures the degree to which " +
-    "the worker's acquired skills from past relevant work transfer to each target occupation, " +
-    "accounting for SVP overlap, DOT/O*NET skill alignment, and industry relatedness.\n\n" +
-    "  \u2022 TFQ (Trait-Factor Quotient, weight 25%) \u2014 Evaluates the match between the worker's " +
-    "functional capacities (aptitudes, physical demands, and environmental tolerances from the " +
-    "24-trait worker profile) and the requirements of the target occupation.\n\n" +
-    "  \u2022 VAQ (Vocational Adjustment Quotient, weight 15%) \u2014 Considers age, education, prior " +
-    "earnings, and other vocational adjustment factors relevant to the worker's ability to " +
-    "transition into a new occupation.\n\n" +
-    "  \u2022 LMQ (Labor Market Quotient, weight 15%) \u2014 Incorporates Bureau of Labor Statistics " +
-    "wage data, employment projections, and regional labor market conditions to assess the " +
-    "economic viability of each target occupation.\n\n" +
-    "Data sources include the Dictionary of Occupational Titles (DOT), O*NET OnLine, " +
-    "the Occupational Requirements Survey (ORS), Bureau of Labor Statistics Occupational " +
-    "Employment and Wage Statistics (OEWS), and Bureau of Labor Statistics Employment Projections. " +
-    "All quotient calculations use the most recent available data at the time of analysis.\n\n" +
-    "VQS Analysis: The McCroskey Vocational Quotient System (VQS) components (VQ, TSP, EC) " +
-    "use published regression weights and Standard Errors of Estimate from VQS validity research " +
-    "(McCroskey et al., 2011). Earning capacity estimates incorporate real OEWS wage data with " +
-    "ECLR geographic adjustments and VQ band-specific 95% confidence intervals.";
+  for (const disclaimer of disclaimers) {
+    y = checkPageBreak(doc, y, 14);
+    const bullet = `  \u2022  ${disclaimer}`;
+    const splitBullet = doc.splitTextToSize(bullet, CONTENT_WIDTH - 4);
+    doc.text(splitBullet, MARGIN, y);
+    y += splitBullet.length * 4.2 + 3;
+  }
+}
 
-  const splitText = doc.splitTextToSize(methodologyText, CONTENT_WIDTH);
-  doc.text(splitText, MARGIN, y);
+// ---------------------------------------------------------------------------
+// Section 15: Certification & Signature Block
+// ---------------------------------------------------------------------------
+
+function renderCertificationSignature(doc: jsPDF, data: ReportData): void {
+  doc.addPage();
+  let y = MARGIN + 5;
+
+  y = addSectionTitle(doc, "15. Certification & Signature", y);
+
+  y += 4;
+
+  // Certification text
+  const certText =
+    "I certify that this vocational analysis was prepared using the PVQ-TM Vocational " +
+    "Analysis System. The analysis is based on the data, methodology, and assumptions " +
+    "described herein. All occupational data derives from public U.S. Department of " +
+    "Labor databases.";
+
+  y = renderParagraph(doc, certText, y, { fontSize: 11 });
+  y += 16;
+
+  // Signature block
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...COLORS.darkText);
+
+  doc.text("Signature: ____________________________", MARGIN, y);
+  y += 14;
+
+  const evaluatorName = data.case.evaluatorName ?? "____________________________";
+  doc.text(`Name: ${evaluatorName}`, MARGIN, y);
+  y += 14;
+
+  doc.text("Date: ____________________________", MARGIN, y);
+  y += 14;
+
+  doc.text("Credentials: ____________________________", MARGIN, y);
 }
 
 // ---------------------------------------------------------------------------
@@ -2176,27 +2435,171 @@ export async function generateReport(data: ReportData): Promise<Uint8Array> {
     format: "a4",
   });
 
+  const reportDate = format(new Date(), "MMMM d, yyyy");
+
+  // Track which page each section starts on (for TOC).
+  // We record page numbers *after* each section adds its first page.
+  const sectionPageMap = new Map<string, number>();
+
   // ---- Render all sections ----
-  renderCoverPage(doc, data);                   // Cover
-  renderCaseSummary(doc, data);                  // 1. Case Summary
-  renderPastRelevantWork(doc, data);             // 2. Past Relevant Work
-  renderAcquiredSkills(doc, data);               // 3. Acquired Skills
-  renderWorkerProfiles(doc, data);               // 4. Worker Profile Comparison
-  renderRFCNarrative(doc, data);                 // 4b. Residual Functional Capacity
-  renderTargetRankings(doc, data);               // 5. Target Occupation Rankings
-  renderNearMissAnalysis(doc, data);             // 5b. Near-Miss & Retrainability
-  renderQuotientDetails(doc, data);              // 6. Quotient Detail (with 6a excluded + trait analysis)
-  renderVQSAnalysis(doc, data);                  // 7. VQS Vocational Analysis
-  renderViableSetAnalysis(doc, data);            // 7b. Viable Set Analysis
-  renderRegionalLaborMarket(doc, data);          // 7c. Regional Labor Market
-  renderConfidenceDetail(doc, data);             // 8. Confidence Grade Analysis
-  renderMethodology(doc);                        // 9. Methodology Disclosure
+  renderCoverPage(doc, data);                   // Cover (page 1)
+
+  // Placeholder for TOC - we will render it after all sections to know page numbers.
+  // Reserve a page for it now and record its position.
+  const tocPageIndex = doc.getNumberOfPages() + 1;
+  doc.addPage(); // TOC placeholder page
+
+  // Render each section and record its starting page
+  const beforeCaseSummary = doc.getNumberOfPages();
+  renderCaseSummary(doc, data);
+  sectionPageMap.set("Case Summary", beforeCaseSummary + 1);
+
+  const beforePRW = doc.getNumberOfPages();
+  renderPastRelevantWork(doc, data);
+  sectionPageMap.set("Past Relevant Work", beforePRW + 1);
+
+  const beforeSkills = doc.getNumberOfPages();
+  renderAcquiredSkills(doc, data);
+  sectionPageMap.set("Acquired Skills", beforeSkills + 1);
+
+  const beforeProfiles = doc.getNumberOfPages();
+  renderWorkerProfiles(doc, data);
+  sectionPageMap.set("Worker Profile \u2014 24-Trait Assessment", beforeProfiles + 1);
+
+  const beforeRFC = doc.getNumberOfPages();
+  renderRFCNarrative(doc, data);
+  // Only set if the section actually rendered (it conditionally adds a page)
+  if (doc.getNumberOfPages() > beforeRFC) {
+    sectionPageMap.set("Residual Functional Capacity", beforeRFC + 1);
+  }
+
+  const beforeTargets = doc.getNumberOfPages();
+  renderTargetRankings(doc, data);
+  sectionPageMap.set("Analysis Results \u2014 Viable Occupations", beforeTargets + 1);
+
+  const beforeNearMiss = doc.getNumberOfPages();
+  renderNearMissAnalysis(doc, data);
+  if (doc.getNumberOfPages() > beforeNearMiss) {
+    sectionPageMap.set("Near-Miss & Retrainability Analysis", beforeNearMiss + 1);
+  }
+
+  const beforeQuotient = doc.getNumberOfPages();
+  renderQuotientDetails(doc, data);
+  if (doc.getNumberOfPages() > beforeQuotient) {
+    // Find the page where excluded detail starts (section 8)
+    // The included targets detail and excluded detail are both in renderQuotientDetails
+    // Excluded starts on a later page if present
+    const excludedTargets = data.targets.filter((t) => t.excluded);
+    const includedTargets = data.targets.filter((t) => !t.excluded);
+    if (includedTargets.length > 0 || excludedTargets.length > 0) {
+      // Section 8 (Excluded) page will be tracked below
+    }
+    sectionPageMap.set("Excluded Occupation Detail", beforeQuotient + 1);
+  }
+
+  const beforeVQS = doc.getNumberOfPages();
+  renderVQSAnalysis(doc, data);
+  if (doc.getNumberOfPages() > beforeVQS) {
+    sectionPageMap.set("Earning Capacity Analysis", beforeVQS + 1);
+  }
+
+  const beforeViableSet = doc.getNumberOfPages();
+  renderViableSetAnalysis(doc, data);
+  if (doc.getNumberOfPages() > beforeViableSet) {
+    sectionPageMap.set("Viable Set Coherence", beforeViableSet + 1);
+  }
+
+  const beforeRLM = doc.getNumberOfPages();
+  renderRegionalLaborMarket(doc, data);
+  if (doc.getNumberOfPages() > beforeRLM) {
+    sectionPageMap.set("Regional Labor Market Context", beforeRLM + 1);
+  }
+
+  const beforeConfidence = doc.getNumberOfPages();
+  renderConfidenceDetail(doc, data);
+  if (doc.getNumberOfPages() > beforeConfidence) {
+    sectionPageMap.set("Confidence Grade Analysis", beforeConfidence + 1);
+  }
+
+  const beforeMethodology = doc.getNumberOfPages();
+  renderMethodology(doc);
+  sectionPageMap.set("Methodology Summary", beforeMethodology + 1);
+
+  const beforeAssumptions = doc.getNumberOfPages();
+  renderAssumptionsLimitations(doc, data);
+  sectionPageMap.set("Assumptions & Limitations", beforeAssumptions + 1);
+
+  const beforeCert = doc.getNumberOfPages();
+  renderCertificationSignature(doc, data);
+  sectionPageMap.set("Certification & Signature", beforeCert + 1);
+
+  // ---- Render TOC on the reserved page ----
+  // The TOC page numbers need to account for TOC page itself being page 2.
+  // The section page numbers stored above are absolute page numbers in the document.
+  // For display, we show page numbers relative to the user-visible numbering
+  // (cover = unnumbered, TOC = page 1, then sections start at page 2).
+  // Actually, let's use the simple approach: page numbers as-is minus 1 (cover excluded).
+  const tocDisplayMap = new Map<string, number>();
+  for (const [label, absPage] of sectionPageMap.entries()) {
+    // Display page = absolute page - 1 (since cover page is unnumbered)
+    tocDisplayMap.set(label, absPage - 1);
+  }
+
+  // Go to the TOC placeholder page and render the TOC content
+  doc.setPage(tocPageIndex);
+
+  // Clear the page and render TOC content directly (the page already exists)
+  let tocY = MARGIN + 5;
+
+  doc.setFontSize(18);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...COLORS.primary);
+  doc.text("Table of Contents", MARGIN, tocY);
+  tocY += 4;
+
+  doc.setDrawColor(...COLORS.accent);
+  doc.setLineWidth(0.5);
+  doc.line(MARGIN, tocY, MARGIN + CONTENT_WIDTH, tocY);
+  tocY += 12;
+
+  for (let i = 0; i < TOC_SECTIONS.length; i++) {
+    const label = TOC_SECTIONS[i];
+    const sectionNum = i + 1;
+    const pageNum = tocDisplayMap.get(label) ?? "\u2014";
+
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...COLORS.darkText);
+
+    const entryText = `${sectionNum}. ${label}`;
+    doc.text(entryText, MARGIN + 4, tocY);
+
+    // Dot leader
+    const textWidth = doc.getTextWidth(entryText) + MARGIN + 4;
+    const pageNumStr = String(pageNum);
+    const pageNumWidth = doc.getTextWidth(pageNumStr);
+    const dotsStart = textWidth + 2;
+    const dotsEnd = PAGE_WIDTH - MARGIN - pageNumWidth - 2;
+    if (dotsEnd > dotsStart) {
+      doc.setTextColor(...COLORS.mutedText);
+      const dotCount = Math.floor((dotsEnd - dotsStart) / doc.getTextWidth("."));
+      if (dotCount > 0) {
+        doc.text(".".repeat(dotCount), dotsStart, tocY);
+      }
+    }
+
+    doc.setTextColor(...COLORS.primary);
+    doc.setFont("helvetica", "bold");
+    doc.text(pageNumStr, PAGE_WIDTH - MARGIN, tocY, { align: "right" });
+
+    tocY += 8;
+  }
 
   // ---- Add footers to all pages (except cover) ----
   const totalPages = doc.getNumberOfPages();
   for (let i = 2; i <= totalPages; i++) {
     doc.setPage(i);
-    addFooter(doc, i - 1, totalPages - 1);
+    addFooter(doc, i - 1, totalPages - 1, reportDate);
   }
 
   // ---- Output ----

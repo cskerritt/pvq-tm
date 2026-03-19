@@ -23,7 +23,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, Search, Briefcase, Trash2, Pencil, ExternalLink, Loader2, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, Search, Briefcase, Trash2, Pencil, ExternalLink, Loader2, Sparkles, ChevronDown, ChevronUp, CheckSquare, Square } from "lucide-react";
 import { toast } from "sonner";
 import { CaseBreadcrumb } from "@/components/case-breadcrumb";
 
@@ -70,6 +70,10 @@ interface PRWEntry {
   durationMonths: number | null;
   dutiesDescription: string | null;
   isSubstantialGainful: boolean;
+  actualWageHourly: number | null;
+  actualWageAnnual: number | null;
+  wageYear: number | null;
+  hoursPerWeek: number | null;
   acquiredSkills: { id: string }[];
   dotOcc: DOTOccData | null;
 }
@@ -106,6 +110,14 @@ interface DOTEntry {
   workFields: string[];
   mpsms: string[];
   traits: Record<string, number | null>;
+}
+
+interface SuggestedSkill {
+  actionVerb: string;
+  object: string;
+  context?: string;
+  toolsSoftware?: string;
+  selected: boolean;
 }
 
 // Typical acquired skills based on O*NET SOC major group
@@ -216,6 +228,9 @@ export default function PRWPage() {
   const [expandedPRW, setExpandedPRW] = useState<string | null>(null);
 
   const [wageData, setWageData] = useState<Record<string, WageInfo>>({});
+  const [suggestedSkills, setSuggestedSkills] = useState<Record<string, SuggestedSkill[]>>({});
+  const [generatingSkillsFor, setGeneratingSkillsFor] = useState<string | null>(null);
+  const [savingSkillsFor, setSavingSkillsFor] = useState<string | null>(null);
 
   // Controlled form state for reliable auto-fill
   const [formJobTitle, setFormJobTitle] = useState("");
@@ -229,8 +244,44 @@ export default function PRWPage() {
   const [formEndDate, setFormEndDate] = useState("");
   const [formDurationMonths, setFormDurationMonths] = useState("");
   const [formDuties, setFormDuties] = useState("");
+  const [formActualWageHourly, setFormActualWageHourly] = useState("");
+  const [formActualWageAnnual, setFormActualWageAnnual] = useState("");
+  const [formHoursPerWeek, setFormHoursPerWeek] = useState("40");
+  const [formWageYear, setFormWageYear] = useState("");
   const [autoFillSource, setAutoFillSource] = useState<string | null>(null);
   const [autoFillWages, setAutoFillWages] = useState<WageInfo | null>(null);
+
+  // Auto-calculate annual wage from hourly
+  function handleHourlyWageChange(val: string) {
+    setFormActualWageHourly(val);
+    if (val && !isNaN(parseFloat(val))) {
+      const hours = parseFloat(formHoursPerWeek) || 40;
+      const annual = parseFloat(val) * hours * 52;
+      setFormActualWageAnnual(String(Math.round(annual)));
+    }
+  }
+
+  function handleHoursPerWeekChange(val: string) {
+    setFormHoursPerWeek(val);
+    if (formActualWageHourly && !isNaN(parseFloat(formActualWageHourly)) && val && !isNaN(parseFloat(val))) {
+      const annual = parseFloat(formActualWageHourly) * parseFloat(val) * 52;
+      setFormActualWageAnnual(String(Math.round(annual)));
+    }
+  }
+
+  function getWageConsistencyWarning(): string | null {
+    const hourly = parseFloat(formActualWageHourly);
+    const annual = parseFloat(formActualWageAnnual);
+    const hours = parseFloat(formHoursPerWeek) || 40;
+    if (!isNaN(hourly) && !isNaN(annual) && hourly > 0 && annual > 0) {
+      const expected = hourly * hours * 52;
+      const diff = Math.abs(expected - annual) / expected;
+      if (diff > 0.05) {
+        return `Hourly ($${hourly.toFixed(2)}) x ${hours}hrs x 52wks = $${Math.round(expected).toLocaleString()}, but annual entered is $${Math.round(annual).toLocaleString()}`;
+      }
+    }
+    return null;
+  }
 
   const load = useCallback(async () => {
     try {
@@ -543,6 +594,10 @@ export default function PRWPage() {
     setFormEndDate(entry.endDate ? entry.endDate.split("T")[0] : "");
     setFormDurationMonths(entry.durationMonths !== null ? String(entry.durationMonths) : "");
     setFormDuties(entry.dutiesDescription ?? "");
+    setFormActualWageHourly(entry.actualWageHourly !== null ? String(entry.actualWageHourly) : "");
+    setFormActualWageAnnual(entry.actualWageAnnual !== null ? String(entry.actualWageAnnual) : "");
+    setFormHoursPerWeek(entry.hoursPerWeek !== null ? String(entry.hoursPerWeek) : "40");
+    setFormWageYear(entry.wageYear !== null ? String(entry.wageYear) : "");
     setGeneratedDuties("");
     setDialogOpen(true);
   }
@@ -570,6 +625,10 @@ export default function PRWPage() {
     setFormEndDate("");
     setFormDurationMonths("");
     setFormDuties("");
+    setFormActualWageHourly("");
+    setFormActualWageAnnual("");
+    setFormHoursPerWeek("40");
+    setFormWageYear("");
     setDialogOpen(true);
   }
 
@@ -646,6 +705,10 @@ export default function PRWPage() {
       endDate: formEndDate || null,
       durationMonths: formDurationMonths ? parseInt(formDurationMonths) : null,
       dutiesDescription: formDuties || null,
+      actualWageHourly: formActualWageHourly ? parseFloat(formActualWageHourly) : null,
+      actualWageAnnual: formActualWageAnnual ? parseFloat(formActualWageAnnual) : null,
+      wageYear: formWageYear ? parseInt(formWageYear) : null,
+      hoursPerWeek: formHoursPerWeek ? parseFloat(formHoursPerWeek) : null,
     };
 
     try {
@@ -705,6 +768,91 @@ export default function PRWPage() {
     } else {
       toast.error("Failed to delete");
     }
+  }
+
+  async function generateSkillSuggestions(entry: PRWEntry) {
+    setGeneratingSkillsFor(entry.id);
+    try {
+      const res = await fetch("/api/ai/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobTitle: entry.jobTitle,
+          onetCode: entry.onetSocCode ?? undefined,
+          svp: entry.svp ?? undefined,
+          strength: entry.strengthLevel ?? undefined,
+          dutiesDescription: entry.dutiesDescription ?? undefined,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.skills?.length > 0) {
+          setSuggestedSkills((prev) => ({
+            ...prev,
+            [entry.id]: data.skills.map((s: { actionVerb: string; object: string; context?: string; toolsSoftware?: string }) => ({
+              ...s,
+              selected: true,
+            })),
+          }));
+          toast.success(`Generated ${data.skills.length} skill suggestions`);
+        } else {
+          toast.info("No skills generated");
+        }
+      } else if (res.status === 503) {
+        toast.error("AI not available - OpenAI key not configured");
+      } else {
+        toast.error("Failed to generate skills");
+      }
+    } catch {
+      toast.error("Failed to generate skills");
+    }
+    setGeneratingSkillsFor(null);
+  }
+
+  function toggleSkillSelection(prwId: string, index: number) {
+    setSuggestedSkills((prev) => ({
+      ...prev,
+      [prwId]: prev[prwId].map((s, i) =>
+        i === index ? { ...s, selected: !s.selected } : s
+      ),
+    }));
+  }
+
+  async function saveSelectedSkills(prwId: string, entry: PRWEntry) {
+    const skills = suggestedSkills[prwId]?.filter((s) => s.selected);
+    if (!skills?.length) {
+      toast.info("No skills selected");
+      return;
+    }
+    setSavingSkillsFor(prwId);
+    try {
+      for (const skill of skills) {
+        await fetch(`/api/cases/${caseId}/skills`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prwId,
+            actionVerb: skill.actionVerb,
+            object: skill.object,
+            context: skill.context || null,
+            toolsSoftware: skill.toolsSoftware || null,
+            svpLevel: entry.svp ?? null,
+            evidenceSource: "AI-generated (OpenAI)",
+            isTransferable: true,
+          }),
+        });
+      }
+      toast.success(`Saved ${skills.length} skills to inventory`);
+      setSuggestedSkills((prev) => {
+        const updated = { ...prev };
+        delete updated[prwId];
+        return updated;
+      });
+      load();
+    } catch {
+      toast.error("Failed to save skills");
+    }
+    setSavingSkillsFor(null);
   }
 
   function getSvpLabel(svp: number | null): string {
@@ -1044,6 +1192,75 @@ export default function PRWPage() {
                 </div>
               </div>
 
+              {/* Actual Earnings */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Actual Earnings</Label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="actualWageHourly" className="text-xs text-muted-foreground">Hourly Wage</Label>
+                    <div className="relative">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                      <Input
+                        id="actualWageHourly"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        className="pl-6"
+                        value={formActualWageHourly}
+                        onChange={(e) => handleHourlyWageChange(e.target.value)}
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="actualWageAnnual" className="text-xs text-muted-foreground">Annual Wage</Label>
+                    <div className="relative">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                      <Input
+                        id="actualWageAnnual"
+                        type="number"
+                        step="1"
+                        min="0"
+                        className="pl-6"
+                        value={formActualWageAnnual}
+                        onChange={(e) => setFormActualWageAnnual(e.target.value)}
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="hoursPerWeek" className="text-xs text-muted-foreground">Hours/Week</Label>
+                    <Input
+                      id="hoursPerWeek"
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      max="168"
+                      value={formHoursPerWeek}
+                      onChange={(e) => handleHoursPerWeekChange(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="wageYear" className="text-xs text-muted-foreground">Wage Year</Label>
+                    <Select value={formWageYear} onValueChange={(v) => { if (v) setFormWageYear(v); }}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Year" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Array.from({ length: 20 }, (_, i) => new Date().getFullYear() - i).map((y) => (
+                          <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                {getWageConsistencyWarning() && (
+                  <p className="text-xs text-amber-600 flex items-center gap-1">
+                    Consistency check: {getWageConsistencyWarning()}
+                  </p>
+                )}
+              </div>
+
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="dutiesDescription">Duties Description</Label>
@@ -1166,6 +1383,18 @@ export default function PRWPage() {
                     {e.svp !== null && <Badge variant="outline">SVP {e.svp}</Badge>}
                     {e.strengthLevel && <Badge variant="secondary">{STRENGTH_MAP[e.strengthLevel] ?? e.strengthLevel}</Badge>}
                     {e.skillLevel && <Badge variant="secondary">{e.skillLevel}</Badge>}
+                    {e.actualWageAnnual && (
+                      <Badge variant="outline" className="text-green-700">
+                        ${Math.round(e.actualWageAnnual).toLocaleString()}/yr
+                        {e.wageYear ? ` (${e.wageYear})` : ""}
+                      </Badge>
+                    )}
+                    {e.actualWageHourly && !e.actualWageAnnual && (
+                      <Badge variant="outline" className="text-green-700">
+                        ${e.actualWageHourly.toFixed(2)}/hr
+                        {e.wageYear ? ` (${e.wageYear})` : ""}
+                      </Badge>
+                    )}
                     <Badge variant="outline">{(e.acquiredSkills ?? []).length} skills</Badge>
                     <Button
                       variant="ghost"
@@ -1188,6 +1417,76 @@ export default function PRWPage() {
                     </Button>
                   </div>
                 </div>
+
+                {/* Generate Skills inline */}
+                <div className="mt-2 flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs"
+                    onClick={() => generateSkillSuggestions(e)}
+                    disabled={generatingSkillsFor === e.id}
+                  >
+                    {generatingSkillsFor === e.id ? (
+                      <><Loader2 className="mr-1 h-3 w-3 animate-spin" />Generating...</>
+                    ) : (
+                      <><Sparkles className="mr-1 h-3 w-3" />Generate Skills</>
+                    )}
+                  </Button>
+                </div>
+
+                {/* Suggested Skills List */}
+                {suggestedSkills[e.id]?.length > 0 && (
+                  <div className="mt-3 rounded-md border bg-muted/20 p-3 space-y-2">
+                    <p className="text-xs font-medium flex items-center gap-1">
+                      <Sparkles className="h-3 w-3 text-purple-500" />
+                      AI-Generated Skills -- select to save
+                    </p>
+                    <div className="space-y-1">
+                      {suggestedSkills[e.id].map((skill, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => toggleSkillSelection(e.id, idx)}
+                          className="flex items-start gap-2 w-full text-left px-2 py-1 rounded hover:bg-muted text-sm"
+                        >
+                          {skill.selected ? (
+                            <CheckSquare className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                          ) : (
+                            <Square className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                          )}
+                          <span className={skill.selected ? "" : "text-muted-foreground"}>
+                            <span className="font-medium">{skill.actionVerb}</span>{" "}
+                            {skill.object}
+                            {skill.context && <span className="text-muted-foreground"> -- {skill.context}</span>}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-2 pt-1">
+                      <Button
+                        size="sm"
+                        className="text-xs"
+                        onClick={() => saveSelectedSkills(e.id, e)}
+                        disabled={savingSkillsFor === e.id}
+                      >
+                        {savingSkillsFor === e.id ? (
+                          <><Loader2 className="mr-1 h-3 w-3 animate-spin" />Saving...</>
+                        ) : (
+                          <>Save Selected Skills ({suggestedSkills[e.id].filter((s) => s.selected).length})</>
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs"
+                        onClick={() => setSuggestedSkills((prev) => { const u = { ...prev }; delete u[e.id]; return u; })}
+                      >
+                        Dismiss
+                      </Button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Expanded DOT Details */}
                 {expandedPRW === e.id && (
@@ -1305,6 +1604,41 @@ export default function PRWPage() {
                       <p className="text-sm text-muted-foreground">
                         No DOT crosswalk data linked. Edit this entry and select an O*NET occupation to auto-lookup DOT data.
                       </p>
+                    )}
+
+                    {/* Actual Earnings vs BLS */}
+                    {(e.actualWageHourly || e.actualWageAnnual) && (
+                      <div className="pt-3 border-t">
+                        <p className="text-xs text-muted-foreground mb-2 font-medium">Actual Earnings{e.wageYear ? ` (${e.wageYear})` : ""}</p>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                          {e.actualWageHourly && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Hourly</p>
+                              <p className="font-medium text-green-700">${e.actualWageHourly.toFixed(2)}</p>
+                            </div>
+                          )}
+                          {e.actualWageAnnual && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Annual</p>
+                              <p className="font-medium text-green-700">${Math.round(e.actualWageAnnual).toLocaleString()}</p>
+                            </div>
+                          )}
+                          {e.hoursPerWeek && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Hours/Week</p>
+                              <p className="font-medium">{e.hoursPerWeek}</p>
+                            </div>
+                          )}
+                          {e.onetSocCode && wageData[e.onetSocCode]?.medianWage && e.actualWageAnnual && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">vs BLS Median</p>
+                              <p className={`font-medium ${e.actualWageAnnual >= wageData[e.onetSocCode].medianWage! ? "text-green-700" : "text-amber-600"}`}>
+                                {Math.round((e.actualWageAnnual / wageData[e.onetSocCode].medianWage!) * 100)}%
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     )}
 
                     {/* OEWS Wage Data */}

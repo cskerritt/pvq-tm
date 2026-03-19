@@ -17,7 +17,14 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Save, RotateCcw, Zap } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Save, RotateCcw, Zap, Info } from "lucide-react";
 import { toast } from "sonner";
 import { CaseBreadcrumb } from "@/components/case-breadcrumb";
 import {
@@ -38,13 +45,30 @@ const PROFILE_TYPES = [
 
 type ProfileType = (typeof PROFILE_TYPES)[number]["key"];
 
+interface TraitSourceEntry {
+  source: string;
+  date?: string;
+  notes?: string;
+}
+
 interface ProfileData {
   id?: string;
   profileType: string;
   notes?: string | null;
   sources?: string | null;
+  traitSources?: Record<string, TraitSourceEntry> | null;
   [key: string]: unknown;
 }
+
+const TRAIT_SOURCE_OPTIONS = [
+  "FCE Report",
+  "Medical Records",
+  "Treating Physician",
+  "Vocational Testing",
+  "Worker Self-Report",
+  "Evaluator Observation",
+  "Other",
+];
 
 function getTraitLabel(trait: TraitKey, value: number | null): string {
   if (value === null) return "—";
@@ -75,6 +99,19 @@ export default function ProfilesPage() {
   const [saving, setSaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [traitSources, setTraitSources] = useState<Record<string, TraitSourceEntry>>({});
+
+  function setTraitSource(trait: string, field: keyof TraitSourceEntry, value: string | null) {
+    setTraitSources((prev) => ({
+      ...prev,
+      [trait]: {
+        ...prev[trait],
+        source: prev[trait]?.source ?? "",
+        [field]: value,
+      },
+    }));
+    setDirty(true);
+  }
 
   const loadProfiles = useCallback(async () => {
     let data: ProfileData[];
@@ -97,6 +134,10 @@ export default function ProfilesPage() {
       }
     }
     setProfiles(map as Record<ProfileType, ProfileData>);
+    // Load trait sources from POST profile
+    if (map["POST"]?.traitSources && typeof map["POST"].traitSources === "object") {
+      setTraitSources(map["POST"].traitSources as Record<string, TraitSourceEntry>);
+    }
   }, [caseId]);
 
   useEffect(() => {
@@ -134,10 +175,13 @@ export default function ProfilesPage() {
       for (const pt of PROFILE_TYPES) {
         const profile = profiles[pt.key];
         if (!profile) continue;
+        const payload = pt.key === "POST"
+          ? { ...profile, traitSources }
+          : profile;
         await fetch(`/api/cases/${caseId}/profiles`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(profile),
+          body: JSON.stringify(payload),
         });
       }
       setDirty(false);
@@ -260,38 +304,92 @@ export default function ProfilesPage() {
                         profiles[pt.key]?.[trait] as number | null | undefined;
                       const numValue =
                         value !== undefined && value !== null ? value : null;
+                      const hasSource = pt.key === "POST" && traitSources[trait]?.source;
                       return (
                         <div
                           key={trait}
                           className={`flex items-center justify-between rounded-md px-2 py-1 ${getCellColor(numValue, pt.key === "POST")}`}
                         >
-                          <span className="text-xs truncate mr-1">
+                          <span className="text-xs truncate mr-1 flex items-center gap-1">
                             {TRAIT_LABELS[trait]}
+                            {hasSource && <span className="h-1.5 w-1.5 rounded-full bg-blue-500 inline-block" />}
                           </span>
-                          <Select
-                            value={numValue !== null ? String(numValue) : "null"}
-                            onValueChange={(v) =>
-                              setTraitValue(
-                                pt.key,
-                                trait,
-                                !v || v === "null" ? null : parseInt(v)
-                              )
-                            }
-                          >
-                            <SelectTrigger className="h-8 w-16 text-xs px-1 shrink-0">
-                              <SelectValue>
-                                {numValue !== null ? numValue : "—"}
-                              </SelectValue>
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="null">—</SelectItem>
-                              {[0, 1, 2, 3, 4].map((v) => (
-                                <SelectItem key={v} value={String(v)}>
-                                  {v} - {getTraitLabel(trait, v)}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <div className="flex items-center gap-1">
+                            <Select
+                              value={numValue !== null ? String(numValue) : "null"}
+                              onValueChange={(v) =>
+                                setTraitValue(
+                                  pt.key,
+                                  trait,
+                                  !v || v === "null" ? null : parseInt(v)
+                                )
+                              }
+                            >
+                              <SelectTrigger className="h-8 w-16 text-xs px-1 shrink-0">
+                                <SelectValue>
+                                  {numValue !== null ? numValue : "—"}
+                                </SelectValue>
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="null">—</SelectItem>
+                                {[0, 1, 2, 3, 4].map((v) => (
+                                  <SelectItem key={v} value={String(v)}>
+                                    {v} - {getTraitLabel(trait, v)}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {pt.key === "POST" && (
+                              <Popover>
+                                <PopoverTrigger
+                                  render={
+                                    <button type="button" className="shrink-0 p-0.5 rounded hover:bg-muted relative">
+                                      <Info className="h-3 w-3 text-muted-foreground" />
+                                    </button>
+                                  }
+                                />
+                                <PopoverContent side="bottom" align="end" className="w-64 p-3">
+                                  <div className="space-y-2">
+                                    <p className="text-xs font-medium">Source for {TRAIT_LABELS[trait]}</p>
+                                    <div className="space-y-1">
+                                      <Label className="text-xs">Source</Label>
+                                      <Select
+                                        value={traitSources[trait]?.source ?? ""}
+                                        onValueChange={(v) => setTraitSource(trait, "source", v)}
+                                      >
+                                        <SelectTrigger className="h-8 text-xs">
+                                          <SelectValue placeholder="Select source" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {TRAIT_SOURCE_OPTIONS.map((s) => (
+                                            <SelectItem key={s} value={s}>{s}</SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <Label className="text-xs">Date (optional)</Label>
+                                      <Input
+                                        type="date"
+                                        className="h-8 text-xs"
+                                        value={traitSources[trait]?.date ?? ""}
+                                        onChange={(e) => setTraitSource(trait, "date", e.target.value)}
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <Label className="text-xs">Notes (optional)</Label>
+                                      <Input
+                                        className="h-8 text-xs"
+                                        placeholder="e.g., No overhead reach per Dr. Smith"
+                                        value={traitSources[trait]?.notes ?? ""}
+                                        onChange={(e) => setTraitSource(trait, "notes", e.target.value)}
+                                      />
+                                    </div>
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+                            )}
+                          </div>
                         </div>
                       );
                     })}
@@ -356,35 +454,91 @@ export default function ProfilesPage() {
                       profiles[pt.key]?.[trait] as number | null | undefined;
                     const numValue =
                       value !== undefined && value !== null ? value : null;
+                    const hasSource = pt.key === "POST" && traitSources[trait]?.source;
                     return (
                       <td
                         key={trait}
-                        className={`px-1 py-1 text-center ${getCellColor(numValue, pt.key === "POST")}`}
+                        className={`px-1 py-1 text-center relative ${getCellColor(numValue, pt.key === "POST")}`}
                       >
-                        <Select
-                          value={numValue !== null ? String(numValue) : "null"}
-                          onValueChange={(v) =>
-                            setTraitValue(
-                              pt.key,
-                              trait,
-                              !v || v === "null" ? null : parseInt(v)
-                            )
-                          }
-                        >
-                          <SelectTrigger className="h-8 w-14 text-xs px-1">
-                            <SelectValue>
-                              {numValue !== null ? numValue : "—"}
-                            </SelectValue>
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="null">—</SelectItem>
-                            {[0, 1, 2, 3, 4].map((v) => (
-                              <SelectItem key={v} value={String(v)}>
-                                {v} - {getTraitLabel(trait, v)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <div className="flex items-center gap-0.5">
+                          <Select
+                            value={numValue !== null ? String(numValue) : "null"}
+                            onValueChange={(v) =>
+                              setTraitValue(
+                                pt.key,
+                                trait,
+                                !v || v === "null" ? null : parseInt(v)
+                              )
+                            }
+                          >
+                            <SelectTrigger className="h-8 w-14 text-xs px-1">
+                              <SelectValue>
+                                {numValue !== null ? numValue : "—"}
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="null">—</SelectItem>
+                              {[0, 1, 2, 3, 4].map((v) => (
+                                <SelectItem key={v} value={String(v)}>
+                                  {v} - {getTraitLabel(trait, v)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {pt.key === "POST" && (
+                            <Popover>
+                              <PopoverTrigger
+                                render={
+                                  <button type="button" className="shrink-0 p-0.5 rounded hover:bg-muted relative">
+                                    <Info className="h-3 w-3 text-muted-foreground" />
+                                    {hasSource && (
+                                      <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-blue-500" />
+                                    )}
+                                  </button>
+                                }
+                              />
+                              <PopoverContent side="bottom" align="start" className="w-64 p-3">
+                                <div className="space-y-2">
+                                  <p className="text-xs font-medium">Source for {TRAIT_LABELS[trait]}</p>
+                                  <div className="space-y-1">
+                                    <Label className="text-xs">Source</Label>
+                                    <Select
+                                      value={traitSources[trait]?.source ?? ""}
+                                      onValueChange={(v) => setTraitSource(trait, "source", v)}
+                                    >
+                                      <SelectTrigger className="h-8 text-xs">
+                                        <SelectValue placeholder="Select source" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {TRAIT_SOURCE_OPTIONS.map((s) => (
+                                          <SelectItem key={s} value={s}>{s}</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label className="text-xs">Date (optional)</Label>
+                                    <Input
+                                      type="date"
+                                      className="h-8 text-xs"
+                                      value={traitSources[trait]?.date ?? ""}
+                                      onChange={(e) => setTraitSource(trait, "date", e.target.value)}
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label className="text-xs">Notes (optional)</Label>
+                                    <Input
+                                      className="h-8 text-xs"
+                                      placeholder="e.g., No overhead reach per Dr. Smith"
+                                      value={traitSources[trait]?.notes ?? ""}
+                                      onChange={(e) => setTraitSource(trait, "notes", e.target.value)}
+                                    />
+                                  </div>
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                          )}
+                        </div>
                       </td>
                     );
                   })}

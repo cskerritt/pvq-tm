@@ -730,12 +730,40 @@ function TraitMarginSummary({ occ }: { occ: TargetOcc }) {
   );
 }
 
+// Cognitive traits (learnable) vs physical/environmental (non-learnable)
+const COGNITIVE_TRAITS = new Set([
+  "reasoning", "math", "language", "spatialPerception",
+  "formPerception", "clericalPerception",
+]);
+
+interface TfqTraitComparison {
+  trait: string;
+  label: string;
+  workerCapacity: number | null;
+  occupationDemand: number | null;
+  margin: number | null;
+  passes: boolean;
+  source: string;
+}
+
+interface TfqDetailsData {
+  tfq?: number;
+  passes?: boolean;
+  failedTraits?: TfqTraitComparison[];
+  traitComparisons?: TfqTraitComparison[];
+  reserveMargin?: number;
+}
+
 function ExcludedOccDetail({ occ }: { occ: TargetOcc }) {
   const nmd = occ.nearMissDetails as Record<string, unknown> | null;
   const failedTraits = (nmd?.failedTraits ?? []) as { trait: string; deficit: number; group?: string; learnable?: boolean }[];
   const retrainingNotes = nmd?.retrainingNotes as string | undefined;
   const svpGap = nmd?.svpGap as number | undefined;
   const estimatedRetrainingTime = nmd?.estimatedRetrainingTime as string | undefined;
+
+  // Parse tfqDetails for raw trait comparison data
+  const tfqData = occ.tfqDetails as TfqDetailsData | null;
+  const tfqFailedTraits = tfqData?.failedTraits ?? [];
 
   return (
     <div className="p-4 bg-muted/30 rounded-md space-y-4">
@@ -757,8 +785,52 @@ function ExcludedOccDetail({ occ }: { occ: TargetOcc }) {
         </Badge>
       )}
 
-      {/* Failed Traits */}
-      {failedTraits.length > 0 && (
+      {/* TFQ Trait Failure Drill-Down (raw trait comparison data) */}
+      {tfqFailedTraits.length > 0 && (
+        <div>
+          <p className="font-medium text-sm mb-2">Trait Failure Details (Worker Capacity vs Occupation Demand)</p>
+          <div className="rounded border overflow-hidden">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-red-50 dark:bg-red-950/30">
+                  <th className="text-left px-3 py-1.5 font-medium">Trait</th>
+                  <th className="text-right px-3 py-1.5 font-medium">Worker</th>
+                  <th className="text-right px-3 py-1.5 font-medium">Demand</th>
+                  <th className="text-right px-3 py-1.5 font-medium">Margin</th>
+                  <th className="text-center px-3 py-1.5 font-medium">Type</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tfqFailedTraits.map((ft, i) => {
+                  const margin = ft.margin != null ? ft.margin : (ft.workerCapacity != null && ft.occupationDemand != null ? ft.workerCapacity - ft.occupationDemand : null);
+                  const isLearnable = COGNITIVE_TRAITS.has(ft.trait);
+                  return (
+                    <tr key={i} className="border-t">
+                      <td className="px-3 py-1.5 font-medium">{ft.label || TRAIT_LABELS[ft.trait] || ft.trait}</td>
+                      <td className="px-3 py-1.5 text-right font-mono">{ft.workerCapacity ?? "\u2014"}</td>
+                      <td className="px-3 py-1.5 text-right font-mono">{ft.occupationDemand ?? "\u2014"}</td>
+                      <td className="px-3 py-1.5 text-right font-mono font-semibold text-red-600">
+                        {margin != null ? (margin >= 0 ? `+${margin}` : String(margin)) : "\u2014"}
+                      </td>
+                      <td className="px-3 py-1.5 text-center">
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] px-1 ${isLearnable ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-orange-50 text-orange-700 border-orange-200"}`}
+                        >
+                          {isLearnable ? "Cognitive (Learnable)" : "Physical/Env"}
+                        </Badge>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Legacy failed traits from near-miss data (fallback when tfqDetails unavailable) */}
+      {failedTraits.length > 0 && tfqFailedTraits.length === 0 && (
         <div>
           <p className="font-medium text-sm mb-2">Failed Traits</p>
           <div className="space-y-1.5">

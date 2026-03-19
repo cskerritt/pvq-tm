@@ -35,6 +35,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         durationMonths: body.durationMonths,
         dutiesDescription: body.dutiesDescription,
         isSubstantialGainful: body.isSubstantialGainful ?? true,
+        actualWageHourly: body.actualWageHourly ?? null,
+        actualWageAnnual: body.actualWageAnnual ?? null,
+        wageYear: body.wageYear ?? null,
+        hoursPerWeek: body.hoursPerWeek ?? null,
       },
     });
     return NextResponse.json(prw, { status: 201 });

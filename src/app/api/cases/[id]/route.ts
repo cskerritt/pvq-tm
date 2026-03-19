@@ -26,21 +26,36 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params;
     const body = await req.json();
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const data: Record<string, any> = {};
+
+    // Only set fields that were explicitly sent in the request body
+    if (body.clientName !== undefined) data.clientName = body.clientName;
+    if (body.clientDOB !== undefined) data.clientDOB = body.clientDOB ? new Date(body.clientDOB) : null;
+    if (body.evaluatorName !== undefined) data.evaluatorName = body.evaluatorName || null;
+    if (body.referralSource !== undefined) data.referralSource = body.referralSource || null;
+    if (body.dateOfInjury !== undefined) data.dateOfInjury = body.dateOfInjury ? new Date(body.dateOfInjury) : null;
+    if (body.dateOfEval !== undefined) data.dateOfEval = body.dateOfEval ? new Date(body.dateOfEval) : null;
+    if (body.zipCode !== undefined) data.zipCode = body.zipCode || null;
+    if (body.metroAreaCode !== undefined) data.metroAreaCode = body.metroAreaCode || null;
+    if (body.metroAreaName !== undefined) data.metroAreaName = body.metroAreaName || null;
+    if (body.notes !== undefined) data.notes = body.notes || null;
+    if (body.status !== undefined) data.status = body.status;
+
+    // Injury & Medical fields
+    if (body.injuryDescription !== undefined) data.injuryDescription = body.injuryDescription || null;
+    if (body.bodyPartsAffected !== undefined) data.bodyPartsAffected = body.bodyPartsAffected ?? [];
+    if (body.treatingPhysician !== undefined) data.treatingPhysician = body.treatingPhysician || null;
+    if (body.physicianSpecialty !== undefined) data.physicianSpecialty = body.physicianSpecialty || null;
+    if (body.mmiDate !== undefined) data.mmiDate = body.mmiDate ? new Date(body.mmiDate) : null;
+    if (body.fceDate !== undefined) data.fceDate = body.fceDate ? new Date(body.fceDate) : null;
+    if (body.fceProvider !== undefined) data.fceProvider = body.fceProvider || null;
+    if (body.surgeryDates !== undefined) data.surgeryDates = body.surgeryDates || null;
+    if (body.medicalNotes !== undefined) data.medicalNotes = body.medicalNotes || null;
+
     const updated = await prisma.case.update({
       where: { id },
-      data: {
-        clientName: body.clientName,
-        clientDOB: body.clientDOB ? new Date(body.clientDOB) : undefined,
-        evaluatorName: body.evaluatorName,
-        referralSource: body.referralSource,
-        dateOfInjury: body.dateOfInjury ? new Date(body.dateOfInjury) : undefined,
-        dateOfEval: body.dateOfEval ? new Date(body.dateOfEval) : undefined,
-        zipCode: body.zipCode !== undefined ? (body.zipCode || null) : undefined,
-        metroAreaCode: body.metroAreaCode !== undefined ? (body.metroAreaCode || null) : undefined,
-        metroAreaName: body.metroAreaName !== undefined ? (body.metroAreaName || null) : undefined,
-        notes: body.notes,
-        status: body.status,
-      },
+      data,
     });
     return NextResponse.json(updated);
   } catch (error) {
