@@ -234,5 +234,10 @@ export function formatEC(hourly: number | null): string {
 export function formatECAnnual(hourly: number | null): string {
   if (hourly === null) return "—";
   const annual = hourly * 2080;
-  return `$${annual.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(annual);
 }

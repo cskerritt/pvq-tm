@@ -286,6 +286,7 @@ model Analysis {
   viableSetAnalysis    Json?   // Viable set coherence/clustering analysis
   confidenceExplanation Json?  // Detailed confidence grade breakdown
   regionalLaborMarket  Json?   // Regional labor market context narrative
+  hiredJobsAnalysis    Json?   // Most-frequently-hired jobs access analysis
 
   case              Case               @relation(fields: [caseId], references: [id], onDelete: Cascade)
   targetOccupations TargetOccupation[]

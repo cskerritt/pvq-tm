@@ -254,7 +254,12 @@ function getGradeColor(grade: string | null): string {
 
 function formatUSD(val: unknown): string {
   if (typeof val !== "number") return "\u2014";
-  return "$" + val.toLocaleString();
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(val);
 }
 
 function formatHourly(val: number | null): string {

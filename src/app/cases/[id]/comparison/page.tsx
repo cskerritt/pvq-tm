@@ -175,7 +175,12 @@ function formatHourly(val: number | null): string {
 
 function formatAnnual(hourly: number | null): string {
   if (hourly === null) return "\u2014";
-  return `$${(hourly * 2080).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(hourly * 2080);
 }
 
 function getVQBandColor(band: number | null): string {

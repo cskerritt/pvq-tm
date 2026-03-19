@@ -1511,15 +1511,15 @@ function renderVQSAnalysis(doc: jsPDF, data: ReportData): void {
     const ecRows: RowInput[] = [];
     if (data.analysis.vqsPreEcMedian != null) {
       ecRows.push(["Pre-Injury EC", fmtHourly(data.analysis.vqsPreEcMedian),
-        `$${((data.analysis.vqsPreEcMedian) * 2080).toLocaleString("en-US", { maximumFractionDigits: 0 })}/yr`]);
+        `${fmtCurrency(data.analysis.vqsPreEcMedian * 2080)}/yr`]);
     }
     if (data.analysis.vqsPostEcMedian != null) {
       ecRows.push(["Post-Injury EC", fmtHourly(data.analysis.vqsPostEcMedian),
-        `$${((data.analysis.vqsPostEcMedian) * 2080).toLocaleString("en-US", { maximumFractionDigits: 0 })}/yr`]);
+        `${fmtCurrency(data.analysis.vqsPostEcMedian * 2080)}/yr`]);
     }
     if (data.analysis.vqsEcLoss != null) {
       ecRows.push(["EC Loss", fmtHourly(data.analysis.vqsEcLoss),
-        `$${(Math.abs(data.analysis.vqsEcLoss) * 2080).toLocaleString("en-US", { maximumFractionDigits: 0 })}/yr`]);
+        `${fmtCurrency(Math.abs(data.analysis.vqsEcLoss) * 2080)}/yr`]);
     }
     if (data.analysis.vqsEcLossPct != null) {
       ecRows.push(["Loss %", `${data.analysis.vqsEcLossPct.toFixed(1)}%`, ""]);

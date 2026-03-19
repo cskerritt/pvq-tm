@@ -19,21 +19,52 @@ import { searchOccupations } from "@/lib/api/onet";
  */
 export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams.get("q");
-  if (!q || q.trim().length < 2) {
-    return NextResponse.json({ error: "Query must be at least 2 characters" }, { status: 400 });
+  if (!q || q.trim().length === 0) {
+    return NextResponse.json({ error: "Query must be at least 1 character" }, { status: 400 });
   }
 
   const query = q.trim();
 
+  // Detect numeric code patterns ───────────────────────────────────
+  const isNumeric = /^\d/.test(query);
+  const isDotCodePattern = /^\d{1,3}(\.\d{0,3}(-\d{0,3})?)?$/.test(query);
+  const isOnetCodePattern = /^\d{1,2}(-\d{0,4}(\.\d{0,2})?)?$/.test(query);
+  const isCodeQuery = isDotCodePattern || isOnetCodePattern;
+
+  // For non-code text queries, require at least 2 characters
+  if (!isNumeric && query.length < 2) {
+    return NextResponse.json({ error: "Query must be at least 2 characters" }, { status: 400 });
+  }
+
   try {
+    // For exact DOT code matches, also do a direct findUnique lookup
+    const exactDotMatch = /^\d{3}\.\d{3}-\d{3}$/.test(query)
+      ? prisma.occupationDOT.findUnique({
+          where: { id: query },
+          select: {
+            id: true,
+            title: true,
+            svp: true,
+            strength: true,
+            gedR: true,
+            gedM: true,
+            gedL: true,
+          },
+        })
+      : Promise.resolve(null);
+
     // Search both sources in parallel
-    const [dotResults, onetApiResults, onetCachedResults] = await Promise.all([
+    const [dotResults, onetApiResults, onetCachedResults, exactDot] = await Promise.all([
       // 1. Search DOT database by title OR code (local, instant)
+      // For code-pattern queries, use startsWith on id for better matching
       prisma.occupationDOT.findMany({
         where: {
           OR: [
-            { title: { contains: query, mode: "insensitive" } },
-            { id: { contains: query, mode: "insensitive" } },
+            ...(isDotCodePattern
+              ? [{ id: { startsWith: query } }]
+              : []),
+            { title: { contains: query, mode: "insensitive" as const } },
+            { id: { contains: query, mode: "insensitive" as const } },
           ],
         },
         select: {
@@ -50,20 +81,33 @@ export async function GET(req: NextRequest) {
       }),
 
       // 2. Search O*NET API (remote) — fetch up to 50 results
+      // Also fire for code-pattern queries so we can find O*NET codes
       searchOccupations(query, 1, 50).catch(() => ({ occupation: [] as { code: string; title: string }[], total: 0 })),
 
       // 3. Search cached O*NET (local, 1,020 occupations)
+      // For O*NET code patterns, use startsWith on id
       prisma.occupationONET.findMany({
         where: {
           OR: [
-            { title: { contains: query, mode: "insensitive" } },
-            { id: { contains: query, mode: "insensitive" } },
+            ...(isOnetCodePattern
+              ? [{ id: { startsWith: query } }]
+              : []),
+            { title: { contains: query, mode: "insensitive" as const } },
+            { id: { contains: query, mode: "insensitive" as const } },
           ],
         },
         select: { id: true, title: true, jobZone: true },
         take: 50,
       }),
+
+      // 4. Exact DOT code lookup
+      exactDotMatch,
     ]);
+
+    // Merge exact DOT match into results if not already present
+    if (exactDot && !dotResults.some((d) => d.id === exactDot.id)) {
+      dotResults.unshift(exactDot);
+    }
 
     // Build DOT results with skill level
     const dotFormatted = dotResults.map((d) => ({

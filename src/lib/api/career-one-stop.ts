@@ -1,9 +1,13 @@
 /**
  * CareerOneStop Jobs API Client
  *
+ * @deprecated This module is deprecated in favor of FRED JOLTS, Census ZBP,
+ * and Census QWI data sources. The local-demand route no longer uses
+ * CareerOneStop. Kept for reference only; do not add new callers.
+ *
  * Provides access to CareerOneStop's job search, location validation,
- * and occupation wage endpoints. Used by the Local Demand engine to
- * fetch deduplicated 90-day posting counts for a ZIP market.
+ * and occupation wage endpoints. Previously used by the Local Demand
+ * engine to fetch deduplicated 90-day posting counts for a ZIP market.
  *
  * Auth: Bearer token via CAREER_ONE_STOP_API_KEY env var.
  * Docs: https://api.careeronestop.org/
