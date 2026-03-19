@@ -142,6 +142,7 @@ interface AnalysisData {
   viableSetAnalysis: any;
   regionalLaborMarket: any;
   hiredJobsComparison: any;
+  laborMarketAccess: any;
   case: { clientName: string; id: string; dateOfInjury: string | null };
   targetOccupations: TargetOcc[];
 }
@@ -1558,6 +1559,71 @@ export default function ComparisonPage() {
                 <span className="flex items-center gap-1">
                   <span className="inline-block w-3 h-3 bg-red-50 border border-red-200 rounded-sm" /> Access lost due to injury
                 </span>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
+
+      {/* Comprehensive Labor Market Access — Lost Occupations */}
+      {analysis?.laborMarketAccess && (() => {
+        const lma = analysis.laborMarketAccess;
+        if (!lma.lostOccupations || lma.lostOccupations.length === 0) return null;
+        return (
+          <Card className="border-indigo-200 bg-indigo-50/30 dark:border-indigo-800 dark:bg-indigo-950/20">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Layers className="h-5 w-5 text-indigo-600" />
+                Comprehensive Labor Market Access — Lost Occupations
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Occupations the worker could access pre-injury but can no longer perform post-injury,
+                across all {lma.totalOccupationsAnalyzed?.toLocaleString() ?? ""} OEWS occupations analyzed.
+                Lost {lma.occupationsLost?.toLocaleString() ?? 0} occupations ({lma.occupationsLostPct?.toFixed(1) ?? 0}%) representing{" "}
+                {lma.employmentLost?.toLocaleString() ?? 0} jobs nationally ({lma.employmentLostPct?.toFixed(1) ?? 0}%).
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>SOC</TableHead>
+                      <TableHead>Title</TableHead>
+                      <TableHead className="text-right">National Empl.</TableHead>
+                      {lma.preInjuryAreaEmployment > 0 && (
+                        <TableHead className="text-right">Area Empl.</TableHead>
+                      )}
+                      <TableHead>Strength</TableHead>
+                      <TableHead>Failed Traits</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(lma.lostOccupations as { code: string; title: string; employment: number; areaEmployment: number; strength: string; failedTraits?: string[] }[])
+                      .slice(0, 30)
+                      .map((occ: { code: string; title: string; employment: number; areaEmployment: number; strength: string; failedTraits?: string[] }) => (
+                      <TableRow key={occ.code}>
+                        <TableCell className="font-mono text-xs">{occ.code}</TableCell>
+                        <TableCell className="text-sm">{occ.title}</TableCell>
+                        <TableCell className="text-right font-mono text-sm">{occ.employment?.toLocaleString()}</TableCell>
+                        {lma.preInjuryAreaEmployment > 0 && (
+                          <TableCell className="text-right font-mono text-sm">{occ.areaEmployment > 0 ? occ.areaEmployment.toLocaleString() : "\u2014"}</TableCell>
+                        )}
+                        <TableCell>
+                          <Badge variant="outline" className="text-xs">{occ.strength}</Badge>
+                        </TableCell>
+                        <TableCell className="text-xs text-red-600 max-w-[200px] truncate">
+                          {occ.failedTraits?.join(", ") ?? ""}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                {lma.lostOccupations.length > 30 && (
+                  <p className="text-xs text-muted-foreground mt-2 text-center">
+                    Showing top 30 of {lma.lostOccupations.length} lost occupations (sorted by employment)
+                  </p>
+                )}
               </div>
             </CardContent>
           </Card>

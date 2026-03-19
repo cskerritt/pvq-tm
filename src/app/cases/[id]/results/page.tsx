@@ -57,6 +57,7 @@ interface AnalysisResult {
   viableSetAnalysis: ViableSetAnalysis | null;
   confidenceExplanation: ConfidenceExplanation | null;
   regionalLaborMarket: RegionalLaborMarket | null;
+  laborMarketAccess: LaborMarketAccess | null;
   case: { clientName: string; id: string; dateOfInjury: string | null };
   targetOccupations: TargetOcc[];
 }
@@ -183,6 +184,45 @@ interface RegionalLaborMarket {
   fullNarrative?: string;
   risks?: string[];
   opportunities?: string[];
+}
+
+interface LaborMarketAccessStrength {
+  sedentary: number;
+  light: number;
+  medium: number;
+  heavy: number;
+  veryHeavy: number;
+}
+
+interface LaborMarketAccessOcc {
+  code: string;
+  title: string;
+  employment: number;
+  areaEmployment: number;
+  strength: string;
+  failedTraits?: string[];
+}
+
+interface LaborMarketAccess {
+  totalOccupationsAnalyzed: number;
+  preInjuryAccessible: number;
+  preInjuryEmployment: number;
+  preInjuryAreaEmployment: number;
+  postInjuryAccessible: number;
+  postInjuryEmployment: number;
+  postInjuryAreaEmployment: number;
+  occupationsLost: number;
+  occupationsLostPct: number;
+  employmentLost: number;
+  employmentLostPct: number;
+  areaEmploymentLost: number;
+  areaEmploymentLostPct: number;
+  preByStrength: LaborMarketAccessStrength;
+  postByStrength: LaborMarketAccessStrength;
+  mostCommonFailingTraits: { trait: string; count: number }[];
+  lostOccupations: LaborMarketAccessOcc[];
+  retainedOccupations: LaborMarketAccessOcc[];
+  gainedOccupations: LaborMarketAccessOcc[];
 }
 
 interface TargetOcc {
@@ -1410,6 +1450,219 @@ export default function ResultsPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Comprehensive Labor Market Access (All 831 OEWS Occupations) */}
+      {selected.laborMarketAccess && (() => {
+        const lma = selected.laborMarketAccess;
+        const strengthLabels = ["sedentary", "light", "medium", "heavy", "veryHeavy"] as const;
+        const strengthDisplayLabels: Record<string, string> = {
+          sedentary: "Sedentary", light: "Light", medium: "Medium", heavy: "Heavy", veryHeavy: "Very Heavy",
+        };
+        return (
+          <Card className="border-indigo-200 bg-indigo-50/30 dark:border-indigo-800 dark:bg-indigo-950/20">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Globe className="h-5 w-5 text-indigo-600" />
+                Comprehensive Labor Market Access
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Analysis of ALL {lma.totalOccupationsAnalyzed.toLocaleString()} OEWS occupations with employment data (SVP-gated).
+                This compares the worker&apos;s pre- and post-injury access to the entire labor market.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Summary Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="rounded-lg border p-4 space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Accessible Occupations</p>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Pre-Injury</p>
+                      <p className="text-2xl font-bold text-blue-600">{lma.preInjuryAccessible.toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Post-Injury</p>
+                      <p className="text-2xl font-bold text-amber-600">{lma.postInjuryAccessible.toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Lost</p>
+                      <p className="text-2xl font-bold text-red-600">{lma.occupationsLost.toLocaleString()}</p>
+                      {lma.occupationsLostPct > 0 && (
+                        <p className="text-xs text-red-500">({lma.occupationsLostPct.toFixed(1)}%)</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border p-4 space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">National Employment</p>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Pre-Injury</p>
+                      <p className="text-lg font-bold text-blue-600">{lma.preInjuryEmployment.toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Post-Injury</p>
+                      <p className="text-lg font-bold text-amber-600">{lma.postInjuryEmployment.toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Lost</p>
+                      <p className="text-lg font-bold text-red-600">{lma.employmentLost.toLocaleString()}</p>
+                      {lma.employmentLostPct > 0 && (
+                        <p className="text-xs text-red-500">({lma.employmentLostPct.toFixed(1)}%)</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {lma.preInjuryAreaEmployment > 0 && (
+                  <div className="rounded-lg border p-4 space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Area Employment</p>
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Pre-Injury</p>
+                        <p className="text-lg font-bold text-blue-600">{lma.preInjuryAreaEmployment.toLocaleString()}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Post-Injury</p>
+                        <p className="text-lg font-bold text-amber-600">{lma.postInjuryAreaEmployment.toLocaleString()}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Lost</p>
+                        <p className="text-lg font-bold text-red-600">{lma.areaEmploymentLost.toLocaleString()}</p>
+                        {lma.areaEmploymentLostPct > 0 && (
+                          <p className="text-xs text-red-500">({lma.areaEmploymentLostPct.toFixed(1)}%)</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Strength Level Breakdown */}
+              <div>
+                <p className="text-sm font-semibold mb-3">Access by Strength Level</p>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Strength</TableHead>
+                        <TableHead className="text-center">Pre-Injury</TableHead>
+                        <TableHead className="text-center">Post-Injury</TableHead>
+                        <TableHead className="text-center">Lost</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {strengthLabels.map((sl) => {
+                        const pre = lma.preByStrength[sl];
+                        const post = lma.postByStrength[sl];
+                        const lost = pre - post;
+                        return (
+                          <TableRow key={sl}>
+                            <TableCell className="font-medium">{strengthDisplayLabels[sl]}</TableCell>
+                            <TableCell className="text-center text-blue-600 font-mono">{pre}</TableCell>
+                            <TableCell className="text-center text-amber-600 font-mono">{post}</TableCell>
+                            <TableCell className={`text-center font-mono ${lost > 0 ? "text-red-600" : "text-green-600"}`}>
+                              {lost > 0 ? `-${lost}` : lost === 0 ? "0" : `+${Math.abs(lost)}`}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+
+              {/* Most Common Failing Traits */}
+              {lma.mostCommonFailingTraits.length > 0 && (
+                <div>
+                  <p className="text-sm font-semibold mb-3">Traits Most Commonly Blocking Access</p>
+                  <div className="flex flex-wrap gap-2">
+                    {lma.mostCommonFailingTraits.map((ft) => (
+                      <Badge key={ft.trait} variant="outline" className="text-xs">
+                        {ft.trait}: {ft.count} occupations
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Visual bar showing reduction */}
+              <div>
+                <p className="text-sm font-semibold mb-2">Labor Market Reduction</p>
+                <div className="relative h-8 w-full rounded-full bg-blue-100 dark:bg-blue-900/30 overflow-hidden">
+                  <div
+                    className="absolute inset-y-0 left-0 bg-blue-500 rounded-full transition-all"
+                    style={{ width: "100%" }}
+                  />
+                  <div
+                    className="absolute inset-y-0 left-0 bg-amber-500 rounded-full transition-all"
+                    style={{
+                      width: lma.preInjuryAccessible > 0
+                        ? `${(lma.postInjuryAccessible / lma.preInjuryAccessible) * 100}%`
+                        : "0%",
+                    }}
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-white drop-shadow">
+                    {lma.postInjuryAccessible} / {lma.preInjuryAccessible} occupations retained
+                    ({lma.preInjuryAccessible > 0
+                      ? ((lma.postInjuryAccessible / lma.preInjuryAccessible) * 100).toFixed(1)
+                      : "0"}%)
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block w-3 h-3 rounded-full bg-blue-500" /> Pre-injury access
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block w-3 h-3 rounded-full bg-amber-500" /> Post-injury access
+                  </span>
+                </div>
+              </div>
+
+              {/* Top Lost Occupations */}
+              {lma.lostOccupations.length > 0 && (
+                <div>
+                  <p className="text-sm font-semibold mb-3">Top Lost Occupations (by employment)</p>
+                  <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>SOC</TableHead>
+                          <TableHead>Title</TableHead>
+                          <TableHead className="text-right">Employment</TableHead>
+                          <TableHead>Strength</TableHead>
+                          <TableHead>Failed Traits</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {lma.lostOccupations.slice(0, 20).map((occ) => (
+                          <TableRow key={occ.code}>
+                            <TableCell className="font-mono text-xs">{occ.code}</TableCell>
+                            <TableCell className="text-sm">{occ.title}</TableCell>
+                            <TableCell className="text-right font-mono text-sm">{occ.employment.toLocaleString()}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-xs">{occ.strength}</Badge>
+                            </TableCell>
+                            <TableCell className="text-xs text-red-600">
+                              {occ.failedTraits?.join(", ") ?? ""}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                    {lma.lostOccupations.length > 20 && (
+                      <p className="text-xs text-muted-foreground mt-2 text-center">
+                        Showing top 20 of {lma.lostOccupations.length} lost occupations
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* VQS Earning Capacity Summary */}
       {(selected.vqsPostEcMedian !== null || selected.vqsPreEcMedian !== null) && (

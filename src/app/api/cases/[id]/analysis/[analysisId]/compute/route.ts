@@ -17,6 +17,7 @@ import { generateRFCNarrative } from "@/lib/engine/rfc-narrative";
 import { analyzeViableSet, type ViableOccupationInput } from "@/lib/engine/viable-set";
 import { explainConfidence } from "@/lib/engine/confidence-explanation";
 import { analyzeRegionalLaborMarket, type OccupationRegionalDetail } from "@/lib/engine/regional-labor-market";
+import { computeLaborMarketAccess } from "@/lib/engine/labor-market-access";
 import { type PVQResult } from "@/lib/engine/pvq";
 import { type STQResult } from "@/lib/engine/skill-transfer";
 import { type TFQResult } from "@/lib/engine/trait-feasibility";
@@ -1063,6 +1064,38 @@ export async function POST(
     occupationDetails,
   });
 
+  // ── 7. Labor Market Access (All 831 OEWS Occupations) ──────────
+  let laborMarketAccessResult = null;
+
+  if (preTraits) {
+    try {
+      // Fetch ALL crosswalk entries for the labor market access engine
+      const allCrosswalks = await prisma.dOTONETCrosswalk.findMany({
+        select: { dotCode: true, onetSocCode: true },
+      });
+
+      // Fetch area-level wage data if metro area is set
+      let areaWageData: { onetSocCode: string; employment: number | null }[] | undefined;
+      if (eclrAreaCode) {
+        areaWageData = await prisma.occupationWages.findMany({
+          where: { areaCode: eclrAreaCode },
+          select: { onetSocCode: true, employment: true },
+        });
+      }
+
+      laborMarketAccessResult = await computeLaborMarketAccess({
+        preProfile: preTraits,
+        postProfile: workerTraits,
+        maxSvp: Math.max(...prwList.map((p) => p.svp ?? 2), 2),
+        areaCode: eclrAreaCode ?? undefined,
+        crosswalkData: allCrosswalks,
+        areaWageData,
+      });
+    } catch (lmaError) {
+      console.warn("[compute] Labor market access analysis failed:", lmaError);
+    }
+  }
+
   // ── Save Comprehensive Analysis Results ─────────────────────────
   await prisma.analysis.update({
     where: { id: analysisId },
@@ -1072,6 +1105,7 @@ export async function POST(
       viableSetAnalysis: viableSetResult ? JSON.parse(JSON.stringify(viableSetResult)) : null,
       confidenceExplanation: confResult ? JSON.parse(JSON.stringify(confResult)) : null,
       regionalLaborMarket: regionResult ? JSON.parse(JSON.stringify(regionResult)) : null,
+      laborMarketAccess: laborMarketAccessResult ? JSON.parse(JSON.stringify(laborMarketAccessResult)) : null,
     },
   });
 

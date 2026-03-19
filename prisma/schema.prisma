@@ -304,6 +304,7 @@ model Analysis {
   confidenceExplanation Json?  // Detailed confidence grade breakdown
   regionalLaborMarket  Json?   // Regional labor market context narrative
   hiredJobsAnalysis    Json?   // Most-frequently-hired jobs access analysis
+  laborMarketAccess    Json?   // Full labor market access analysis (all 831 OEWS occupations)
 
   case              Case               @relation(fields: [caseId], references: [id], onDelete: Cascade)
   targetOccupations TargetOccupation[]
