@@ -106,8 +106,8 @@ function fmt(v: unknown, decimals = 2): string {
   return String(v);
 }
 
-function fmtUsd(v: unknown): string {
-  if (typeof v !== "number") return "\u2014";
+function fmtUsd(v: unknown, suppressedLabel = false): string {
+  if (typeof v !== "number") return suppressedLabel ? "N/A (BLS suppressed)" : "\u2014";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
@@ -393,8 +393,8 @@ export function buildECBreakdown(occ: {
       value: `${fmtUsd(occ.ecMedian)}/hr`,
       highlight: true,
     },
-    { label: "p75", value: fmtUsd(occ.ec75) },
-    { label: "p90", value: fmtUsd(occ.ec90) },
+    { label: "p75", value: fmtUsd(occ.ec75, occ.ecMedian != null && occ.ec75 == null) },
+    { label: "p90", value: fmtUsd(occ.ec90, occ.ecMedian != null && occ.ec90 == null) },
   ];
 
   if (occ.ecConfLow != null && occ.ecConfHigh != null) {

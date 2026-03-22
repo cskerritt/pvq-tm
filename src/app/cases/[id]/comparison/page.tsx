@@ -184,8 +184,8 @@ function traitLabel(val: number | null): string {
   return String(val);
 }
 
-function formatHourly(val: number | null): string {
-  if (val === null) return "\u2014";
+function formatHourly(val: number | null, suppressedLabel = false): string {
+  if (val === null) return suppressedLabel ? "N/A (BLS suppressed)" : "\u2014";
   return `$${val.toFixed(2)}`;
 }
 

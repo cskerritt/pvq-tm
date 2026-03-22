@@ -331,8 +331,8 @@ function formatUSD(val: unknown): string {
   }).format(val);
 }
 
-function formatHourly(val: number | null): string {
-  if (val === null) return "\u2014";
+function formatHourly(val: number | null, suppressedLabel = false): string {
+  if (val === null) return suppressedLabel ? "N/A (BLS suppressed)" : "\u2014";
   return `$${val.toFixed(2)}`;
 }
 
@@ -740,8 +740,8 @@ function EarningCapacityDetail({ occ }: { occ: TargetOcc }) {
           <div className="text-[10px] text-muted-foreground space-y-0.5 mt-1">
             <p>p10: {formatHourly(occ.ec10)}</p>
             <p>p25: {formatHourly(occ.ec25)}</p>
-            <p>p75: {formatHourly(occ.ec75)}</p>
-            <p>p90: {formatHourly(occ.ec90)}</p>
+            <p>p75: {formatHourly(occ.ec75, occ.ecMedian != null && occ.ec75 == null)}</p>
+            <p>p90: {formatHourly(occ.ec90, occ.ecMedian != null && occ.ec90 == null)}</p>
           </div>
         </div>
         <div className="rounded border p-2 text-center">
