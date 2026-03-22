@@ -47,6 +47,7 @@ import {
   ChevronUp,
   XCircle,
   CheckCircle2,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { CaseBreadcrumb } from "@/components/case-breadcrumb";
@@ -197,6 +198,7 @@ export default function AnalysisPage() {
   const [active, setActive] = useState<AnalysisData | null>(null);
   const [running, setRunning] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [pipelineStep, setPipelineStep] = useState<string | null>(null);
   const [editingEarnings, setEditingEarnings] = useState(false);
   const [earningsInput, setEarningsInput] = useState("");
   const [savingEarnings, setSavingEarnings] = useState(false);
@@ -405,12 +407,52 @@ export default function AnalysisPage() {
         setAnalyses(all);
         setActive(all.find((a: AnalysisData) => a.id === active.id) ?? null);
       } else {
-        toast.error(data.error ?? "Step failed");
+        const message = data.error?.includes("Cannot read properties")
+          ? "Profile may have changed. Please re-run the full analysis."
+          : data.error ?? "Step failed. Please check your data and try again.";
+        toast.error(message);
       }
     } catch {
-      toast.error("Failed to run step");
+      toast.error("Analysis step failed. Profile may have changed. Please re-run the full analysis.");
     }
 
+    setRunning(false);
+  }
+
+  async function runFullPipeline() {
+    if (!active) return;
+    setRunning(true);
+    try {
+      const steps = [
+        { num: 2, endpoint: "generate-candidates", label: "Generating Candidates" },
+        { num: 3, endpoint: "filter-traits", label: "Filtering Traits" },
+        { num: 5, endpoint: "compute", label: "Computing PVQ Scores" },
+      ];
+      for (let i = 0; i < steps.length; i++) {
+        const s = steps[i];
+        setPipelineStep(`Step ${i + 1} of ${steps.length}: ${s.label}...`);
+        const res = await fetch(
+          `/api/cases/${caseId}/analysis/${active.id}/${s.endpoint}`,
+          { method: "POST" }
+        );
+        if (!res.ok) {
+          const data = await res.json();
+          toast.error(data.error ?? `Failed at step: ${s.label}`);
+          setPipelineStep(null);
+          setRunning(false);
+          return;
+        }
+      }
+      setPipelineStep(null);
+      toast.success("Full analysis pipeline completed");
+      const refreshed = await fetch(`/api/cases/${caseId}/analysis`);
+      const all = await refreshed.json();
+      setAnalyses(all);
+      setActive(all.find((a: AnalysisData) => a.id === active.id) ?? null);
+    } catch {
+      toast.error("Analysis pipeline failed. Please check your data and try again.");
+    }
+    setPipelineStep(null);
     setRunning(false);
   }
 
@@ -721,6 +763,29 @@ export default function AnalysisPage() {
             <CardContent className="space-y-4">
               <Progress value={(active.step / 5) * 100} />
 
+              {active.step >= 5 && (
+                <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30 p-3">
+                  <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                      {pipelineStep ?? "Analysis complete. If you've changed the worker profile, re-run to update results."}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={runFullPipeline}
+                    disabled={running}
+                  >
+                    {running ? (
+                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="mr-1 h-3 w-3" />
+                    )}
+                    {pipelineStep ? "Running..." : "Re-run All"}
+                  </Button>
+                </div>
+              )}
+
               {/* Step Cards */}
               <div className="space-y-3">
                 {STEPS.map((s) => {
@@ -753,6 +818,26 @@ export default function AnalysisPage() {
                           {s.desc}
                         </p>
                       </div>
+                      {/* Re-run button for completed steps */}
+                      {isComplete && !running && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0"
+                          onClick={() => {
+                            if (s.action) {
+                              runStep(s.num);
+                            } else if (s.num === 1) {
+                              runStep(2);
+                            } else if (s.num === 4) {
+                              runStep(5);
+                            }
+                          }}
+                          title={`Re-run ${s.label}`}
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                        </Button>
+                      )}
                       {/* Step 2 & 3: Run button */}
                       {isCurrent && s.action && (
                         <Button
@@ -814,7 +899,7 @@ export default function AnalysisPage() {
                       {isCurrent && !s.action && s.num === 4 && (
                         <Button
                           size="sm"
-                          onClick={() => runStep(5)}
+                          onClick={runFullPipeline}
                           disabled={running}
                         >
                           {running ? (
@@ -822,7 +907,7 @@ export default function AnalysisPage() {
                           ) : (
                             <ArrowRight className="mr-1 h-3 w-3" />
                           )}
-                          Compute PVQ
+                          {pipelineStep ? "Running..." : "Compute PVQ"}
                         </Button>
                       )}
                     </div>

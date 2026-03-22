@@ -167,6 +167,11 @@ export default function ProfilesPage() {
     trait: TraitKey,
     value: number | null
   ) {
+    // Validate: only allow null or integers 0-4
+    if (value !== null && (value < 0 || value > 4 || !Number.isInteger(value))) {
+      toast.error(`Invalid value: ${value}. Trait values must be 0-4.`);
+      return;
+    }
     setProfiles((prev) => {
       const updated = {
         ...prev,
@@ -462,7 +467,7 @@ export default function ProfilesPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b">
-                <th className="sticky left-0 bg-background px-2 py-1 text-left font-medium min-w-[140px]">
+                <th className="sticky left-0 z-20 bg-background px-2 py-1 text-left font-medium min-w-[140px]">
                   Profile
                 </th>
                 {Object.entries(TRAIT_GROUPS).map(([group, traits]) => (
@@ -476,7 +481,7 @@ export default function ProfilesPage() {
                 ))}
               </tr>
               <tr className="border-b">
-                <th className="sticky left-0 bg-background px-2 py-1" />
+                <th className="sticky left-0 z-20 bg-background px-2 py-1" />
                 {TRAIT_KEYS.map((trait) => (
                   <th
                     key={trait}
@@ -501,7 +506,7 @@ export default function ProfilesPage() {
             <tbody>
               {PROFILE_TYPES.map((pt) => (
                 <tr key={pt.key} className="border-b hover:bg-muted/30">
-                  <td className="sticky left-0 bg-background px-2 py-2 font-medium">
+                  <td className="sticky left-0 z-20 bg-background px-2 py-2 font-medium">
                     {pt.label}
                   </td>
                   {TRAIT_KEYS.map((trait) => {
@@ -513,7 +518,7 @@ export default function ProfilesPage() {
                     return (
                       <td
                         key={trait}
-                        className={`px-1 py-1 text-center relative ${getCellColor(numValue, pt.key === "POST")}`}
+                        className={`px-1 py-1 text-center ${getCellColor(numValue, pt.key === "POST")}`}
                       >
                         <div className="flex items-center gap-0.5">
                           <Select

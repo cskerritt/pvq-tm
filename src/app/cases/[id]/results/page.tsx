@@ -58,6 +58,7 @@ interface AnalysisResult {
   confidenceExplanation: ConfidenceExplanation | null;
   regionalLaborMarket: RegionalLaborMarket | null;
   laborMarketAccess: LaborMarketAccess | null;
+  updatedAt?: string;
   case: { clientName: string; id: string; dateOfInjury: string | null };
   targetOccupations: TargetOcc[];
 }
@@ -967,6 +968,7 @@ export default function ResultsPage() {
   const [downloading, setDownloading] = useState(false);
   const [narrative, setNarrative] = useState("");
   const [generatingNarrative, setGeneratingNarrative] = useState(false);
+  const [profileUpdatedAfterAnalysis, setProfileUpdatedAfterAnalysis] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -987,6 +989,27 @@ export default function ResultsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    async function checkStaleness() {
+      if (!selected) return;
+      try {
+        const profileRes = await fetch(`/api/cases/${caseId}/profiles`);
+        const profiles = await profileRes.json();
+        const postProfile = Array.isArray(profiles)
+          ? profiles.find((p: { profileType: string; updatedAt?: string }) => p.profileType === "POST")
+          : null;
+        if (postProfile?.updatedAt && selected) {
+          const profileTime = new Date(postProfile.updatedAt).getTime();
+          const analysisTime = selected.updatedAt ? new Date(selected.updatedAt).getTime() : 0;
+          setProfileUpdatedAfterAnalysis(profileTime > analysisTime);
+        }
+      } catch {
+        // Non-critical check
+      }
+    }
+    checkStaleness();
+  }, [caseId, selected]);
 
   async function downloadReport() {
     if (!selected) return;
@@ -1100,6 +1123,20 @@ export default function ResultsPage() {
       <WizardNav caseId={caseId} currentStep={6} />
       <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <CaseBreadcrumb caseId={caseId} currentPage="Results" />
+
+      {profileUpdatedAfterAnalysis && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30 p-4 flex items-start gap-3">
+          <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold text-amber-800 dark:text-amber-200">
+              Profile Updated Since Last Analysis
+            </p>
+            <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+              The worker profile has been modified since this analysis was last run. Results may not reflect current values. Go to the Analysis page and re-run to update.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>

@@ -227,6 +227,20 @@ export async function POST(
     include: { onetOcc: true },
   });
 
+  if (targets.length === 0) {
+    return NextResponse.json(
+      { error: "No target occupations found. Please re-run Generate Candidates (Step 2) first." },
+      { status: 400 }
+    );
+  }
+
+  if (prwList.length === 0) {
+    return NextResponse.json(
+      { error: "No Past Relevant Work found. Please add PRW data before computing." },
+      { status: 400 }
+    );
+  }
+
   // ─── Batch-fetch all DOT records (avoids N+1 queries) ───────────────
 
   const prwDotCodes = prwList
