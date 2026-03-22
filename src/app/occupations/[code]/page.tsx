@@ -89,8 +89,8 @@ interface OccupationData {
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-function formatUSD(value: number | null | undefined): string {
-  if (value == null) return "\u2014";
+function formatUSD(value: number | null | undefined, suppressLabel = false): string {
+  if (value == null) return suppressLabel ? "N/A (BLS suppressed)" : "\u2014";
   return value.toLocaleString("en-US", {
     style: "currency",
     currency: "USD",
@@ -656,10 +656,10 @@ export default function OccupationDetailPage() {
                         {formatUSD(w.pct25)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {formatUSD(w.pct75)}
+                        {formatUSD(w.pct75, true)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {formatUSD(w.pct90)}
+                        {formatUSD(w.pct90, true)}
                       </TableCell>
                     </TableRow>
                   ))}

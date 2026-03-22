@@ -1647,7 +1647,7 @@ export default function PRWPage() {
                     {/* OEWS Wage Data */}
                     {e.onetSocCode && wageData[e.onetSocCode] && (() => {
                       const w = wageData[e.onetSocCode];
-                      const fmt = (v: number | null) => v !== null ? `$${v.toLocaleString()}` : "—";
+                      const fmt = (v: number | null, suppress = false) => v !== null ? `$${v.toLocaleString()}` : suppress ? "N/A (BLS suppressed)" : "—";
                       const fmtN = (v: number | null) => v !== null ? v.toLocaleString() : "—";
                       return (
                         <div className="pt-3 border-t">
@@ -1670,15 +1670,15 @@ export default function PRWPage() {
                             </div>
                             <div>
                               <p className="text-xs text-muted-foreground">Wage Range</p>
-                              <p className="font-mono text-xs">{fmt(w.pct10)} – {fmt(w.pct90)}</p>
+                              <p className="font-mono text-xs">{fmt(w.pct10)} – {fmt(w.pct90, true)}</p>
                             </div>
                           </div>
                           <div className="flex flex-wrap gap-2 mt-2">
                             <Badge variant="outline" className="text-xs">10th: {fmt(w.pct10)}</Badge>
                             <Badge variant="outline" className="text-xs">25th: {fmt(w.pct25)}</Badge>
                             <Badge variant="secondary" className="text-xs font-semibold">50th: {fmt(w.medianWage)}</Badge>
-                            <Badge variant="outline" className="text-xs">75th: {fmt(w.pct75)}</Badge>
-                            <Badge variant="outline" className="text-xs">90th: {fmt(w.pct90)}</Badge>
+                            <Badge variant="outline" className="text-xs">75th: {fmt(w.pct75, true)}</Badge>
+                            <Badge variant="outline" className="text-xs">90th: {fmt(w.pct90, true)}</Badge>
                           </div>
                         </div>
                       );

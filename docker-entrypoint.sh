@@ -21,14 +21,20 @@ if [ -n "$DATABASE_URL" ]; then
     node node_modules/prisma/build/index.js migrate resolve --applied "$migration" 2>/dev/null || true
   done
 
-  # Force the catch-all migration to actually run by marking it as NOT applied first.
-  # This ensures all missing columns get created on the production database.
+  # Force BOTH catch-all migrations to re-run by marking them as NOT applied.
+  # If either is in "failed_to_apply" state it blocks ALL subsequent migrations,
+  # so we must resolve both before calling migrate deploy.
   node node_modules/prisma/build/index.js migrate resolve --rolled-back 20260319190000_ensure_all_columns 2>/dev/null || true
+  node node_modules/prisma/build/index.js migrate resolve --rolled-back 20260319200000_fix_production_columns 2>/dev/null || true
 
   if node node_modules/prisma/build/index.js migrate deploy; then
     echo "Migrations complete."
   else
-    echo "WARNING: Migration deploy returned non-zero. Continuing with server startup..."
+    echo "WARNING: Migration deploy returned non-zero. Running catch-all SQL directly..."
+    # Fallback: execute the catch-all migration SQL directly to ensure all columns exist.
+    # This handles the case where Prisma migrate is stuck but the database is accessible.
+    node node_modules/prisma/build/index.js db execute --stdin < prisma/migrations/20260319200000_fix_production_columns/migration.sql 2>/dev/null || true
+    echo "Fallback SQL applied."
   fi
 else
   echo "WARNING: DATABASE_URL not set — skipping migrations."

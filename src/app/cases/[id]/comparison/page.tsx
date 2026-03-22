@@ -1297,7 +1297,7 @@ export default function ComparisonPage() {
                                 </div>
                               </div>
                             ) : (
-                              <span className="text-xs text-muted-foreground">{"\u2014"}</span>
+                              <span className="text-xs text-muted-foreground">N/A (BLS suppressed)</span>
                             )}
                           </TableCell>
                           <TableCell className="text-right text-xs text-muted-foreground">

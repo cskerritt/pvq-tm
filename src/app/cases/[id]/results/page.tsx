@@ -331,8 +331,8 @@ function formatUSD(val: unknown): string {
   }).format(val);
 }
 
-function formatHourly(val: number | null): string {
-  if (val === null) return "\u2014";
+function formatHourly(val: number | null, suppressLabel = false): string {
+  if (val === null) return suppressLabel ? "N/A (BLS suppressed)" : "\u2014";
   return `$${val.toFixed(2)}`;
 }
 
@@ -740,8 +740,8 @@ function EarningCapacityDetail({ occ }: { occ: TargetOcc }) {
           <div className="text-[10px] text-muted-foreground space-y-0.5 mt-1">
             <p>p10: {formatHourly(occ.ec10)}</p>
             <p>p25: {formatHourly(occ.ec25)}</p>
-            <p>p75: {formatHourly(occ.ec75)}</p>
-            <p>p90: {formatHourly(occ.ec90)}</p>
+            <p>p75: {formatHourly(occ.ec75, true)}</p>
+            <p>p90: {formatHourly(occ.ec90, true)}</p>
           </div>
         </div>
         <div className="rounded border p-2 text-center">
@@ -2140,10 +2140,10 @@ export default function ResultsPage() {
                         {meanWage !== null ? formatUSD(meanWage) : "\u2014"}
                       </TableCell>
                       <TableCell className="hidden md:table-cell text-right text-sm text-muted-foreground">
-                        {pct75 !== null ? formatUSD(pct75) : "\u2014"}
+                        {pct75 !== null ? formatUSD(pct75) : "N/A (BLS suppressed)"}
                       </TableCell>
                       <TableCell className="hidden md:table-cell text-right text-sm text-muted-foreground">
-                        {pct90 !== null ? formatUSD(pct90) : "\u2014"}
+                        {pct90 !== null ? formatUSD(pct90) : "N/A (BLS suppressed)"}
                       </TableCell>
                       {selected.priorEarnings && (
                         <TableCell className="text-right text-sm">

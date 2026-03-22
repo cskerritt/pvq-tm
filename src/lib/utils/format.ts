@@ -10,8 +10,8 @@
  *   - Never use "k" or "K" abbreviations
  */
 
-export function formatCurrency(value: number | null | undefined): string {
-  if (value == null) return "\u2014";
+export function formatCurrency(value: number | null | undefined, suppressLabel = false): string {
+  if (value == null) return suppressLabel ? "N/A (BLS suppressed)" : "\u2014";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
@@ -20,8 +20,8 @@ export function formatCurrency(value: number | null | undefined): string {
   }).format(value);
 }
 
-export function formatHourlyWage(value: number | null | undefined): string {
-  if (value == null) return "\u2014";
+export function formatHourlyWage(value: number | null | undefined, suppressLabel = false): string {
+  if (value == null) return suppressLabel ? "N/A (BLS suppressed)" : "\u2014";
   return `$${value.toFixed(2)}/hr`;
 }
 
