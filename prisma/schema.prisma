@@ -305,7 +305,8 @@ model Analysis {
   regionalLaborMarket  Json?   // Regional labor market context narrative
   hiredJobsAnalysis    Json?   // Most-frequently-hired jobs access analysis
   laborMarketAccess    Json?   // Full labor market access analysis (all 831 OEWS occupations)
-  zeroViableExplanation Json?  // Explanation when zero occupations survive filtering
+  // NOTE: zeroViableExplanation column is added by migration 20260322000000
+  // but may not exist yet in all databases. Accessed via raw query in compute route.
 
   case              Case               @relation(fields: [caseId], references: [id], onDelete: Cascade)
   targetOccupations TargetOccupation[]

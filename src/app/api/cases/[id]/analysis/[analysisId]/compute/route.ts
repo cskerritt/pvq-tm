@@ -1202,9 +1202,23 @@ export async function POST(
       confidenceExplanation: confResult ? JSON.parse(JSON.stringify(confResult)) : null,
       regionalLaborMarket: regionResult ? JSON.parse(JSON.stringify(regionResult)) : null,
       laborMarketAccess: laborMarketAccessResult ? JSON.parse(JSON.stringify(laborMarketAccessResult)) : null,
-      zeroViableExplanation: zeroViableExplanation ? JSON.parse(JSON.stringify(zeroViableExplanation)) : null,
     },
   });
+
+  // Write zeroViableExplanation via raw query — the column may not exist yet in all databases.
+  // The migration 20260322000000 adds it, but we guard against its absence here.
+  if (zeroViableExplanation) {
+    try {
+      await prisma.$executeRawUnsafe(
+        `UPDATE "Analysis" SET "zeroViableExplanation" = $1::jsonb WHERE "id" = $2`,
+        JSON.stringify(zeroViableExplanation),
+        analysisId
+      );
+    } catch {
+      // Column doesn't exist yet — silently skip
+      console.warn("[compute] zeroViableExplanation column not yet available, skipping");
+    }
+  }
 
   return NextResponse.json({ computed: targets.length, excluded: excludedTargets.length });
   } catch (error) {

@@ -58,7 +58,7 @@ interface AnalysisResult {
   confidenceExplanation: ConfidenceExplanation | null;
   regionalLaborMarket: RegionalLaborMarket | null;
   laborMarketAccess: LaborMarketAccess | null;
-  zeroViableExplanation: ZeroViableExplanation | null;
+  zeroViableExplanation?: ZeroViableExplanation | null;
   updatedAt?: string;
   case: { clientName: string; id: string; dateOfInjury: string | null };
   targetOccupations: TargetOcc[];
