@@ -34,6 +34,7 @@ export async function POST() {
       `ALTER TABLE "Analysis" ADD COLUMN IF NOT EXISTS "regionalLaborMarket" JSONB`,
       `ALTER TABLE "Analysis" ADD COLUMN IF NOT EXISTS "hiredJobsAnalysis" JSONB`,
       `ALTER TABLE "Analysis" ADD COLUMN IF NOT EXISTS "laborMarketAccess" JSONB`,
+      `ALTER TABLE "Analysis" ADD COLUMN IF NOT EXISTS "zeroViableExplanation" JSONB`,
 
       // ============ TargetOccupation table ============
       `ALTER TABLE "TargetOccupation" ADD COLUMN IF NOT EXISTS "nearMissSeverity" TEXT`,
