@@ -5,7 +5,7 @@ import { computeSTQ, type SkillTransferInput } from "@/lib/engine/skill-transfer
 import { computeTFQ, buildDOTDemandVector, buildOccupationDemands } from "@/lib/engine/trait-feasibility";
 import { computeVAQ, estimateVAQ, type VocationalAdjustment } from "@/lib/engine/vocational-adjustment";
 import { computeLMQ } from "@/lib/engine/labor-market";
-import { profileToTraitVector, STRENGTH_LABELS, mapORSToTraits } from "@/lib/engine/traits";
+import { profileToTraitVector, STRENGTH_LABELS, TRAIT_LABELS, mapORSToTraits } from "@/lib/engine/traits";
 import { getPrimaryIndustryForSOC, getIndustryNameForSOC } from "@/lib/engine/industry-mapping";
 import { computeVQ } from "@/lib/engine/vocational-quotient";
 import { computeTSP, type TSPInput } from "@/lib/engine/tsp";
@@ -222,12 +222,13 @@ export async function POST(
     include: { acquiredSkills: true },
   });
 
-  const targets = await prisma.targetOccupation.findMany({
-    where: { analysisId, excluded: false },
+  // Fetch ALL targets (including excluded) so we can analyze exclusion reasons
+  const allTargetsInAnalysis = await prisma.targetOccupation.findMany({
+    where: { analysisId },
     include: { onetOcc: true },
   });
 
-  if (targets.length === 0) {
+  if (allTargetsInAnalysis.length === 0) {
     return NextResponse.json(
       { error: "No target occupations found. Please re-run Generate Candidates (Step 2) first." },
       { status: 400 }
@@ -240,6 +241,9 @@ export async function POST(
       { status: 400 }
     );
   }
+
+  // Non-excluded targets get full scoring; excluded targets still get analysis
+  const targets = allTargetsInAnalysis.filter(t => !t.excluded);
 
   // ─── Batch-fetch all DOT records (avoids N+1 queries) ───────────────
 
@@ -1110,6 +1114,84 @@ export async function POST(
     }
   }
 
+  // ── 8. Zero Viable Explanation ────────────────────────────────────
+  // When no occupations survive filtering, build a detailed explanation
+  // of what factors caused all candidates to be excluded.
+  let zeroViableExplanation: Record<string, unknown> | null = null;
+
+  if (viableTargets.length === 0 && excludedTargets.length > 0) {
+    // Tally exclusion reasons by category
+    const reasonCounts: Record<string, number> = {};
+    const strengthExclusions: string[] = [];
+    const traitExclusions: Record<string, number> = {};
+
+    for (const t of excludedTargets) {
+      const reason = t.exclusionReason ?? "Unknown";
+      reasonCounts[reason] = (reasonCounts[reason] ?? 0) + 1;
+
+      // Parse out specific failing traits from exclusion reasons
+      if (reason.includes("Strength")) {
+        strengthExclusions.push(`${t.title}: ${reason}`);
+      }
+
+      // Parse trait names from TFQ details
+      const tfq = t.tfqDetails as { failedTraits?: Array<{ label?: string; trait?: string }> } | null;
+      if (tfq?.failedTraits) {
+        for (const ft of tfq.failedTraits) {
+          const name = ft.label ?? ft.trait ?? "Unknown trait";
+          traitExclusions[name] = (traitExclusions[name] ?? 0) + 1;
+        }
+      }
+    }
+
+    // Sort traits by frequency
+    const sortedTraits = Object.entries(traitExclusions)
+      .sort((a, b) => b[1] - a[1]);
+
+    // Build the worker's limiting factors from POST profile
+    const strengthLabel = STRENGTH_LABELS[workerTraits.strength ?? 0] ?? "Unknown";
+    const limitingTraits: string[] = [];
+    const traitKeys = Object.keys(workerTraits) as Array<keyof typeof workerTraits>;
+    for (const key of traitKeys) {
+      const val = workerTraits[key];
+      if (val !== null && val !== undefined && val <= 1) {
+        const label = (TRAIT_LABELS as Record<string, string>)[key] ?? key;
+        limitingTraits.push(`${label} (level ${val})`);
+      }
+    }
+
+    zeroViableExplanation = {
+      totalCandidatesEvaluated: excludedTargets.length,
+      viableCount: 0,
+      summary: `All ${excludedTargets.length} candidate occupations were excluded based on the evaluee's post-injury residual functional capacity. ` +
+        `The evaluee is restricted to ${strengthLabel} exertional level` +
+        (limitingTraits.length > 0
+          ? `, with additional limitations in: ${limitingTraits.slice(0, 8).join("; ")}`
+          : "") +
+        `. These restrictions precluded all identified transferable occupations.`,
+      primaryExclusionFactors: sortedTraits.slice(0, 10).map(([trait, count]) => ({
+        trait,
+        count,
+        pctOfExcluded: Math.round((count / excludedTargets.length) * 100),
+      })),
+      strengthAnalysis: {
+        workerLevel: strengthLabel,
+        workerValue: workerTraits.strength ?? 0,
+        exclusionsDueToStrength: strengthExclusions.length,
+        details: strengthExclusions.slice(0, 10),
+      },
+      workerLimitations: limitingTraits,
+      exclusionReasonBreakdown: Object.entries(reasonCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 15)
+        .map(([reason, count]) => ({ reason, count })),
+      vocationalImplication: viableTargets.length === 0
+        ? "Based on this analysis, no transferable occupations within the evaluee's demonstrated skill level were identified that fall within the post-injury residual functional capacity. " +
+          "This finding indicates a complete loss of access to occupations requiring the evaluee's transferable skills at the current functional level."
+        : null,
+    };
+  }
+
   // ── Save Comprehensive Analysis Results ─────────────────────────
   await prisma.analysis.update({
     where: { id: analysisId },
@@ -1120,10 +1202,11 @@ export async function POST(
       confidenceExplanation: confResult ? JSON.parse(JSON.stringify(confResult)) : null,
       regionalLaborMarket: regionResult ? JSON.parse(JSON.stringify(regionResult)) : null,
       laborMarketAccess: laborMarketAccessResult ? JSON.parse(JSON.stringify(laborMarketAccessResult)) : null,
+      zeroViableExplanation: zeroViableExplanation ? JSON.parse(JSON.stringify(zeroViableExplanation)) : null,
     },
   });
 
-  return NextResponse.json({ computed: targets.length });
+  return NextResponse.json({ computed: targets.length, excluded: excludedTargets.length });
   } catch (error) {
     console.error("[POST /api/cases/[id]/analysis/[analysisId]/compute]", error);
     const message = error instanceof Error ? error.message : "Internal server error";

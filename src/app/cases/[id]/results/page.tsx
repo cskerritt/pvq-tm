@@ -58,6 +58,7 @@ interface AnalysisResult {
   confidenceExplanation: ConfidenceExplanation | null;
   regionalLaborMarket: RegionalLaborMarket | null;
   laborMarketAccess: LaborMarketAccess | null;
+  zeroViableExplanation: ZeroViableExplanation | null;
   updatedAt?: string;
   case: { clientName: string; id: string; dateOfInjury: string | null };
   targetOccupations: TargetOcc[];
@@ -224,6 +225,22 @@ interface LaborMarketAccess {
   lostOccupations: LaborMarketAccessOcc[];
   retainedOccupations: LaborMarketAccessOcc[];
   gainedOccupations: LaborMarketAccessOcc[];
+}
+
+interface ZeroViableExplanation {
+  totalCandidatesEvaluated: number;
+  viableCount: number;
+  summary: string;
+  primaryExclusionFactors: { trait: string; count: number; pctOfExcluded: number }[];
+  strengthAnalysis: {
+    workerLevel: string;
+    workerValue: number;
+    exclusionsDueToStrength: number;
+    details: string[];
+  };
+  workerLimitations: string[];
+  exclusionReasonBreakdown: { reason: string; count: number }[];
+  vocationalImplication: string | null;
 }
 
 interface TargetOcc {
@@ -1231,6 +1248,83 @@ export default function ResultsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════
+          SECTION 0: Zero Viable Explanation (when all occupations excluded)
+          ═══════════════════════════════════════════════════════════ */}
+      {selected.zeroViableExplanation && viable.length === 0 && (() => {
+        const zve = selected.zeroViableExplanation;
+        return (
+          <Card className="border-red-300 bg-red-50/30 dark:border-red-800 dark:bg-red-950/20">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-red-600" />
+                No Viable Occupations Identified
+              </CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                {zve.totalCandidatesEvaluated} candidate occupations were evaluated — all were excluded.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Summary */}
+              <div className="rounded-md border border-red-200 dark:border-red-800 bg-white dark:bg-background p-4">
+                <p className="text-sm">{zve.summary}</p>
+              </div>
+
+              {/* Vocational Implication */}
+              {zve.vocationalImplication && (
+                <div className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-4">
+                  <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-1">Vocational Implication</p>
+                  <p className="text-sm text-amber-700 dark:text-amber-300">{zve.vocationalImplication}</p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Primary Exclusion Factors */}
+                {zve.primaryExclusionFactors.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium mb-2">Primary Exclusion Factors</p>
+                    <div className="space-y-1">
+                      {zve.primaryExclusionFactors.map((f, i) => (
+                        <div key={i} className="flex items-center justify-between text-sm">
+                          <span>{f.trait}</span>
+                          <span className="text-muted-foreground">
+                            {f.count} occupation{f.count !== 1 ? "s" : ""} ({f.pctOfExcluded}%)
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Worker Limitations */}
+                {zve.workerLimitations.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium mb-2">Post-Injury Limitations</p>
+                    <div className="space-y-1">
+                      {zve.workerLimitations.map((l, i) => (
+                        <div key={i} className="flex items-center gap-2 text-sm">
+                          <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0" />
+                          <span>{l}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Strength Analysis */}
+              {zve.strengthAnalysis.exclusionsDueToStrength > 0 && (
+                <div>
+                  <p className="text-sm font-medium mb-1">
+                    Strength: Worker restricted to {zve.strengthAnalysis.workerLevel} — {zve.strengthAnalysis.exclusionsDueToStrength} occupation{zve.strengthAnalysis.exclusionsDueToStrength !== 1 ? "s" : ""} exceeded this level
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* ═══════════════════════════════════════════════════════════
           SECTION 1: RFC Narrative Card (NEW)

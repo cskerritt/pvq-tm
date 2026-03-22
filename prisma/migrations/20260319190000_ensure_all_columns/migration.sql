@@ -31,6 +31,7 @@ ALTER TABLE "Analysis" ADD COLUMN IF NOT EXISTS "viableSetAnalysis" JSONB;
 ALTER TABLE "Analysis" ADD COLUMN IF NOT EXISTS "confidenceExplanation" JSONB;
 ALTER TABLE "Analysis" ADD COLUMN IF NOT EXISTS "regionalLaborMarket" JSONB;
 ALTER TABLE "Analysis" ADD COLUMN IF NOT EXISTS "laborMarketAccess" JSONB;
+ALTER TABLE "Analysis" ADD COLUMN IF NOT EXISTS "zeroViableExplanation" JSONB;
 ALTER TABLE "Analysis" ADD COLUMN IF NOT EXISTS "hiredJobsAnalysis" JSONB;
 ALTER TABLE "Analysis" ADD COLUMN IF NOT EXISTS "preInjuryViableCount" INTEGER;
 ALTER TABLE "Analysis" ADD COLUMN IF NOT EXISTS "preInjuryTotalEmployment" DOUBLE PRECISION;
