@@ -1,6 +1,6 @@
 # PVQ-TM Vocational Analysis System: Technical White Paper
 
-**Version 1.0 | March 2026**
+**Version 2.0 | March 2026**
 
 **For Use in Vocational Expert Testimony, Workers' Compensation, and SSDI Proceedings**
 
@@ -887,8 +887,10 @@ The CPC system integrates three authoritative data sources following the VDARE-a
 **O*NET 30.2 (Primary Component Data):**
 All 237 dimensions are derived from O*NET's standardized element ratings. The O*NET database provides importance and level ratings for each element across all 1,016 occupations, ensuring uniform coverage.
 
-**ORS (Physical Demand Enrichment):**
+**ORS (Physical Demand Enrichment and CPC Integration):**
 The Occupational Requirements Survey (BLS) provides authoritative physical and environmental demand data for 226 SOC codes. ORS data is extracted and mapped to specific physical traits (strength, fine/gross manipulation, climbing, low postures, reaching) and environmental conditions (extreme temperatures, noise, hazards). Per VDARE methodology, ORS takes priority over DOT and O*NET for physical demand assessment.
+
+Beginning with version 2.0, ORS physical demands are directly encoded into the numeric CPC code as the last four digits (CCRS segment). This integration means that the CPC code alone communicates not just the cognitive/skill profile of an occupation but also its physical demand characteristics, enabling rapid filtering and matching based on both component similarity and physical feasibility.
 
 **OEWS (Labor Market Context):**
 The Occupational Employment and Wage Statistics (BLS) provides national employment counts and wage data (mean, median, 10th/25th/75th/90th percentile) for 831 SOC codes. This data is attached to each occupation fingerprint, enabling the CPC system to report the labor market significance of component-matched occupations.
@@ -926,24 +928,122 @@ The worker's component profile is constructed from their Past Relevant Work (PRW
 
 This composite vector represents the worker's demonstrated occupational competency across all 237 component dimensions, weighted equally across all PRW entries.
 
-### 13.7 Component Profile Code (Human-Readable)
+### 13.7 Numeric Component Profile Code
 
-Each occupation (and each worker composite profile) is assigned a human-readable Component Profile Code of the form:
+Each occupation (and each worker composite profile) is assigned a fully numeric Component Profile Code (CPC) that follows the hierarchical numeric conventions established by SOC (XX-XXXX), O*NET (XX-XXXX.XX), and DOT (XXX.XXX-XXX). The numeric format enables programmatic sorting, filtering, and cross-referencing with existing occupational classification systems.
+
+**Code Format:**
 
 ```
-K[Abbr1+Abbr2]-S[Abbr1+Abbr2]-A[Abbr1+Abbr2]-Z{n}-STR:{s}
+KK.kk-SS.ss-AA.aa-WW.ww-ZP-CCRS
 ```
 
-Where:
-- **K[...]** = Top 2 knowledge areas by importance x level score
-- **S[...]** = Top 2 skills by importance x level score
-- **A[...]** = Top 2 abilities by importance x level score
-- **Z{n}** = O*NET Job Zone (1-5)
-- **STR:{s}** = Strength level (S/L/M/H/V from ORS, or ? if unavailable)
+| Segment | Description | Range | Example |
+|---------|-------------|-------|---------|
+| `KK.kk` | Primary.Secondary Knowledge Domain | 01-33 | `01.03` = Admin+Econ |
+| `SS.ss` | Primary.Secondary Skill Domain | 01-35 | `07.29` = CritThink+Judgment |
+| `AA.aa` | Primary.Secondary Ability Domain | 01-52 | `01.08` = OralComp+DeductRsn |
+| `WW.ww` | Primary.Secondary Work Activity | 01-41 | `09.25` = Decisions+CommSupervisors |
+| `Z` | Job Zone | 1-5 | `3` = Zone 3 (SVP 5-6) |
+| `P` | Physical Strength Demand | 1-5 | `2` = Light |
+| `CCRS` | ORS Physical Demands | 0-4 each | `1230` = Climb=1/Stoop=2/Reach=3/Manip=0 |
 
-Example: `K[Admin+Econ]-S[CritThink+JudgDecis]-A[OralComp+WritExpr]-Z5-STR:S`
+**Strength Level Encoding:**
 
-This code provides a quick characterization of an occupation's dominant components without requiring inspection of the full 237-dimensional vector. A standardized abbreviation map covers all 120 unique element names across knowledge, skills, and abilities taxonomies.
+| Numeric | Letter | DOL Definition |
+|---------|--------|---------------|
+| 1 | S | Sedentary — Exert up to 10 lbs. occasionally |
+| 2 | L | Light — Exert up to 20 lbs. occasionally, 10 lbs. frequently |
+| 3 | M | Medium — Exert up to 50 lbs. occasionally, 25 lbs. frequently |
+| 4 | H | Heavy — Exert up to 100 lbs. occasionally, 50 lbs. frequently |
+| 5 | V | Very Heavy — Exert over 100 lbs. occasionally, 50+ lbs. frequently |
+
+**ORS Physical Demand Digits (CCRS):**
+
+Each digit encodes the ORS-reported frequency of the physical demand:
+
+| Digit | Meaning | ORS Frequency |
+|-------|---------|---------------|
+| 0 | Not required / No ORS data | None |
+| 1 | Seldom required | < 10% of work time |
+| 2 | Occasionally required | 10-33% of work time |
+| 3 | Frequently required | 34-66% of work time |
+| 4 | Constantly required | 67-100% of work time |
+
+The four digits represent:
+- **C** = Climbing (ladders, ropes, scaffolds; ramps, stairs)
+- **C** = Crouching/Stooping (low postures, kneeling, crawling)
+- **R** = Reaching (at/below shoulder, overhead)
+- **S** = Sensory/Manipulation (fine manipulation, gross manipulation)
+
+**Example Decoded:**
+
+```
+CPC: 01.03-07.29-01.08-09.25-32-1230
+
+Knowledge:        01 = Administration & Management (primary)
+                  03 = Economics & Accounting (secondary)
+Skills:           07 = Critical Thinking (primary)
+                  29 = Judgment & Decision Making (secondary)
+Abilities:        01 = Oral Comprehension (primary)
+                  08 = Deductive Reasoning (secondary)
+Work Activities:  09 = Making Decisions & Problem Solving (primary)
+                  25 = Communicating with Supervisors/Peers (secondary)
+Job Zone:         3 (SVP 5-6, medium preparation)
+Strength:         2 = Light
+ORS Demands:      Climb=1(Seldom), Stoop=2(Occasional), Reach=3(Frequent), Manip=0(None)
+```
+
+**Numeric Taxonomy Index:**
+
+The system maintains complete numeric ID maps for all 161 O*NET elements across four primary taxonomies:
+
+| Taxonomy | Element Count | ID Range | Example Assignments |
+|----------|--------------|----------|-------------------|
+| Knowledge | 33 domains | 01-33 | 01=Admin & Mgmt, 10=Computers & Electronics, 22=Medicine & Dentistry |
+| Skills | 35 domains | 01-35 | 07=Critical Thinking, 17=Complex Problem Solving, 29=Judgment & Decision Making |
+| Abilities | 52 domains | 01-52 | 01=Oral Comprehension, 32=Static Strength, 52=Speech Clarity |
+| Work Activities | 41 domains | 01-41 | 09=Making Decisions, 19=Interacting With Computers, 34=Training & Teaching |
+
+Each numeric ID corresponds to a deterministic sort of O*NET element IDs within the taxonomy. The `decodeCPC()` function provides reverse lookup from any numeric code to its full human-readable component labels.
+
+**Legacy Compatibility:**
+
+For backward compatibility, the system also generates a legacy human-readable code of the form `K[Abbr1+Abbr2]-S[Abbr1+Abbr2]-A[Abbr1+Abbr2]-Z{n}-STR:{s}`, stored in the `legacyCode` field. The numeric code is the primary identifier used in all new analyses, database storage, and report output.
+
+### 13.7.1 Three-Tier Strength Determination
+
+The strength component of the CPC code is determined through a three-tier fallback system that achieves 100% coverage across all 1,016 O*NET occupations:
+
+**Tier 1: ORS Strength (Primary — 277 occupations)**
+
+The Occupational Requirements Survey provides authoritative, survey-based strength classifications for 277 SOC codes. When ORS data is available, it takes absolute priority per VDARE methodology. The ORS "Strength" category directly maps to the DOL strength levels (S/L/M/H/V).
+
+**Tier 2: DOT Strength via Crosswalk (Secondary — ~11,500 DOT records)**
+
+For occupations lacking ORS data, the system consults the DOT database via O*NET-SOC crosswalk codes. The DOT `str` field provides analyst-rated strength levels for 12,726 occupations. DOT records are matched to O*NET codes using the 5-digit and 6-digit SOC prefix crosswalk.
+
+**Tier 3: O*NET Work Context and Abilities Estimation (Tertiary — remaining occupations)**
+
+For occupations with neither ORS nor DOT crosswalk data, the system estimates strength from O*NET work context and abilities data using the following algorithm:
+
+```
+Static Strength Level (ability 1.A.3.a.1):
+  Level >= 4.5 → Very Heavy (V)
+  Level >= 3.5 → Heavy (H)
+  Level >= 2.5 → Medium (M)
+
+For Level < 2.5, use work context tiebreaker:
+  Level >= 1.5 AND (Standing >= 3.5 AND Handling >= 3.5) → Medium (M)
+  Level >= 1.5 AND (Kneeling >= 2.5 OR Bending >= 3.0) → Medium (M)
+  Level >= 1.5 (otherwise) → Light (L)
+
+  Level < 1.5 AND (Sitting >= 3.5 AND Standing <= 2.5) → Sedentary (S)
+  Level < 1.5 AND Standing >= 3.0 → Light (L)
+  Level < 1.5 (otherwise) → Sedentary (S)
+```
+
+This three-tier system reduced the "unknown strength" rate from 73% to less than 5% of occupations, and eliminates the prior issue where 739 occupations displayed "?" for strength in CPC lookups and reports.
 
 ### 13.8 CPC Candidate Generation
 
@@ -1023,6 +1123,77 @@ The CPC system extends the VDARE process in two ways:
 3. **Composite averaging.** The worker profile averages across all PRW occupations equally. A worker with one 10-year career and one 6-month job would give equal weight to both, which may not reflect the worker's primary competency. Future versions could weight by PRW duration.
 
 4. **Cosine similarity does not capture magnitude.** Two occupations with the same relative component priorities but very different absolute demand levels will appear identical after L2 normalization. The 24-trait TFQ comparison (which uses absolute demand levels) compensates for this by independently gating on physical and cognitive capacity.
+
+### 13.15 Accuracy Validation Engine
+
+Every analysis run can optionally execute an automated accuracy validation engine that checks every computation step for correctness. The validation produces a structured report with categorized checks, each classified as error (must fix), warning (should investigate), or info (contextual).
+
+**STQ Validation:**
+- If acquired skills exist, at least some viable targets must have STQ > 0
+- No STQ may exceed 100
+- STQ component weights must sum correctly (task/DWA 0.35, work fields 0.25, tools 0.20, materials 0.10, credentials 0.10)
+
+**TFQ Validation:**
+- If POST strength = Sedentary (0), all Medium+ occupations must be excluded
+- If POST strength = Very Heavy (4), no occupation should fail on strength alone
+- Excluded count + viable count must equal total candidates
+- No TFQ may exceed 100
+
+**VAQ Validation:**
+- If ageRule = advanced_age or closely_approaching, all viable targets must have VAQ = 100
+- VAQ must be in the 0-100 range for all targets
+
+**LMQ Validation:**
+- LMQ must be in the 0-100 range for all targets
+- LMQ details should be populated for all viable targets
+
+**PVQ Validation:**
+- PVQ = 0.45 x STQ + 0.25 x TFQ + 0.15 x VAQ + 0.15 x LMQ (within rounding tolerance of 1.0)
+- All excluded occupations must have PVQ = 0
+- No PVQ may be outside the 0-100 range
+
+**CPC Validation:**
+- CPC analysis must be populated on the analysis record when PRW codes exist
+- Worker CPC code must be non-empty
+- CPC similarity scores must be in the 0-1 range
+- Targets should have CPC codes assigned
+
+**Cross-Component Validation:**
+- If zero viable targets, a zeroViableExplanation must exist
+- If pre-profile exists, laborMarketAccess must exist
+- If viable targets exist, viableSetAnalysis must exist
+- All targets should have confidence grades assigned
+- RFC narrative should always be generated
+
+**Data Integrity:**
+- All targets must have O*NET codes and titles
+- All viable targets must have complete score sets (STQ, TFQ, VAQ, LMQ)
+- Candidate count must be reasonable (> 0 and <= 200)
+
+### 13.16 One-Shot Analysis API and Test Scenarios
+
+The system includes a dedicated testing infrastructure for rapid edge case discovery:
+
+**One-Shot Analysis API (`POST /api/analysis/run`):**
+
+Accepts a complete case payload in a single request — case demographics, past relevant work, acquired skills, pre/post worker profiles, and analysis configuration — and executes the entire pipeline (case creation, candidate generation, compute, validation, optional cleanup) in a single transaction. This eliminates the need to manually walk through 7+ API calls when testing.
+
+**Pre-Built Test Scenarios (`GET/POST /api/analysis/test-scenarios`):**
+
+Eight standardized test scenarios are available for systematic edge case testing:
+
+| Scenario | Description | Key Validation |
+|----------|-------------|---------------|
+| Baseline Office | Admin Assistant → Light work | Multiple viable, moderate STQ |
+| Zero Viable | Construction Laborer → Sedentary | Zero viable, explanation populated |
+| Skilled Nurse | RN (SVP 7) → Light work | Healthcare transfer, high STQ |
+| Advanced Age | Accountant, age 56 | VAQ enforcement at 100 |
+| No Skills | Truck Driver, no manual skills | O*NET task fallback produces STQ |
+| Multiple PRW | Teacher + Manager composite | Blended CPC profile |
+| Max Capacity | All traits at 4 (maximum) | Many viable, broad CPC |
+| Min Capacity | Severe TBI, most traits 0-1 | Few/zero viable, clear exclusions |
+
+Each scenario returns the complete analysis results plus the accuracy validation report, enabling systematic verification that all computation paths produce correct results under known conditions.
 
 ---
 
@@ -1173,7 +1344,7 @@ Every formula in PVQ-TM can be independently verified:
 
 ### 18.1 Testability
 
-All PVQ-TM calculations are mathematically defined and testable. The system includes 177 automated tests verifying correctness across normal conditions and edge cases. Any party can submit test inputs and verify that outputs match predictions.
+All PVQ-TM calculations are mathematically defined and testable. The system includes 247 automated tests verifying correctness across normal conditions and edge cases, plus 8 pre-built integration test scenarios that exercise the complete pipeline end-to-end. Any party can submit test inputs and verify that outputs match predictions. The One-Shot Analysis API enables independent verification by accepting a complete case payload and returning all intermediate computations with an automated accuracy validation report.
 
 ### 18.2 Peer Review and Publication
 
@@ -1262,4 +1433,4 @@ The Local Demand methodology uses three independent, complementary data sources 
 
 ---
 
-*This white paper documents the PVQ-TM system as implemented in version 1.1, March 2026. All formulas, weights, and thresholds are derived directly from the production source code and have been verified against 245 automated tests.*
+*This white paper documents the PVQ-TM system as implemented in version 2.0, March 2026. All formulas, weights, and thresholds are derived directly from the production source code and have been verified against 247 automated unit tests and 8 end-to-end integration test scenarios with automated accuracy validation.*
