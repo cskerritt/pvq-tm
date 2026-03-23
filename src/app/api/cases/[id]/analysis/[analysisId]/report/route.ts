@@ -120,6 +120,7 @@ export async function GET(
       viableSetAnalysis: analysis.viableSetAnalysis as Record<string, unknown> | null,
       confidenceExplanation: analysis.confidenceExplanation as Record<string, unknown> | null,
       regionalLaborMarket: analysis.regionalLaborMarket as Record<string, unknown> | null,
+      cpcAnalysis: analysis.cpcAnalysis as Record<string, unknown> | null,
     },
     targets: analysis.targetOccupations.map((t) => ({
       title: t.title,
@@ -149,6 +150,9 @@ export async function GET(
       ecSee: t.ecSee,
       ecGeoAdjusted: t.ecGeoAdjusted,
       preEcMedian: t.preEcMedian,
+      // CPC fields
+      cpcCode: t.cpcCode,
+      cpcSimilarity: t.cpcSimilarity,
       // Near-miss & trait margin fields
       nearMissSeverity: t.nearMissSeverity,
       nearMissDetails: t.nearMissDetails,

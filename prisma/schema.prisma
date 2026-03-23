@@ -306,6 +306,7 @@ model Analysis {
   hiredJobsAnalysis    Json?   // Most-frequently-hired jobs access analysis
   laborMarketAccess    Json?   // Full labor market access analysis (all 831 OEWS occupations)
   zeroViableExplanation Json?  // Explanation when zero occupations survive filtering
+  cpcAnalysis          Json?  // Component Profile Code analysis (worker profile, similar occs, gap analysis)
 
   case              Case               @relation(fields: [caseId], references: [id], onDelete: Cascade)
   targetOccupations TargetOccupation[]
@@ -378,6 +379,10 @@ model TargetOccupation {
   preVqScore     Float?   // Pre-injury VQ (occupation-based, same as post)
   preEcMedian    Float?   // Pre-injury earning capacity median
   preEcDetails   Json?
+
+  // ─── Component Profile Code ───────────────────────────────
+  cpcCode            String?  // Human-readable CPC code (e.g., K[Admin+Econ]-S[CritThink+Judge]-...)
+  cpcSimilarity      Float?   // Cosine similarity to worker composite (0-1)
 
   // ─── Near-Miss / Retrainability ────────────────────────────
   nearMissSeverity   String?  // "marginal" | "moderate" | "significant" | null (if viable)

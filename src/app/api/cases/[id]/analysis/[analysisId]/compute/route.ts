@@ -22,6 +22,8 @@ import { type PVQResult } from "@/lib/engine/pvq";
 import { type STQResult } from "@/lib/engine/skill-transfer";
 import { type TFQResult } from "@/lib/engine/trait-feasibility";
 import { type LMQResult } from "@/lib/engine/labor-market";
+import { buildCPCAnalysis } from "@/lib/engine/cpc-candidates";
+import { buildFingerprintIndex, cosineSimilarity, getFingerprint } from "@/lib/engine/component-profile";
 
 /**
  * DPT (Data-People-Things) code labels from the DOT classification system.
@@ -747,6 +749,47 @@ export async function POST(
     });
   }
 
+  // ─── CPC Per-Target Scoring ─────────────────────────────────────
+  // Compute CPC code and cosine similarity for each target occupation
+  // against the worker's composite component profile.
+  try {
+    const prwOnetCodes = prwList
+      .map((p) => p.onetSocCode)
+      .filter((c): c is string => c !== null);
+    const maxSvp = Math.max(...prwList.map((p) => p.svp ?? 2), 2);
+
+    // Build the worker's component profile and fingerprint index
+    const { buildWorkerComponentProfile } = await import("@/lib/engine/cpc-candidates");
+    const workerCPC = await buildWorkerComponentProfile(
+      prwOnetCodes,
+      maxSvp,
+      workerTraits.strength
+    );
+
+    // Score each target against the worker composite
+    const refetchTargets = await prisma.targetOccupation.findMany({
+      where: { analysisId },
+      select: { id: true, onetSocCode: true },
+    });
+
+    for (const t of refetchTargets) {
+      const fp = await getFingerprint(t.onetSocCode);
+      if (fp && workerCPC.compositeVector.length > 0) {
+        const sim = cosineSimilarity(workerCPC.compositeVector, fp.vector);
+        await prisma.targetOccupation.update({
+          where: { id: t.id },
+          data: {
+            cpcCode: fp.cpc.code,
+            cpcSimilarity: Math.round(sim * 10000) / 10000,
+          },
+        });
+      }
+    }
+    console.log(`[compute] CPC scores computed for ${refetchTargets.length} targets`);
+  } catch (cpcTargetError) {
+    console.warn("[compute] CPC per-target scoring failed:", cpcTargetError);
+  }
+
   // ─── Compute Pre/Post Injury Aggregates ────────────────────────
   // Re-fetch targets with updated scores to compute aggregates
   const updatedTargets = await prisma.targetOccupation.findMany({
@@ -1192,6 +1235,41 @@ export async function POST(
     };
   }
 
+  // ── 9. Component Profile Code (CPC) Analysis ────────────────────
+  // Always computed — every report gets the component profile section.
+  // Incorporates ORS physical demands and OEWS employment/wage data.
+  let cpcAnalysisResult = null;
+  try {
+    const prwOnetCodesForCPC = prwList
+      .map((p) => p.onetSocCode)
+      .filter((c): c is string => c !== null);
+    const maxSvpForCPC = Math.max(...prwList.map((p) => p.svp ?? 2), 2);
+
+    // Collect existing target codes so CPC candidates don't duplicate them
+    const existingTargetCodes = new Set(
+      updatedTargets.map((t) => t.onetSocCode)
+    );
+
+    cpcAnalysisResult = await buildCPCAnalysis(
+      prwOnetCodesForCPC,
+      maxSvpForCPC,
+      workerTraits.strength,
+      {
+        excludeCodes: existingTargetCodes,
+        // When zero viable, run a second pass with relaxed SVP to find near-matches
+        relaxSvp: viableTargets.length === 0,
+        minSimilarity: viableTargets.length === 0 ? 0.25 : 0.4,
+        topN: 30,
+      }
+    );
+    console.log(
+      `[compute] CPC analysis complete: ${cpcAnalysisResult.similarOccupations.length} similar occupations found, ` +
+      `OEWS data available for ${cpcAnalysisResult.laborMarketSummary.withOEWSData} matches`
+    );
+  } catch (cpcError) {
+    console.warn("[compute] CPC analysis failed:", cpcError);
+  }
+
   // ── Save Comprehensive Analysis Results ─────────────────────────
   await prisma.analysis.update({
     where: { id: analysisId },
@@ -1203,6 +1281,7 @@ export async function POST(
       regionalLaborMarket: regionResult ? JSON.parse(JSON.stringify(regionResult)) : null,
       laborMarketAccess: laborMarketAccessResult ? JSON.parse(JSON.stringify(laborMarketAccessResult)) : null,
       zeroViableExplanation: zeroViableExplanation ? JSON.parse(JSON.stringify(zeroViableExplanation)) : null,
+      cpcAnalysis: cpcAnalysisResult ? JSON.parse(JSON.stringify(cpcAnalysisResult)) : null,
     },
   });
 

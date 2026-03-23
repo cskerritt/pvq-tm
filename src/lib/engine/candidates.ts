@@ -20,7 +20,7 @@ export interface CandidateOccupation {
   dotCode?: string;
   title: string;
   svp: number;
-  source: "DOT_WF" | "DOT_MPSMS" | "ONET_RELATED" | "ONET_CAREER_CHANGERS" | "ONET_SEARCH";
+  source: "DOT_WF" | "DOT_MPSMS" | "ONET_RELATED" | "ONET_CAREER_CHANGERS" | "ONET_SEARCH" | "CPC_SIMILARITY";
   similarityScore?: number;
 }
 
@@ -229,4 +229,47 @@ export async function generateCandidates(
   }
 
   return deduplicateCandidates(allCandidates);
+}
+
+/**
+ * Generate additional candidates using Component Profile Code (CPC) similarity.
+ *
+ * Uses the 237-dimensional occupation fingerprint system to find
+ * structurally similar occupations based on component overlap
+ * (knowledge, skills, abilities, work activities, work context, work styles).
+ *
+ * Incorporates ORS trait data and OEWS employment/wage data.
+ * This runs alongside traditional candidate generation to ensure
+ * comprehensive coverage per VDARE methodology.
+ */
+export async function generateCPCCandidates(
+  prwOnetCodes: string[],
+  maxSvp: number,
+  postStrength: number | null = null,
+  existingCodes: Set<string> = new Set()
+): Promise<CandidateOccupation[]> {
+  const { buildWorkerComponentProfile, generateCPCCandidates: searchCPC } =
+    await import("./cpc-candidates");
+
+  const workerProfile = await buildWorkerComponentProfile(
+    prwOnetCodes,
+    maxSvp,
+    postStrength
+  );
+
+  const cpcResults = await searchCPC(workerProfile, {
+    topN: 30,
+    maxSvp,
+    postStrength,
+    minSimilarity: 0.4,
+    excludeCodes: existingCodes,
+  });
+
+  return cpcResults.map((r) => ({
+    onetSocCode: r.onetCode,
+    title: r.title,
+    svp: jobZoneToMaxSvp(r.jobZone),
+    source: "CPC_SIMILARITY" as const,
+    similarityScore: r.cosineSimilarity,
+  }));
 }

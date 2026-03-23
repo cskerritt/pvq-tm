@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { generateCandidates } from "@/lib/engine/candidates";
+import {
+  generateCandidates,
+  generateCPCCandidates,
+} from "@/lib/engine/candidates";
 
 export async function POST(
   req: NextRequest,
@@ -8,6 +11,11 @@ export async function POST(
 ) {
   try {
   const { id, analysisId } = await params;
+
+  // Fetch the case's POST profile for strength data
+  const postProfile = await prisma.workerProfile.findFirst({
+    where: { caseId: id, profileType: "POST" },
+  });
 
   const prwList = await prisma.pastRelevantWork.findMany({
     where: { caseId: id },
@@ -22,11 +30,43 @@ export async function POST(
     mpsms: (p.dotOcc?.mpsms as string[]) ?? [],
   }));
 
-  const candidates = await generateCandidates(prwData);
+  // Phase 1: Traditional candidate generation (DOT/O*NET relationships)
+  const traditionalCandidates = await generateCandidates(prwData);
+
+  // Phase 2: CPC component-based candidate generation
+  // Runs alongside traditional candidates per VDARE methodology —
+  // ensures structurally similar occupations are found even when
+  // DOT/O*NET relationship matrices produce thin results
+  const maxSvp = Math.max(...prwData.map((p) => p.svp ?? 2));
+  const prwOnetCodes = prwData
+    .map((p) => p.onetSocCode)
+    .filter((c): c is string => !!c);
+
+  const existingCodes = new Set(
+    traditionalCandidates.map((c) => c.onetSocCode).filter(Boolean)
+  );
+
+  let cpcCandidates: Awaited<ReturnType<typeof generateCPCCandidates>> = [];
+  try {
+    cpcCandidates = await generateCPCCandidates(
+      prwOnetCodes,
+      maxSvp,
+      postProfile?.strength ?? null,
+      existingCodes
+    );
+    console.log(
+      `[generate-candidates] CPC found ${cpcCandidates.length} additional candidates`
+    );
+  } catch (cpcError) {
+    console.warn("[generate-candidates] CPC candidate generation failed:", cpcError);
+  }
+
+  // Merge traditional + CPC candidates
+  const allCandidates = [...traditionalCandidates, ...cpcCandidates];
 
   // Store candidates as target occupations
   const created = [];
-  for (const c of candidates) {
+  for (const c of allCandidates) {
     if (!c.onetSocCode) continue;
 
     // Ensure O*NET occupation exists in cache
@@ -57,7 +97,12 @@ export async function POST(
     data: { step: 3, status: "in_progress" },
   });
 
-  return NextResponse.json({ count: created.length, candidates: created });
+  return NextResponse.json({
+    count: created.length,
+    traditionalCount: traditionalCandidates.length,
+    cpcCount: cpcCandidates.length,
+    candidates: created,
+  });
   } catch (error) {
     console.error("[POST /api/cases/[id]/analysis/[analysisId]/generate-candidates]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
