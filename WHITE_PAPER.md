@@ -1028,11 +1028,11 @@ The CPC system extends the VDARE process in two ways:
 
 ## 14. Confidence Grading System
 
-### 13.1 Purpose
+### 14.1 Purpose
 
 Every analysis receives a letter grade (A-D) indicating data quality and analytical confidence. This ensures that users and triers of fact understand the reliability of the results.
 
-### 13.2 Scoring Components
+### 14.2 Scoring Components
 
 | Component | Max Points | Criteria |
 |-----------|-----------|---------|
@@ -1045,7 +1045,7 @@ Every analysis receives a letter grade (A-D) indicating data quality and analyti
 
 **Maximum Possible: 8 points**
 
-### 13.3 Grade Assignment
+### 14.3 Grade Assignment
 
 | Grade | Score Range | Interpretation |
 |-------|-----------|---------------|
@@ -1054,7 +1054,7 @@ Every analysis receives a letter grade (A-D) indicating data quality and analyti
 | C | 3-4 | Significant data gaps reducing reliability |
 | D | 0-2 | Minimal data — results require cautious interpretation |
 
-### 13.4 Local Demand Data Quality
+### 14.4 Local Demand Data Quality
 
 The availability and density of ZIP-level local demand data affect confidence:
 
@@ -1062,7 +1062,7 @@ The availability and density of ZIP-level local demand data affect confidence:
 - Sparse ZIP markets (very few postings) may produce unreliable posting scores due to small-sample volatility.
 - **Potential future scoring adjustments:** +1 for direct posting data available; -1 for sparse ZIP markets (fewer than 5 postings in the 90-day window).
 
-### 13.5 Transparency
+### 14.5 Transparency
 
 Each grade includes:
 - Itemized point contributions showing which data was available
@@ -1073,7 +1073,7 @@ Each grade includes:
 
 ## 15. Data Sources and Provenance
 
-### 14.1 Government Data Sources
+### 15.1 Government Data Sources
 
 | Source | Publisher | Content | Update Frequency |
 |--------|----------|---------|-----------------|
@@ -1093,7 +1093,7 @@ Each grade includes:
 | BLS National Employment Matrix | U.S. Bureau of Labor Statistics | Industry-occupation staffing patterns used to allocate industry employment to occupations | Biennially |
 | O*NET Web Services API | National Center for O*NET Development | Occupation search, normalization, and crosswalk data | Continuously |
 
-### 14.2 Data Traceability
+### 15.2 Data Traceability
 
 Every computed value in PVQ-TM is traceable to its source:
 - Each trait comparison records whether the demand value came from ORS, DOT, O*NET, or proxy
@@ -1105,7 +1105,7 @@ Every computed value in PVQ-TM is traceable to its source:
 
 ## 16. Assumptions and Limitations
 
-### 15.1 Explicit Assumptions
+### 16.1 Explicit Assumptions
 
 1. **Null = Not Assessed:** When a worker's capacity for a trait is null (not evaluated), the system assumes no limitation exists for that trait. The confidence grade penalizes analyses with excessive null values.
 
@@ -1127,7 +1127,7 @@ Every computed value in PVQ-TM is traceable to its source:
 
 10. **QWI Occupation Estimation:** QWI hire-flow data is available at county/MSA level by industry, not by occupation. Occupation-level hiring momentum is estimated by applying BLS staffing patterns to industry-level QWI data.
 
-### 15.2 Known Limitations
+### 16.2 Known Limitations
 
 1. **TSP Cap at 97%:** Even perfect skill overlap cannot produce TSP = 100%, reflecting the reality that some learning is required when changing employers.
 
@@ -1141,7 +1141,7 @@ Every computed value in PVQ-TM is traceable to its source:
 
 ## 17. Repeatability and Reproducibility
 
-### 16.1 Deterministic Computation
+### 17.1 Deterministic Computation
 
 PVQ-TM is a purely deterministic system. Given identical inputs:
 - Worker profile (24 trait values)
@@ -1151,15 +1151,15 @@ PVQ-TM is a purely deterministic system. Given identical inputs:
 
 The system will always produce identical outputs. There is no randomness, no machine learning inference variability, and no subjective weighting.
 
-### 16.2 Version Control
+### 17.2 Version Control
 
 All computation formulas, weights, and thresholds are defined in source code with version control. Any change to methodology is tracked, dated, and documented.
 
-### 16.3 Data Versioning
+### 17.3 Data Versioning
 
 Each analysis records the data versions used (database timestamps), enabling future verification that the same data produces the same results.
 
-### 16.4 Independent Verification
+### 17.4 Independent Verification
 
 Every formula in PVQ-TM can be independently verified:
 - Component weights are published (this document)
@@ -1171,15 +1171,15 @@ Every formula in PVQ-TM can be independently verified:
 
 ## 18. Daubert Standard Compliance
 
-### 17.1 Testability
+### 18.1 Testability
 
 All PVQ-TM calculations are mathematically defined and testable. The system includes 177 automated tests verifying correctness across normal conditions and edge cases. Any party can submit test inputs and verify that outputs match predictions.
 
-### 17.2 Peer Review and Publication
+### 18.2 Peer Review and Publication
 
 The VQS regression methodology underlying the VQ and earning capacity components has been the subject of peer review and publication (McCroskey, 2001, 2011, 2015). The PVQ-TM composite methodology builds on established vocational evaluation frameworks.
 
-### 17.3 Known Error Rates
+### 18.3 Known Error Rates
 
 **VQ-Based Earning Capacity:**
 
@@ -1192,7 +1192,7 @@ The VQS regression methodology underlying the VQ and earning capacity components
 
 These error rates enable proper construction of confidence intervals and explicit communication of uncertainty to the trier of fact.
 
-### 17.4 General Acceptance
+### 18.4 General Acceptance
 
 PVQ-TM integrates data from the most widely accepted occupational databases in vocational rehabilitation:
 - Dictionary of Occupational Titles (DOT) — standard in SSDI proceedings
@@ -1201,11 +1201,11 @@ PVQ-TM integrates data from the most widely accepted occupational databases in v
 - BLS Projections — standard employment outlook data
 - JOLTS — standard labor market conditions data
 
-### 17.5 Local Demand Triangulation
+### 18.5 Local Demand Triangulation
 
 The Local Demand methodology uses three independent, complementary data sources — job postings (CareerOneStop), structural employment estimates (Census ZBP × BLS staffing patterns), and hire-flow data (QWI) — to triangulate local labor market conditions. This multi-source approach reduces reliance on any single proxy measure and strengthens the evidentiary basis for local demand conclusions by ensuring that no single data limitation (e.g., posting sparsity, modeled employment imprecision, or geographic aggregation in QWI) dominates the composite score.
 
-### 17.6 Standards and Controls
+### 18.6 Standards and Controls
 
 - **SSA Policy Compliance:** SVP gating rules follow SSR 82-41; advanced age rules follow the Medical-Vocational Guidelines (Grid Rules)
 - **Methodology Transparency:** All weights, thresholds, and formulas are disclosed
