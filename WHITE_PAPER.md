@@ -20,12 +20,13 @@
 10. [Transferable Skills Percent (TSP)](#10-transferable-skills-percent-tsp)
 11. [Earning Capacity Estimation](#11-earning-capacity-estimation)
 12. [Comprehensive Analysis Modules](#12-comprehensive-analysis-modules)
-13. [Confidence Grading System](#13-confidence-grading-system)
-14. [Data Sources and Provenance](#14-data-sources-and-provenance)
-15. [Assumptions and Limitations](#15-assumptions-and-limitations)
-16. [Repeatability and Reproducibility](#16-repeatability-and-reproducibility)
-17. [Daubert Standard Compliance](#17-daubert-standard-compliance)
-18. [References](#18-references)
+13. [Component Profile Code (CPC) System](#13-component-profile-code-cpc-system)
+14. [Confidence Grading System](#14-confidence-grading-system)
+15. [Data Sources and Provenance](#15-data-sources-and-provenance)
+16. [Assumptions and Limitations](#16-assumptions-and-limitations)
+17. [Repeatability and Reproducibility](#17-repeatability-and-reproducibility)
+18. [Daubert Standard Compliance](#18-daubert-standard-compliance)
+19. [References](#19-references)
 
 ---
 
@@ -818,7 +819,214 @@ PVQ-TM implements the VDARE process (Field & Sink, 1981) through automated compu
 
 ---
 
-## 13. Confidence Grading System
+## 13. Component Profile Code (CPC) System
+
+### 13.1 Purpose and Rationale
+
+Traditional candidate occupation generation relies on relationship-based matching: DOT work field/MPSMS overlap and O*NET related-occupation matrices. These approaches identify occupations that the Department of Labor has explicitly linked, but they cannot discover structurally similar occupations that lack a formal relationship in these databases. When a worker's past relevant work falls outside well-populated DOT work field categories, or when the O*NET Related Occupations and Career Changers matrices are sparse, traditional candidate generation may produce thin or zero results.
+
+The Component Profile Code (CPC) system addresses this limitation by decomposing every occupation into its underlying component dimensions and matching occupations based on component similarity rather than administrative relationships. This approach is grounded in the VDARE principle (Field & Sink, 1981) that vocational potential should be assessed by comparing the worker's demonstrated capacities against the full universe of occupations, not just those identified through a single classification system.
+
+### 13.2 The 237-Dimensional Occupation Fingerprint
+
+Each of the 1,016 O*NET-SOC occupations is represented as a 237-dimensional numeric vector derived from six standardized O*NET taxonomies:
+
+| Taxonomy | Dimensions | O*NET Element ID Format | Score Computation |
+|----------|-----------|------------------------|-------------------|
+| Knowledge | 33 | 2.C.x.x | Importance (0-5) x Level (0-7) |
+| Skills | 35 | 2.A.x.x / 2.B.x.x | Importance (0-5) x Level (0-7) |
+| Abilities | 52 | 1.A.x.x | Importance (0-5) x Level (0-7) |
+| Work Activities | 41 | 4.A.x.x | Importance (0-5) x Level (0-7) |
+| Work Context | 55 | 4.C.x.x | Importance (0-5) |
+| Work Styles | 21 | 1.D.x.x | Importance (0-5) |
+| **Total** | **237** | | |
+
+**Element Score Computation:**
+
+For knowledge, skills, abilities, and work activities (162 dimensions), the element score is computed as the product of the O*NET importance rating and level rating:
+
+```
+ElementScore = Importance(0-5) x Level(0-7)
+```
+
+This product captures both whether a component matters to the occupation (importance) and how much of it is required (level). Maximum possible product is 35.
+
+For work context and work styles (76 dimensions), only the importance rating is available:
+
+```
+ElementScore = Importance(0-5)
+```
+
+**L2 Normalization:**
+
+Each 237-dimensional vector is L2-normalized to unit length:
+
+```
+v_normalized = v / ||v||_2
+```
+
+Where `||v||_2 = sqrt(sum(v_i^2))` for all 237 dimensions. This normalization ensures that cosine similarity reduces to a simple dot product and prevents taxonomies with higher raw score ranges from dominating the comparison.
+
+### 13.3 Canonical Dimension Ordering
+
+The 237 dimensions follow a fixed canonical ordering: element IDs are sorted alphabetically within each taxonomy group, then groups are concatenated in the order Knowledge, Skills, Abilities, Work Activities, Work Context, Work Styles. This ensures deterministic fingerprint construction across all system invocations.
+
+| Taxonomy | Index Range |
+|----------|-------------|
+| Knowledge | Dimensions 0-32 |
+| Skills | Dimensions 33-67 |
+| Abilities | Dimensions 68-119 |
+| Work Activities | Dimensions 120-160 |
+| Work Context | Dimensions 161-215 |
+| Work Styles | Dimensions 216-236 |
+
+### 13.4 Data Source Integration
+
+The CPC system integrates three authoritative data sources following the VDARE-aligned priority hierarchy:
+
+**O*NET 30.2 (Primary Component Data):**
+All 237 dimensions are derived from O*NET's standardized element ratings. The O*NET database provides importance and level ratings for each element across all 1,016 occupations, ensuring uniform coverage.
+
+**ORS (Physical Demand Enrichment):**
+The Occupational Requirements Survey (BLS) provides authoritative physical and environmental demand data for 226 SOC codes. ORS data is extracted and mapped to specific physical traits (strength, fine/gross manipulation, climbing, low postures, reaching) and environmental conditions (extreme temperatures, noise, hazards). Per VDARE methodology, ORS takes priority over DOT and O*NET for physical demand assessment.
+
+**OEWS (Labor Market Context):**
+The Occupational Employment and Wage Statistics (BLS) provides national employment counts and wage data (mean, median, 10th/25th/75th/90th percentile) for 831 SOC codes. This data is attached to each occupation fingerprint, enabling the CPC system to report the labor market significance of component-matched occupations.
+
+### 13.5 Cosine Similarity
+
+Occupation similarity is computed using cosine similarity between L2-normalized fingerprint vectors:
+
+```
+CosineSimilarity(A, B) = A . B = sum(A_i x B_i) for i = 1..237
+```
+
+Since both vectors are unit-length (L2-normalized), the dot product equals the cosine of the angle between them. Properties:
+
+- **Range:** 0 to 1 (negative similarities are clamped to 0)
+- **1.0** = identical component profiles
+- **0.0** = completely orthogonal profiles (no shared components)
+- **Symmetric:** sim(A, B) = sim(B, A)
+- **Deterministic:** identical inputs always produce identical similarity scores
+
+### 13.6 Worker Component Profile Construction
+
+The worker's component profile is constructed from their Past Relevant Work (PRW) occupations following VDARE principles:
+
+1. **Fingerprint Lookup:** Each PRW O*NET code is mapped to its 237-dimensional fingerprint in the pre-computed index.
+
+2. **Composite Averaging:** All PRW fingerprint vectors are averaged element-wise:
+   ```
+   Composite_i = (1/N) x sum(PRW_j_i) for j = 1..N PRW occupations
+   ```
+
+3. **L2 Normalization:** The averaged vector is L2-normalized to unit length.
+
+4. **Code Format Validation:** The system attempts common O*NET code format variations (XX-XXXX vs. XX-XXXX.00) to maximize PRW code resolution. Unresolvable codes are logged and the remaining PRW entries are used.
+
+This composite vector represents the worker's demonstrated occupational competency across all 237 component dimensions, weighted equally across all PRW entries.
+
+### 13.7 Component Profile Code (Human-Readable)
+
+Each occupation (and each worker composite profile) is assigned a human-readable Component Profile Code of the form:
+
+```
+K[Abbr1+Abbr2]-S[Abbr1+Abbr2]-A[Abbr1+Abbr2]-Z{n}-STR:{s}
+```
+
+Where:
+- **K[...]** = Top 2 knowledge areas by importance x level score
+- **S[...]** = Top 2 skills by importance x level score
+- **A[...]** = Top 2 abilities by importance x level score
+- **Z{n}** = O*NET Job Zone (1-5)
+- **STR:{s}** = Strength level (S/L/M/H/V from ORS, or ? if unavailable)
+
+Example: `K[Admin+Econ]-S[CritThink+JudgDecis]-A[OralComp+WritExpr]-Z5-STR:S`
+
+This code provides a quick characterization of an occupation's dominant components without requiring inspection of the full 237-dimensional vector. A standardized abbreviation map covers all 120 unique element names across knowledge, skills, and abilities taxonomies.
+
+### 13.8 CPC Candidate Generation
+
+The CPC system generates candidate occupations by searching all 1,016 O*NET occupations for those with the highest component similarity to the worker's composite profile:
+
+**Step 1: SVP Gate**
+Target occupations are filtered by SVP: the occupation's Job Zone (mapped to maximum SVP via the standard conversion table) must not exceed the worker's highest demonstrated SVP from PRW. In zero-viable fallback mode, the SVP gate is relaxed by +1 level.
+
+**Step 2: Strength Gate**
+When the worker's post-injury strength capacity is known and the occupation has ORS strength data, occupations requiring a higher strength level are excluded.
+
+**Step 3: Cosine Similarity Ranking**
+All surviving occupations are scored by cosine similarity to the worker's composite vector. Occupations below the minimum similarity threshold (0.4 for normal analysis, 0.25 for zero-viable fallback) are excluded.
+
+**Step 4: Top-N Selection**
+The top 30 most similar occupations are selected. For each, the system computes:
+- **Top 5 Matching Components:** Dimensions where both worker and occupation score highly (geometric mean of both scores)
+- **Top 5 Gap Components:** Dimensions where the occupation demands significantly more than the worker's profile provides
+
+**Step 5: Full PVQ Scoring Pipeline**
+CPC candidates are entered into the database as target occupations with source "CPC_SIMILARITY" and proceed through the same STQ, TFQ, VAQ, and LMQ scoring pipeline as traditional candidates. They are subject to the same gating criteria and can become viable or excluded occupations.
+
+### 13.9 Component Gap Analysis
+
+The gap analysis module assesses the worker's component strengths and weaknesses relative to the broader labor market:
+
+**Worker Strengths:** The top 10 dimensions of the worker's composite vector, identifying the component areas where the worker has the strongest demonstrated competency.
+
+**Market Gaps:** Aggregated across the top 15 CPC-matched occupations, the system identifies component dimensions that are frequently demanded at levels exceeding the worker's profile. These represent areas where the worker's component profile falls short of market demands.
+
+**Profile Breadth:** The standard deviation of the worker's fingerprint vector classifies the profile as:
+- **Narrow** (std dev > 0.08): Competency concentrated in few dimensions (specialist)
+- **Moderate** (std dev 0.05-0.08): Balanced distribution
+- **Broad** (std dev < 0.05): Competency spread across many dimensions (generalist)
+
+### 13.10 Integration with Existing Analysis Pipeline
+
+The CPC system integrates at three points in the PVQ-TM pipeline:
+
+1. **Candidate Generation (Phase 1):** CPC candidates run in parallel with traditional DOT/O*NET candidates. Results are merged and deduplicated by O*NET-SOC code, with the higher similarity score retained.
+
+2. **Per-Target Scoring (Phase 2):** After all targets complete STQ/TFQ/VAQ/LMQ scoring, each target receives its CPC code and cosine similarity to the worker's composite profile.
+
+3. **CPC Analysis (Phase 3):** The full CPC analysis (worker profile, similar occupations, gap analysis, labor market summary) is computed and stored on every analysis run, ensuring every report includes the Component Profile Analysis section.
+
+### 13.11 Report Output
+
+The Component Profile Analysis section appears in every PDF report and includes:
+
+1. **Worker Component Profile Summary:** CPC code, profile breadth assessment, and top knowledge/skills/abilities table
+2. **Most Similar Occupations:** Table of up to 15 component-matched occupations with similarity percentage, Job Zone, strength level, OEWS employment, median wage, and top matching components
+3. **Component Gap Analysis:** Narrative describing worker strengths, market gaps, and profile breadth, with a side-by-side table of worker strengths vs. market gap components
+4. **Labor Market Summary:** Aggregate employment and wage statistics for component-matched occupations from OEWS data
+
+### 13.12 Computational Properties
+
+**Memory Footprint:** The pre-computed fingerprint index for all 1,016 occupations requires approximately 1,016 x 237 x 8 bytes = 1.9 MB of memory, cached as a lazy singleton.
+
+**Performance:** Fingerprint computation for all 1,016 occupations completes in under 50ms. The pairwise similarity search against 1,016 occupations requires ~240,000 dot-product operations, completing in under 100ms.
+
+**Determinism:** The CPC system is fully deterministic. Identical PRW inputs always produce identical fingerprints, cosine similarities, CPC codes, and candidate rankings. There is no randomness in any computation.
+
+### 13.13 Relationship to VDARE Methodology
+
+The CPC system extends the VDARE process in two ways:
+
+1. **Component-level matching** (Steps 7-8): Where VDARE compares the REP against individual occupation trait demands, the CPC system additionally compares the worker's 237-dimensional component profile against all occupations. This identifies transferable occupations that share the worker's component DNA but may not appear in DOT work field or O*NET relationship matrices.
+
+2. **Zero-viable augmentation** (Step 10): When all traditional candidates are excluded by the TFQ/VAQ gates, the CPC system provides component-based analysis showing which occupations are most structurally similar to the worker's demonstrated competency, even if they cannot be accessed at the current functional level. This supports the vocational opinion by characterizing what the worker "would" be able to do absent the injury-related limitations.
+
+### 13.14 Limitations
+
+1. **Work Context and Work Styles lack level ratings.** These 76 dimensions use only the importance score (0-5), reducing their discriminative power compared to the 162 dimensions that use importance x level (0-35 range). L2 normalization partially compensates, but knowledge, skills, abilities, and work activities naturally dominate the similarity computation.
+
+2. **O*NET data currency.** The system uses O*NET 30.2 data. As occupations evolve, component profiles may drift from actual workplace demands. The system should be updated when new O*NET releases are available.
+
+3. **Composite averaging.** The worker profile averages across all PRW occupations equally. A worker with one 10-year career and one 6-month job would give equal weight to both, which may not reflect the worker's primary competency. Future versions could weight by PRW duration.
+
+4. **Cosine similarity does not capture magnitude.** Two occupations with the same relative component priorities but very different absolute demand levels will appear identical after L2 normalization. The 24-trait TFQ comparison (which uses absolute demand levels) compensates for this by independently gating on physical and cognitive capacity.
+
+---
+
+## 14. Confidence Grading System
 
 ### 13.1 Purpose
 
@@ -863,7 +1071,7 @@ Each grade includes:
 
 ---
 
-## 14. Data Sources and Provenance
+## 15. Data Sources and Provenance
 
 ### 14.1 Government Data Sources
 
@@ -895,7 +1103,7 @@ Every computed value in PVQ-TM is traceable to its source:
 
 ---
 
-## 15. Assumptions and Limitations
+## 16. Assumptions and Limitations
 
 ### 15.1 Explicit Assumptions
 
@@ -931,7 +1139,7 @@ Every computed value in PVQ-TM is traceable to its source:
 
 ---
 
-## 16. Repeatability and Reproducibility
+## 17. Repeatability and Reproducibility
 
 ### 16.1 Deterministic Computation
 
@@ -961,7 +1169,7 @@ Every formula in PVQ-TM can be independently verified:
 
 ---
 
-## 17. Daubert Standard Compliance
+## 18. Daubert Standard Compliance
 
 ### 17.1 Testability
 
@@ -1006,7 +1214,7 @@ The Local Demand methodology uses three independent, complementary data sources 
 
 ---
 
-## 18. References
+## 19. References
 
 1. McCroskey, B.J. (2001). *The Vocational Quotient System: A formula approach to the transferability of skills.* Athens, GA: Elliott & Fitzpatrick.
 
@@ -1054,4 +1262,4 @@ The Local Demand methodology uses three independent, complementary data sources 
 
 ---
 
-*This white paper documents the PVQ-TM system as implemented in version 1.0, March 2026. All formulas, weights, and thresholds are derived directly from the production source code and have been verified against 177 automated tests.*
+*This white paper documents the PVQ-TM system as implemented in version 1.1, March 2026. All formulas, weights, and thresholds are derived directly from the production source code and have been verified against 245 automated tests.*
