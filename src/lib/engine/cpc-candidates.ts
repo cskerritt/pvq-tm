@@ -123,6 +123,26 @@ export async function buildWorkerComponentProfile(
     if (fp) {
       prwFingerprints.push({ onetCode: code, title: fp.title });
       vectors.push(fp.vector);
+    } else {
+      // Try common format variations: "XX-XXXX.00" vs "XX-XXXX"
+      const variations = [
+        code.includes(".") ? code.split(".")[0] : `${code}.00`,
+        code.replace(/\.0+$/, ".00"),
+      ];
+      let found = false;
+      for (const variant of variations) {
+        const fpV = index.get(variant);
+        if (fpV) {
+          prwFingerprints.push({ onetCode: variant, title: fpV.title });
+          vectors.push(fpV.vector);
+          console.log(`[CPC] PRW code "${code}" not in index, matched variant "${variant}"`);
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        console.warn(`[CPC] PRW O*NET code "${code}" not found in fingerprint index — worker profile will be incomplete`);
+      }
     }
   }
 

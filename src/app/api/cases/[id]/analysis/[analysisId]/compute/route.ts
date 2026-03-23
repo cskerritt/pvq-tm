@@ -330,45 +330,85 @@ export async function POST(
         )
       : [];
 
+    // ─── Build STQ source data ──────────────────────────────────────
+    // Acquired skills from PRW (primary source for task overlap)
+    const acquiredSkillTasks = prwList.flatMap((p) =>
+      p.acquiredSkills.map((s) => `${s.actionVerb} ${s.object}`)
+    );
+
+    // Fallback: when no acquired skills exist, use O*NET task data from PRW
+    // occupations. This prevents STQ task overlap (35% weight) from being zero
+    // simply because skills weren't manually entered.
+    let sourceTasks = acquiredSkillTasks;
+    if (acquiredSkillTasks.length === 0 && prwOnetOccs.length > 0) {
+      sourceTasks = prwOnetOccs.flatMap((occ) =>
+        ((occ.tasks as { t?: string; id?: string }[]) ?? []).map(
+          (t) => t.t ?? ""
+        ).filter(Boolean)
+      );
+      if (sourceTasks.length > 0) {
+        console.log(`[compute] No acquired skills; using ${sourceTasks.length} O*NET tasks as fallback for STQ`);
+      }
+    }
+
+    // Source tools: from acquired skills + O*NET tools from PRW occupations
+    const acquiredTools = prwList.flatMap((p) =>
+      p.acquiredSkills
+        .filter((s) => s.toolsSoftware)
+        .map((s) => s.toolsSoftware!)
+    );
+    const sourceTools = acquiredTools.length > 0
+      ? acquiredTools
+      : prwOnetOccs.flatMap((occ) =>
+          ((occ.toolsTech as { t?: string }[]) ?? []).map((t) => t.t ?? "").filter(Boolean)
+        );
+
+    // Source materials: from acquired skills + O*NET tools categorized as materials
+    const acquiredMaterials = prwList.flatMap((p) =>
+      p.acquiredSkills
+        .filter((s) => s.materialsServices)
+        .map((s) => s.materialsServices!)
+    );
+
+    // Source knowledge: populated from PRW O*NET knowledge areas (was always empty before)
+    const sourceKnowledge = prwOnetOccs.flatMap((occ) =>
+      ((occ.knowledge as { n?: string }[]) ?? []).map((k) => k.n ?? "").filter(Boolean)
+    );
+
+    // Target materials: populate from O*NET tools/tech categories (was always empty before)
+    const targetMaterials = (
+      (target.onetOcc?.toolsTech as { t?: string; c?: string }[]) ?? []
+    ).map((t) => t.c ?? "").filter(Boolean);
+
     const stqInput: SkillTransferInput = {
       sourceSvp: Math.max(...prwList.map((p) => p.svp ?? 2), 2),
-      sourceTasks: prwList.flatMap((p) =>
-        p.acquiredSkills.map((s) => `${s.actionVerb} ${s.object}`)
-      ),
+      sourceTasks,
       sourceDWAs: sourceDPTDescriptors,
       sourceWorkFields,
       sourceMPSMS,
-      sourceTools: prwList.flatMap((p) =>
-        p.acquiredSkills
-          .filter((s) => s.toolsSoftware)
-          .map((s) => s.toolsSoftware!)
-      ),
-      sourceMaterials: prwList.flatMap((p) =>
-        p.acquiredSkills
-          .filter((s) => s.materialsServices)
-          .map((s) => s.materialsServices!)
-      ),
-      sourceKnowledge: [],
+      sourceTools,
+      sourceMaterials: acquiredMaterials,
+      sourceKnowledge,
       targetSvp: target.svp ?? 2,
       targetTasks: (
-        (target.onetOcc?.tasks as { title?: string; statement?: string }[]) ??
+        (target.onetOcc?.tasks as { title?: string; statement?: string; t?: string }[]) ??
         []
-      ).map((t) => t.title ?? t.statement ?? ""),
+      ).map((t) => t.title ?? t.statement ?? t.t ?? ""),
       targetDWAs: [
-        ...((target.onetOcc?.dwas as { title?: string }[]) ?? []).map(
-          (d) => d.title ?? ""
+        ...((target.onetOcc?.dwas as { title?: string; t?: string }[]) ?? []).map(
+          (d) => d.title ?? d.t ?? ""
         ),
         ...targetDPTDescriptors,
       ],
       targetWorkFields: targetDotOcc?.workFields ?? [],
       targetMPSMS: targetDotOcc?.mpsms ?? [],
       targetTools: (
-        (target.onetOcc?.toolsTech as { title?: string }[]) ?? []
-      ).map((t) => t.title ?? ""),
-      targetMaterials: [],
+        (target.onetOcc?.toolsTech as { title?: string; t?: string }[]) ?? []
+      ).map((t) => t.title ?? t.t ?? ""),
+      targetMaterials,
       targetKnowledge: (
-        (target.onetOcc?.knowledge as { name?: string }[]) ?? []
-      ).map((k) => k.name ?? ""),
+        (target.onetOcc?.knowledge as { name?: string; n?: string }[]) ?? []
+      ).map((k) => k.name ?? k.n ?? ""),
     };
     const stqResult = computeSTQ(stqInput);
 

@@ -48,8 +48,12 @@ async function legacySearch(
       const crosswalk = await prisma.dOTONETCrosswalk.findFirst({
         where: { dotCode: match.id },
       });
+      if (!crosswalk) {
+        console.warn(`[candidates] DOT ${match.id} "${match.title}" has no O*NET crosswalk — skipping`);
+        continue;
+      }
       candidates.push({
-        onetSocCode: crosswalk?.onetSocCode ?? "",
+        onetSocCode: crosswalk.onetSocCode,
         dotCode: match.id,
         title: match.title,
         svp: match.svp,
@@ -70,8 +74,12 @@ async function legacySearch(
       const crosswalk = await prisma.dOTONETCrosswalk.findFirst({
         where: { dotCode: match.id },
       });
+      if (!crosswalk) {
+        console.warn(`[candidates] DOT ${match.id} "${match.title}" has no O*NET crosswalk — skipping`);
+        continue;
+      }
       candidates.push({
-        onetSocCode: crosswalk?.onetSocCode ?? "",
+        onetSocCode: crosswalk.onetSocCode,
         dotCode: match.id,
         title: match.title,
         svp: match.svp,
@@ -116,8 +124,8 @@ async function currentSearch(
         }
       }
     }
-  } catch {
-    // O*NET API may not have related occupations for all codes
+  } catch (relatedErr) {
+    console.warn(`[candidates] O*NET related occupations API failed for ${onetCode}:`, relatedErr instanceof Error ? relatedErr.message : relatedErr);
   }
 
   try {
@@ -142,8 +150,8 @@ async function currentSearch(
         }
       }
     }
-  } catch {
-    // Career changers not available for all occupations
+  } catch (changersErr) {
+    console.warn(`[candidates] O*NET career changers API failed for ${onetCode}:`, changersErr instanceof Error ? changersErr.message : changersErr);
   }
 
   return candidates;

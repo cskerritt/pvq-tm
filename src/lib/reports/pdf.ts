@@ -2106,42 +2106,27 @@ function renderComponentProfileAnalysis(doc: jsPDF, data: ReportData): void {
   if (!cpc) return;
 
   doc.addPage();
-  let y = MARGIN;
+  let y = MARGIN + 5;
 
-  // Section header
-  doc.setFontSize(14);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(...COLORS.primary);
-  doc.text("Component Profile Analysis", MARGIN, y);
-  y += 4;
-
-  doc.setDrawColor(...COLORS.secondary);
-  doc.setLineWidth(0.5);
-  doc.line(MARGIN, y, PAGE_WIDTH - MARGIN, y);
-  y += 8;
+  y = addSectionTitle(doc, "Component Profile Analysis", y);
 
   // Intro paragraph
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(...COLORS.darkText);
-  const intro =
+  y = renderParagraph(
+    doc,
     "This section presents a component-based analysis of the evaluee's occupational profile. " +
     "Each occupation is decomposed into 237 underlying components (knowledge, skills, abilities, " +
     "work activities, work context, work styles) from O*NET, enriched with ORS physical demand " +
     "data and OEWS employment/wage data. Component similarity is computed using cosine similarity " +
-    "of occupation fingerprint vectors, following VDARE methodology for comprehensive labor market analysis.";
-  const introLines = doc.splitTextToSize(intro, CONTENT_WIDTH);
-  doc.text(introLines, MARGIN, y);
-  y += introLines.length * 3.8 + 6;
+    "of occupation fingerprint vectors, following VDARE methodology for comprehensive labor market analysis.",
+    y
+  );
+  y += 4;
 
   // ── Worker Component Profile ──────────────────────────────────────
   const wp = cpc.workerProfile;
   if (wp) {
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(...COLORS.primary);
-    doc.text("Worker Component Profile", MARGIN, y);
-    y += 6;
+    y = checkPageBreak(doc, y, 30);
+    y = addSubsectionTitle(doc, "Worker Component Profile", y);
 
     // CPC Code
     if (wp.cpc?.code) {
@@ -2150,13 +2135,17 @@ function renderComponentProfileAnalysis(doc: jsPDF, data: ReportData): void {
       doc.setTextColor(...COLORS.darkText);
       doc.text("Component Profile Code:", MARGIN, y);
       doc.setFont("courier", "normal");
-      doc.text(wp.cpc.code, MARGIN + 45, y);
-      y += 5;
+      // Wrap long CPC codes to prevent horizontal spillover
+      const cpcLines = doc.splitTextToSize(wp.cpc.code, CONTENT_WIDTH - 50);
+      doc.text(cpcLines, MARGIN + 45, y);
+      y += cpcLines.length * 3.8 + 2;
     }
 
     // Profile breadth
     if (wp.breadth?.label) {
+      doc.setFontSize(9);
       doc.setFont("helvetica", "normal");
+      doc.setTextColor(...COLORS.darkText);
       const breadthText = `Profile Breadth: ${wp.breadth.label.charAt(0).toUpperCase() + wp.breadth.label.slice(1)}`;
       doc.text(breadthText, MARGIN, y);
       y += 5;
@@ -2168,7 +2157,7 @@ function renderComponentProfileAnalysis(doc: jsPDF, data: ReportData): void {
     const topAb = wp.cpc?.topAbilities ?? [];
 
     if (topKn.length > 0 || topSk.length > 0 || topAb.length > 0) {
-      y += 2;
+      y = checkPageBreak(doc, y, 20);
       const rows: RowInput[] = [];
       const maxLen = Math.max(topKn.length, topSk.length, topAb.length);
       for (let i = 0; i < maxLen; i++) {
@@ -2180,38 +2169,33 @@ function renderComponentProfileAnalysis(doc: jsPDF, data: ReportData): void {
         head: [["Top Knowledge", "Top Skills", "Top Abilities"]],
         body: rows,
         theme: "grid",
-        styles: { fontSize: 8, cellPadding: 2 },
+        styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
         headStyles: {
           fillColor: COLORS.headerBg,
           textColor: COLORS.primary,
           fontStyle: "bold",
         },
         margin: { left: MARGIN, right: MARGIN },
+        pageBreak: "auto",
       });
-      y = (doc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? y + 20;
-      y += 6;
+      y = getLastTableY(doc, y + 20) + 8;
     }
   }
 
   // ── Most Similar Occupations by Component ─────────────────────────
   const similar = cpc.similarOccupations ?? [];
   if (similar.length > 0) {
-    y = checkPageBreak(doc, y, 30);
-
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(...COLORS.primary);
-    doc.text("Most Similar Occupations by Component Profile", MARGIN, y);
-    y += 6;
+    y = checkPageBreak(doc, y, 20);
+    y = addSubsectionTitle(doc, "Most Similar Occupations by Component Profile", y);
 
     const tableRows: RowInput[] = similar.slice(0, 15).map((occ) => [
       occ.title ?? "",
-      occ.cosineSimilarity != null ? `${Math.round(occ.cosineSimilarity * 100)}%` : "—",
+      occ.cosineSimilarity != null ? `${Math.round(occ.cosineSimilarity * 100)}%` : "\u2014",
       `Z${occ.jobZone ?? "?"}`,
       occ.strength ?? "?",
-      occ.employment != null ? occ.employment.toLocaleString() : "—",
-      occ.medianWage != null ? `$${occ.medianWage.toLocaleString()}` : "—",
-      (occ.topMatchingComponents ?? []).slice(0, 2).map((c) => c.name).join(", ") || "—",
+      occ.employment != null ? occ.employment.toLocaleString() : "\u2014",
+      occ.medianWage != null ? `$${occ.medianWage.toLocaleString()}` : "\u2014",
+      (occ.topMatchingComponents ?? []).slice(0, 2).map((c) => c.name).join(", ") || "\u2014",
     ]);
 
     autoTable(doc, {
@@ -2219,7 +2203,7 @@ function renderComponentProfileAnalysis(doc: jsPDF, data: ReportData): void {
       head: [["Occupation", "Sim %", "JZ", "STR", "Empl.", "Med. Wage", "Top Match Components"]],
       body: tableRows,
       theme: "grid",
-      styles: { fontSize: 7, cellPadding: 1.5 },
+      styles: { fontSize: 7, cellPadding: 1.5, overflow: "linebreak" },
       headStyles: {
         fillColor: COLORS.headerBg,
         textColor: COLORS.primary,
@@ -2236,30 +2220,21 @@ function renderComponentProfileAnalysis(doc: jsPDF, data: ReportData): void {
         6: { cellWidth: 52 },
       },
       margin: { left: MARGIN, right: MARGIN },
+      pageBreak: "auto",
     });
-    y = (doc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? y + 40;
-    y += 6;
+    y = getLastTableY(doc, y + 40) + 8;
   }
 
   // ── Component Gap Analysis ────────────────────────────────────────
   const gap = cpc.gapAnalysis;
   if (gap) {
-    y = checkPageBreak(doc, y, 30);
-
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(...COLORS.primary);
-    doc.text("Component Gap Analysis", MARGIN, y);
-    y += 6;
+    y = checkPageBreak(doc, y, 25);
+    y = addSubsectionTitle(doc, "Component Gap Analysis", y);
 
     // Narrative
     if (gap.narrative) {
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(...COLORS.darkText);
-      const narrativeLines = doc.splitTextToSize(gap.narrative, CONTENT_WIDTH);
-      doc.text(narrativeLines, MARGIN, y);
-      y += narrativeLines.length * 3.8 + 4;
+      y = renderParagraph(doc, gap.narrative, y);
+      y += 4;
     }
 
     // Worker strengths vs market gaps side by side
@@ -2267,6 +2242,7 @@ function renderComponentProfileAnalysis(doc: jsPDF, data: ReportData): void {
     const gaps = (gap.marketGaps ?? []).slice(0, 5);
 
     if (strengths.length > 0 || gaps.length > 0) {
+      y = checkPageBreak(doc, y, 20);
       const maxLen = Math.max(strengths.length, gaps.length);
       const gapRows: RowInput[] = [];
       for (let i = 0; i < maxLen; i++) {
@@ -2283,55 +2259,52 @@ function renderComponentProfileAnalysis(doc: jsPDF, data: ReportData): void {
         head: [["Worker Strength", "Category", "Market Gap", "Category"]],
         body: gapRows,
         theme: "grid",
-        styles: { fontSize: 8, cellPadding: 2 },
+        styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
         headStyles: {
           fillColor: COLORS.headerBg,
           textColor: COLORS.primary,
           fontStyle: "bold",
         },
         margin: { left: MARGIN, right: MARGIN },
+        pageBreak: "auto",
       });
-      y = (doc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? y + 20;
-      y += 6;
+      y = getLastTableY(doc, y + 20) + 8;
     }
   }
 
   // ── OEWS Labor Market Summary ─────────────────────────────────────
   const lm = cpc.laborMarketSummary;
   if (lm && (lm.totalEmployment ?? 0) > 0) {
-    y = checkPageBreak(doc, y, 15);
-
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(...COLORS.primary);
-    doc.text("Labor Market Summary (Component-Matched Occupations)", MARGIN, y);
-    y += 6;
+    y = checkPageBreak(doc, y, 25);
+    y = addSubsectionTitle(doc, "Labor Market Summary (Component-Matched Occupations)", y);
 
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(...COLORS.darkText);
 
-    const summaryLines = [
+    const bulletItems = [
       `Total national employment across component-matched occupations: ${(lm.totalEmployment ?? 0).toLocaleString()}`,
     ];
 
     if (lm.wageRange?.min != null && lm.wageRange?.max != null) {
-      summaryLines.push(
-        `Median wage range: $${lm.wageRange.min.toLocaleString()} — $${lm.wageRange.max.toLocaleString()}`
+      bulletItems.push(
+        `Median wage range: $${lm.wageRange.min.toLocaleString()} \u2014 $${lm.wageRange.max.toLocaleString()}`
       );
     }
     if (lm.wageRange?.median != null) {
-      summaryLines.push(
+      bulletItems.push(
         `Median of median wages: $${lm.wageRange.median.toLocaleString()}`
       );
     }
-    summaryLines.push(
+    bulletItems.push(
       `OEWS data available for ${lm.withOEWSData ?? 0} of ${similar.length} matched occupations`
     );
 
-    for (const line of summaryLines) {
-      doc.text(`  \u2022  ${line}`, MARGIN, y);
-      y += 4.5;
+    for (const line of bulletItems) {
+      y = checkPageBreak(doc, y, 6);
+      const wrappedLine = doc.splitTextToSize(`  \u2022  ${line}`, CONTENT_WIDTH);
+      doc.text(wrappedLine, MARGIN, y);
+      y += wrappedLine.length * 3.8 + 1;
     }
   }
 }
