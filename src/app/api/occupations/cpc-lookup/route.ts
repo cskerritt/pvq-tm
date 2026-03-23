@@ -123,12 +123,13 @@ export async function GET(req: NextRequest) {
         // Boost for title starting with query
         if (fp.title.toLowerCase().startsWith(queryLower)) score = 70;
       }
-      // Top component match (knowledge, skills, abilities)
+      // Top component match (knowledge, skills, abilities, work activities)
       else {
         const components = [
           ...fp.cpc.topKnowledge,
           ...fp.cpc.topSkills,
           ...fp.cpc.topAbilities,
+          ...fp.cpc.topWorkActivities,
         ];
         for (const comp of components) {
           if (comp.toLowerCase().includes(queryLower)) {
@@ -169,10 +170,15 @@ function formatFingerprint(fp: OccupationFingerprint) {
     title: fp.title,
     jobZone: fp.jobZone,
     cpcCode: fp.cpc.code,
+    legacyCpcCode: fp.cpc.legacyCode,
     topKnowledge: fp.cpc.topKnowledge,
     topSkills: fp.cpc.topSkills,
     topAbilities: fp.cpc.topAbilities,
+    topWorkActivities: fp.cpc.topWorkActivities,
     strength: fp.cpc.strength,
+    strengthLevel: fp.cpc.strengthLevel,
+    orsPhysicalDemands: fp.cpc.orsPhysicalDemands,
+    segments: fp.cpc.segments,
     orsTraits: fp.orsTraits,
     employment: fp.oewsData?.employment ?? null,
     medianWage: fp.oewsData?.medianWage ?? null,

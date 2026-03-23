@@ -53,10 +53,17 @@ describe('buildFingerprintIndex', () => {
     }
   });
 
-  it('includes CPC code for each occupation', () => {
+  it('includes numeric CPC code for each occupation', () => {
     const fp = index.get('11-1011.00');
     expect(fp?.cpc).toBeDefined();
-    expect(fp?.cpc.code).toMatch(/^K\[.+\]-S\[.+\]-A\[.+\]-Z\d-STR:/);
+    // New format: KK.kk-SS.ss-AA.aa-WW.ww-ZP-CCRS
+    expect(fp?.cpc.code).toMatch(/^\d{2}\.\d{2}-\d{2}\.\d{2}-\d{2}\.\d{2}-\d{2}\.\d{2}-\d{2}-\d{4}$/);
+    // Legacy code should still be populated
+    expect(fp?.cpc.legacyCode).toMatch(/^K\[.+\]-S\[.+\]-A\[.+\]-Z\d-STR:/);
+    // Should have work activities
+    expect(fp?.cpc.topWorkActivities.length).toBe(2);
+    // ORS demands should be 4 digits
+    expect(fp?.cpc.orsPhysicalDemands.length).toBe(4);
   });
 
   it('includes OEWS data where available', () => {
@@ -180,28 +187,38 @@ describe('l2Normalize', () => {
 // ─── CPC Code Generation ─────────────────────────────────────────────
 
 describe('generateCPC', () => {
-  it('produces valid CPC code format', () => {
+  it('produces valid numeric CPC code format', () => {
     const fp = index.get('11-1011.00');
     expect(fp).toBeDefined();
     if (fp) {
-      expect(fp.cpc.code).toMatch(/^K\[.+\]-S\[.+\]-A\[.+\]-Z\d-STR:/);
+      // Numeric: KK.kk-SS.ss-AA.aa-WW.ww-ZP-CCRS
+      expect(fp.cpc.code).toMatch(/^\d{2}\.\d{2}-\d{2}\.\d{2}-\d{2}\.\d{2}-\d{2}\.\d{2}-\d{2}-\d{4}$/);
+      // Legacy still works
+      expect(fp.cpc.legacyCode).toMatch(/^K\[.+\]-S\[.+\]-A\[.+\]-Z\d-STR:/);
     }
   });
 
-  it('has top knowledge, skills, and abilities', () => {
+  it('has top knowledge, skills, abilities, and work activities', () => {
     const fp = index.get('11-1011.00');
     expect(fp).toBeDefined();
     if (fp) {
       expect(fp.cpc.topKnowledge.length).toBe(2);
       expect(fp.cpc.topSkills.length).toBe(2);
       expect(fp.cpc.topAbilities.length).toBe(2);
+      expect(fp.cpc.topWorkActivities.length).toBe(2);
+      // Numeric segments should be populated
+      expect(fp.cpc.segments.knowledge[0]).toBeGreaterThan(0);
+      expect(fp.cpc.segments.skills[0]).toBeGreaterThan(0);
+      expect(fp.cpc.segments.abilities[0]).toBeGreaterThan(0);
+      expect(fp.cpc.segments.workActivities[0]).toBeGreaterThan(0);
     }
   });
 
   it('includes job zone in the code', () => {
     const fp = index.get('11-1011.00');
     expect(fp?.cpc.jobZone).toBe(5);
-    expect(fp?.cpc.code).toContain('Z5');
+    // Numeric code's 5th segment starts with the job zone digit
+    expect(fp?.cpc.code.split('-')[4]?.[0]).toBe('5');
   });
 });
 
@@ -210,7 +227,10 @@ describe('generateCPCFromVector', () => {
     const fp = index.get('11-1011.00');
     if (fp) {
       const cpc = generateCPCFromVector(fp.vector, 5, 'L');
-      expect(cpc.code).toMatch(/^K\[.+\]-S\[.+\]-A\[.+\]-Z5-STR:L/);
+      // Numeric format
+      expect(cpc.code).toMatch(/^\d{2}\.\d{2}-\d{2}\.\d{2}-\d{2}\.\d{2}-\d{2}\.\d{2}-52-\d{4}$/);
+      // Legacy format
+      expect(cpc.legacyCode).toMatch(/^K\[.+\]-S\[.+\]-A\[.+\]-Z5-STR:L/);
       expect(cpc.topKnowledge.length).toBe(2);
     }
   });

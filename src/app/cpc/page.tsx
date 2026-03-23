@@ -12,10 +12,20 @@ interface CPCResult {
   title: string;
   jobZone: number;
   cpcCode: string;
+  legacyCpcCode?: string;
   topKnowledge: string[];
   topSkills: string[];
   topAbilities: string[];
+  topWorkActivities?: string[];
   strength: string;
+  strengthLevel?: number;
+  orsPhysicalDemands?: [number, number, number, number];
+  segments?: {
+    knowledge: [number, number];
+    skills: [number, number];
+    abilities: [number, number];
+    workActivities: [number, number];
+  };
   orsTraits: Record<string, number> | null;
   employment: number | null;
   medianWage: number | null;
@@ -404,7 +414,7 @@ export default function CPCLookupPage() {
                         </Badge>
                       )}
                     </div>
-                    <div className="font-mono text-xs text-muted-foreground break-all">{r.cpcCode}</div>
+                    <div className="font-mono text-sm text-primary/80 tracking-wider">{r.cpcCode}</div>
                     <div className="flex flex-wrap gap-1 mt-2">
                       {r.topKnowledge.map((k, j) => (
                         <Badge key={`k-${j}`} className="text-xs bg-blue-100 text-blue-800">K: {k}</Badge>
@@ -415,7 +425,19 @@ export default function CPCLookupPage() {
                       {r.topAbilities.map((a, j) => (
                         <Badge key={`a-${j}`} className="text-xs bg-purple-100 text-purple-800">A: {a}</Badge>
                       ))}
+                      {r.topWorkActivities?.map((w, j) => (
+                        <Badge key={`w-${j}`} className="text-xs bg-amber-100 text-amber-800">W: {w}</Badge>
+                      ))}
                     </div>
+                    {r.orsPhysicalDemands && (r.orsPhysicalDemands[0] > 0 || r.orsPhysicalDemands[1] > 0 || r.orsPhysicalDemands[2] > 0 || r.orsPhysicalDemands[3] > 0) && (
+                      <div className="flex gap-2 mt-1 text-xs text-muted-foreground">
+                        <span>ORS:</span>
+                        <span>Climb={r.orsPhysicalDemands[0]}</span>
+                        <span>Stoop={r.orsPhysicalDemands[1]}</span>
+                        <span>Reach={r.orsPhysicalDemands[2]}</span>
+                        <span>Manip={r.orsPhysicalDemands[3]}</span>
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-col gap-1 items-end shrink-0">
                     <div className="flex gap-1">

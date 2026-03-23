@@ -36,7 +36,7 @@ describe('buildWorkerComponentProfile', () => {
     expect(profile.prwFingerprints.length).toBe(2);
     expect(profile.maxSvp).toBe(7);
     expect(profile.postStrength).toBe(1);
-    expect(profile.cpc.code).toMatch(/^K\[.+\]-S\[.+\]-A\[.+\]-Z\d-STR:L/);
+    expect(profile.cpc.code).toMatch(/^\d{2}\.\d{2}-\d{2}\.\d{2}-\d{2}\.\d{2}-\d{2}\.\d{2}-\d{2}-\d{4}$/);
     expect(profile.breadth).toHaveProperty('label');
     expect(profile.topComponents.length).toBeGreaterThan(0);
   });
@@ -147,7 +147,7 @@ describe('generateCPCCandidates', () => {
       expect(r.topMatchingComponents).toBeDefined();
       expect(r.topGapComponents).toBeDefined();
       expect(r.cpc).toBeDefined();
-      expect(r.cpc.code).toMatch(/^K\[/);
+      expect(r.cpc.code).toMatch(/^\d{2}\.\d{2}/);
     }
   });
 
@@ -209,7 +209,7 @@ describe('buildCPCAnalysis', () => {
     );
 
     // Worker profile
-    expect(analysis.workerProfile.cpc.code).toMatch(/^K\[/);
+    expect(analysis.workerProfile.cpc.code).toMatch(/^\d{2}\.\d{2}/);
     expect(analysis.workerProfile.breadth).toBeDefined();
     expect(analysis.workerProfile.topComponents.length).toBeGreaterThan(0);
     expect(analysis.workerProfile.prwOccupations.length).toBe(2);
