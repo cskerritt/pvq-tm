@@ -23,14 +23,28 @@ if [ -n "$DATABASE_URL" ]; then
     node node_modules/prisma/build/index.js migrate resolve --applied "$migration" 2>/dev/null || true
   done
 
-  # Force the catch-all migration to actually run by marking it as NOT applied first.
-  # This ensures all missing columns get created on the production database.
-  node node_modules/prisma/build/index.js migrate resolve --rolled-back 20260319190000_ensure_all_columns 2>/dev/null || true
-
   if node node_modules/prisma/build/index.js migrate deploy; then
     echo "Migrations complete."
   else
-    echo "WARNING: Migration deploy returned non-zero. Continuing with server startup..."
+    echo "WARNING: Migration deploy returned non-zero. Attempting direct SQL fallback..."
+    # Fallback: run the CPC migration SQL directly if migrate deploy fails
+    node -e "
+      const { Pool } = require('pg');
+      const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+      pool.query(\`
+        ALTER TABLE \"TargetOccupation\" ADD COLUMN IF NOT EXISTS \"cpcCode\" TEXT;
+        ALTER TABLE \"TargetOccupation\" ADD COLUMN IF NOT EXISTS \"cpcSimilarity\" DOUBLE PRECISION;
+        ALTER TABLE \"Analysis\" ADD COLUMN IF NOT EXISTS \"cpcAnalysis\" JSONB;
+      \`).then(() => {
+        console.log('CPC columns added via direct SQL.');
+        pool.end();
+      }).catch(err => {
+        console.error('Direct SQL fallback failed:', err.message);
+        pool.end();
+      });
+    "
+    # Mark the CPC migration as applied so future deploys don't retry
+    node node_modules/prisma/build/index.js migrate resolve --applied 20260323100000_add_cpc_fields 2>/dev/null || true
   fi
 else
   echo "WARNING: DATABASE_URL not set — skipping migrations."

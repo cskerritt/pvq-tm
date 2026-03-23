@@ -77,6 +77,11 @@ export async function POST() {
       `ALTER TABLE "TargetOccupation" ADD COLUMN IF NOT EXISTS "preEcMedian" DOUBLE PRECISION`,
       `ALTER TABLE "TargetOccupation" ADD COLUMN IF NOT EXISTS "preEcDetails" JSONB`,
 
+      // ============ CPC (Component Profile Code) fields ============
+      `ALTER TABLE "TargetOccupation" ADD COLUMN IF NOT EXISTS "cpcCode" TEXT`,
+      `ALTER TABLE "TargetOccupation" ADD COLUMN IF NOT EXISTS "cpcSimilarity" DOUBLE PRECISION`,
+      `ALTER TABLE "Analysis" ADD COLUMN IF NOT EXISTS "cpcAnalysis" JSONB`,
+
       // ============ Case table ============
       `ALTER TABLE "Case" ADD COLUMN IF NOT EXISTS "zipCode" TEXT`,
       `ALTER TABLE "Case" ADD COLUMN IF NOT EXISTS "metroAreaCode" TEXT`,
