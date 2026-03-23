@@ -68,6 +68,30 @@ describe('buildFingerprintIndex', () => {
     }
   });
 
+  it('no occupation should have "?" strength (3-tier fallback)', () => {
+    let unknownCount = 0;
+    const unknownCodes: string[] = [];
+    for (const [code, fp] of index) {
+      if (fp.cpc.strength === '?') {
+        unknownCount++;
+        if (unknownCodes.length < 5) unknownCodes.push(`${code} (${fp.title})`);
+      }
+    }
+    if (unknownCount > 0) {
+      console.warn(`${unknownCount} occupations still have "?" strength: ${unknownCodes.join(', ')}`);
+    }
+    // Allow at most 5% unknown (aspirational zero)
+    expect(unknownCount / index.size).toBeLessThan(0.05);
+  });
+
+  it('rehabilitation counselor should not have "?" strength', () => {
+    const fp = index.get('21-1015.00');
+    expect(fp).toBeDefined();
+    expect(fp?.cpc.strength).not.toBe('?');
+    // Rehab Counselor is predominantly sitting — should be Sedentary or Light
+    expect(['S', 'L']).toContain(fp?.cpc.strength);
+  });
+
   it('includes ORS traits where available', () => {
     // General/Operations Managers (11-1021.00) has ORS data
     const fp = index.get('11-1021.00');

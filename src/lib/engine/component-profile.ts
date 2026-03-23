@@ -19,11 +19,13 @@ import type {
   ONETElement,
   ORSOccupationData,
   OEWSOccupationData,
+  DOTOccupationData,
 } from "@/lib/data-loaders";
 import {
   loadONETFullData,
   loadORSData,
   loadOEWSData,
+  loadDOTData,
 } from "@/lib/data-loaders";
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -568,8 +570,59 @@ function parseORSDominantLevel(
 let _fingerprintIndex: Map<string, OccupationFingerprint> | null = null;
 
 /**
+ * Estimate strength level from O*NET work context and abilities data.
+ * Used as tertiary fallback when neither ORS nor DOT strength is available.
+ *
+ * Uses Static Strength ability level and physical work context scores
+ * (time sitting, standing, handling) to approximate DOL strength categories.
+ */
+function estimateStrengthFromONET(occ: ONETFullOccupationData): string {
+  // Check abilities for Static Strength (1.A.3.a.1)
+  const staticStrength = occ.ab?.find((a) => a.id === "1.A.3.a.1");
+  const staticLevel = staticStrength?.l ?? 0;
+
+  // Check work context for physical posture indicators
+  const wcMap: Record<string, number> = {};
+  if (occ.wc) {
+    for (const el of occ.wc) {
+      wcMap[el.n] = el.v ?? 0;
+    }
+  }
+
+  const sitting = wcMap["Spend Time Sitting"] ?? 0;
+  const standing = wcMap["Spend Time Standing"] ?? 0;
+  const handling = wcMap["Spend Time Using Your Hands to Handle, Control, or Feel Objects, Tools, or Controls"] ?? 0;
+  const kneeling = wcMap["Spend Time Kneeling, Crouching, Stooping, or Crawling"] ?? 0;
+  const bending = wcMap["Spend Time Bending or Twisting Your Body"] ?? 0;
+
+  // Static Strength level is the strongest indicator:
+  // Level 0-1 = Sedentary, 1-2 = Light, 2.5-3.5 = Medium, 3.5-4.5 = Heavy, 4.5+ = Very Heavy
+  if (staticLevel >= 4.5) return "V";
+  if (staticLevel >= 3.5) return "H";
+  if (staticLevel >= 2.5) return "M";
+
+  // For lower Static Strength, use work context as tiebreaker
+  if (staticLevel >= 1.5) {
+    // Light or Medium — check physical context
+    if (standing >= 3.5 && handling >= 3.5) return "M";
+    if (kneeling >= 2.5 || bending >= 3.0) return "M";
+    return "L";
+  }
+
+  // Very low Static Strength — Sedentary or Light
+  if (sitting >= 3.5 && standing <= 2.5) return "S";
+  if (standing >= 3.0) return "L";
+  return "S";
+}
+
+/**
  * Build and cache the complete fingerprint index for all 1016 O*NET occupations.
- * Incorporates ORS trait data and OEWS wage/employment data.
+ * Incorporates ORS trait data, OEWS wage/employment data, and DOT strength data.
+ *
+ * Strength determination uses a 3-tier fallback:
+ * 1. ORS strength (primary — survey-based, 277 occupations)
+ * 2. DOT strength via crosswalk (secondary — analyst-rated, ~11,500 occupations)
+ * 3. O*NET work context/abilities estimation (tertiary — derived from physical demands)
  *
  * Per VDARE methodology, ORS data is the primary source for physical demands.
  * OEWS data provides labor market context (employment, wages) for each occupation.
@@ -577,10 +630,11 @@ let _fingerprintIndex: Map<string, OccupationFingerprint> | null = null;
 export async function buildFingerprintIndex(): Promise<Map<string, OccupationFingerprint>> {
   if (_fingerprintIndex) return _fingerprintIndex;
 
-  const [onetData, orsData, oewsData] = await Promise.all([
+  const [onetData, orsData, oewsData, dotData] = await Promise.all([
     loadONETFullData(),
     loadORSData(),
     loadOEWSData(),
+    loadDOTData(),
   ]);
 
   const entries = Object.entries(onetData);
@@ -590,6 +644,23 @@ export async function buildFingerprintIndex(): Promise<Map<string, OccupationFin
 
   // Initialize canonical ordering from first occupation
   buildCanonicalOrder(entries[0][1]);
+
+  // Build reverse crosswalk: O*NET SOC prefix → DOT strength
+  // DOT xw field is a 5-digit code; O*NET codes are XX-XXXX.XX
+  // We also try matching by 6-digit SOC prefix
+  const dotStrengthByOnet = new Map<string, string>();
+  for (const [, dotOcc] of Object.entries(dotData)) {
+    if (!dotOcc.str) continue;
+    // Try to map DOT xw code to O*NET format
+    // xw is like "11102" → we try matching against stripped O*NET codes
+    if (dotOcc.xw) {
+      const xw = dotOcc.xw;
+      // Store by xw prefix for later matching
+      if (!dotStrengthByOnet.has(xw)) {
+        dotStrengthByOnet.set(xw, dotOcc.str);
+      }
+    }
+  }
 
   const index = new Map<string, OccupationFingerprint>();
 
@@ -606,11 +677,34 @@ export async function buildFingerprintIndex(): Promise<Map<string, OccupationFin
     const oewsKey = code.substring(0, 7); // "11-1011" from "11-1011.00"
     const oewsEntry = oewsData[oewsKey] ?? null;
 
-    // Determine strength from ORS (primary) or default
+    // ── 3-Tier Strength Determination ────────────────────────────
+    const strMap: Record<number, string> = { 0: "S", 1: "L", 2: "M", 3: "H", 4: "V" };
     let strength = "?";
+
+    // Tier 1: ORS strength (primary — survey data)
     if (orsTraits?.["ors_strength"] !== undefined) {
-      const strMap: Record<number, string> = { 0: "S", 1: "L", 2: "M", 3: "H", 4: "V" };
       strength = strMap[orsTraits["ors_strength"]] ?? "?";
+    }
+
+    // Tier 2: DOT strength via crosswalk (secondary)
+    if (strength === "?") {
+      // Try 5-digit match (e.g., "11101" from "11-1011.00")
+      const soc5 = code.replace(/[.-]/g, "").substring(0, 5);
+      const dotStr = dotStrengthByOnet.get(soc5);
+      if (dotStr) {
+        strength = dotStr;
+      } else {
+        // Try 6-digit match
+        const dotStr6 = dotStrengthByOnet.get(socShort);
+        if (dotStr6) {
+          strength = dotStr6;
+        }
+      }
+    }
+
+    // Tier 3: Estimate from O*NET work context + abilities (tertiary)
+    if (strength === "?") {
+      strength = estimateStrengthFromONET(occ);
     }
 
     // L2-normalize the fingerprint
