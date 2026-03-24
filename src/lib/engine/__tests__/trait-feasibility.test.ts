@@ -204,9 +204,9 @@ describe('buildDOTDemandVector', () => {
     });
 
     expect(demands.strength).toBe(0);
-    // normalizeDOTGED(1) = 0, but SVP proxy kicks in (SVP 2 → reasoning=0.8)
+    // normalizeDOTGED(1) = 0, but SVP proxy kicks in (SVP 2 → reasoning=0.8, math=0, language=0.8)
     expect(demands.reasoning).toBe(0.8);
-    expect(demands.math).toBe(0.4);
+    expect(demands.math).toBe(0);
     expect(demands.language).toBe(0.8);
     expect(gedSource).toBe('SVP_PROXY');
 
@@ -311,8 +311,9 @@ describe('buildOccupationDemands', () => {
     assertNoNulls(demands);
 
     // With no data at all, SVP defaults to 2 (unskilled)
+    // SVP 2 → GED R=1-2, M=1, L=1-2 → Normalized: R=0.8, M=0, L=0.8
     expect(demands.reasoning).toBe(0.8);
-    expect(demands.math).toBe(0.4);
+    expect(demands.math).toBe(0);
     expect(demands.language).toBe(0.8);
   });
 

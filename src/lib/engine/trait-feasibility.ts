@@ -449,15 +449,24 @@ export function getStrengthSVPDefaults(
 /**
  * Get SVP-based floor values for reasoning, math, and language.
  * Used as a last resort when neither DOT GED nor O*NET data is available.
+ *
+ * Values are calibrated to match the DOT GED normalization formula:
+ *   Normalized = (GED_Level - 1) × 0.8
+ *
+ * SVP-to-GED correspondence (DOT convention):
+ *   SVP 1-2 → GED R=1-2, M=1,   L=1-2  → Normalized: R=0-0.8,  M=0,    L=0-0.8
+ *   SVP 3-4 → GED R=3,   M=2-3, L=3    → Normalized: R=1.6,    M=0.8-1.6, L=1.6
+ *   SVP 5-6 → GED R=4,   M=3-4, L=4    → Normalized: R=2.4,    M=1.6-2.4, L=2.4
+ *   SVP 7+  → GED R=5-6, M=4-5, L=5-6  → Normalized: R=3.2-4.0, M=2.4-3.2, L=3.2-4.0
  */
 function getSVPProxyGED(
   svp: number | null | undefined
 ): { reasoning: number; math: number; language: number } {
   const s = svp ?? 2; // default to SVP 2 (unskilled) if unknown
-  if (s <= 2) return { reasoning: 0.8, math: 0.4, language: 0.8 };
-  if (s <= 4) return { reasoning: 1.2, math: 0.8, language: 1.2 };
-  if (s <= 6) return { reasoning: 1.6, math: 1.2, language: 1.6 };
-  return { reasoning: 2.4, math: 1.6, language: 2.4 };
+  if (s <= 2) return { reasoning: 0.8, math: 0.0, language: 0.8 };
+  if (s <= 4) return { reasoning: 1.6, math: 1.2, language: 1.6 };
+  if (s <= 6) return { reasoning: 2.4, math: 1.6, language: 2.4 };
+  return { reasoning: 3.2, math: 2.4, language: 3.2 };
 }
 
 // ─── Fallback Chain Helper ───────────────────────────────────────────
