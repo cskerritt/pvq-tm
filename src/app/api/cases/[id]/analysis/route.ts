@@ -64,12 +64,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     const { id } = await params;
     const body = await req.json();
+
+    // Auto-derive priorEarnings from PRW if not explicitly provided
+    let priorEarnings = body.priorEarnings ?? null;
+    if (priorEarnings === null || priorEarnings === undefined) {
+      const prwList = await prisma.pastRelevantWork.findMany({
+        where: { caseId: id },
+        select: { actualWageAnnual: true },
+      });
+      const earnings = prwList
+        .map((p) => p.actualWageAnnual)
+        .filter((e): e is number => e !== null && e > 0);
+      if (earnings.length > 0) {
+        // Use the highest PRW annual wage as prior earnings
+        priorEarnings = Math.max(...earnings);
+      }
+    }
+
     const analysis = await prisma.analysis.create({
       data: {
         caseId: id,
         name: body.name ?? `Analysis ${new Date().toLocaleDateString()}`,
         ageRule: body.ageRule,
-        priorEarnings: body.priorEarnings,
+        priorEarnings,
         targetArea: body.targetArea,
         targetAreaName: body.targetAreaName,
       },

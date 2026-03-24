@@ -492,14 +492,17 @@ export async function POST(
         capacity < demandCategory
       ) {
         if (gate.key === "strength") {
-          const demandLabel = STRENGTH_LABELS[demand] ?? `Level ${demand}`;
+          const demandLabel = STRENGTH_LABELS[demandCategory] ?? `Level ${demandCategory}`;
           const capacityLabel = STRENGTH_LABELS[capacity] ?? `Level ${capacity}`;
           gateFailures.push(
             `${gate.label}: occupation requires ${demandLabel} but worker restricted to ${capacityLabel}`
           );
         } else {
+          const FREQ_LABELS: Record<number, string> = { 0: "Not Required", 1: "Seldom", 2: "Occasionally", 3: "Frequently", 4: "Constantly" };
+          const demandLabel = FREQ_LABELS[demandCategory] ?? `Level ${demandCategory}`;
+          const capacityLabel = FREQ_LABELS[capacity] ?? `Level ${capacity}`;
           gateFailures.push(
-            `${gate.label}: occupation demands level ${demand} but worker capacity is ${capacity}`
+            `${gate.label}: occupation demands ${demandLabel} but worker capacity is ${capacityLabel}`
           );
         }
       }

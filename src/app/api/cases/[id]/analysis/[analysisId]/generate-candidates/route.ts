@@ -61,8 +61,22 @@ export async function POST(
     console.warn("[generate-candidates] CPC candidate generation failed:", cpcError);
   }
 
-  // Merge traditional + CPC candidates
-  const allCandidates = [...traditionalCandidates, ...cpcCandidates];
+  // Merge traditional + CPC candidates, deduplicating by O*NET code
+  const candidateMap = new Map<string, (typeof traditionalCandidates)[number]>();
+  for (const c of traditionalCandidates) {
+    if (c.onetSocCode && !candidateMap.has(c.onetSocCode)) {
+      candidateMap.set(c.onetSocCode, c);
+    }
+  }
+  for (const c of cpcCandidates) {
+    if (c.onetSocCode && !candidateMap.has(c.onetSocCode)) {
+      candidateMap.set(c.onetSocCode, c);
+    }
+  }
+  const allCandidates = [...candidateMap.values()];
+  console.log(
+    `[generate-candidates] After dedup: ${allCandidates.length} unique (from ${traditionalCandidates.length} traditional + ${cpcCandidates.length} CPC)`
+  );
 
   // Store candidates as target occupations
   const created = [];

@@ -197,7 +197,7 @@ export async function POST(
       ) {
         if (gate.key === "strength") {
           const demandLabel =
-            STRENGTH_LABEL_MAP[demand] ?? `Level ${demand}`;
+            STRENGTH_LABEL_MAP[demandCategory] ?? `Level ${demandCategory}`;
           const capacityLabel =
             STRENGTH_LABEL_MAP[capacity] ?? `Level ${capacity}`;
           gateFailures.push(
@@ -205,12 +205,11 @@ export async function POST(
           );
         } else {
           const demandLabel =
-            FREQUENCY_LABEL_MAP[Math.round(demand)] ?? `Level ${demand}`;
+            FREQUENCY_LABEL_MAP[demandCategory] ?? `Level ${demandCategory}`;
           const capacityLabel =
-            FREQUENCY_LABEL_MAP[Math.round(capacity)] ??
-            `Level ${capacity}`;
+            FREQUENCY_LABEL_MAP[capacity] ?? `Level ${capacity}`;
           gateFailures.push(
-            `${gate.label}: occupation demands ${demandLabel} (${demand}) but worker capacity is ${capacityLabel} (${capacity})`
+            `${gate.label}: occupation demands ${demandLabel} but worker capacity is ${capacityLabel}`
           );
         }
       }
