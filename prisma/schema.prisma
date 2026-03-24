@@ -310,7 +310,7 @@ model Analysis {
   viableSetAnalysis    Json?   // Viable set coherence/clustering analysis
   confidenceExplanation Json?  // Detailed confidence grade breakdown
   regionalLaborMarket  Json?   // Regional labor market context narrative
-  hiredJobsAnalysis    Json?   // Most-frequently-hired jobs access analysis
+  hiredJobsAnalysis    Json?   // DEPRECATED: Not currently populated by compute. Retained for schema compatibility.
   laborMarketAccess    Json?   // Full labor market access analysis (all 831 OEWS occupations)
   zeroViableExplanation Json?  // Explanation when zero occupations survive filtering
   cpcAnalysis          Json?  // Component Profile Code analysis (worker profile, similar occs, gap analysis)

@@ -19,6 +19,11 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+
+    if (!body.clientName?.trim()) {
+      return NextResponse.json({ error: "clientName is required" }, { status: 400 });
+    }
+
     const newCase = await prisma.case.create({
       data: {
         clientName: body.clientName,

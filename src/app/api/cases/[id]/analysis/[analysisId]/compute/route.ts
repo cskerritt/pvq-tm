@@ -896,8 +896,8 @@ export async function POST(
   }
 
   for (const t of updatedTargets) {
-    const wages = wageMap.get(t.onetSocCode);
-    const employment = wages?.employment ?? 0;
+    const aggWages = wageMap.get(t.onetSocCode);
+    const employment = aggWages?.employment ?? 0;
     const areaEmpl = t.areaEmployment ?? 0;
 
     // Post-injury: viable if not excluded
