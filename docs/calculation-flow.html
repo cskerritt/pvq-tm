@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PVQ-TM Calculation Flow</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; padding: 40px; }
+  h1 { text-align: center; font-size: 28px; margin-bottom: 8px; color: #f8fafc; }
+  .subtitle { text-align: center; color: #94a3b8; margin-bottom: 40px; font-size: 14px; }
+
+  .flow { max-width: 1200px; margin: 0 auto; }
+
+  /* Phase headers */
+  .phase { margin-bottom: 48px; }
+  .phase-header {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 20px;
+    padding: 12px 20px; background: #1e293b; border-radius: 8px; border-left: 4px solid;
+  }
+  .phase-num { font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: 4px; color: #fff; }
+  .phase-title { font-size: 18px; font-weight: 600; }
+  .phase-desc { font-size: 13px; color: #94a3b8; }
+
+  /* Color coding */
+  .p-input .phase-header { border-color: #3b82f6; }
+  .p-input .phase-num { background: #3b82f6; }
+  .p-data .phase-header { border-color: #8b5cf6; }
+  .p-data .phase-num { background: #8b5cf6; }
+  .p-gate .phase-header { border-color: #ef4444; }
+  .p-gate .phase-num { background: #ef4444; }
+  .p-score .phase-header { border-color: #f59e0b; }
+  .p-score .phase-num { background: #f59e0b; }
+  .p-composite .phase-header { border-color: #10b981; }
+  .p-composite .phase-num { background: #10b981; }
+  .p-analysis .phase-header { border-color: #06b6d4; }
+  .p-analysis .phase-num { background: #06b6d4; }
+
+  /* Boxes */
+  .boxes { display: grid; gap: 16px; }
+  .boxes-2 { grid-template-columns: 1fr 1fr; }
+  .boxes-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .boxes-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+
+  .box {
+    background: #1e293b; border: 1px solid #334155; border-radius: 8px;
+    padding: 16px; position: relative;
+  }
+  .box-title { font-weight: 700; font-size: 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .box-content { font-size: 12px; color: #94a3b8; line-height: 1.6; }
+  .box-formula {
+    font-family: 'Courier New', monospace; font-size: 11px;
+    background: #0f172a; padding: 8px 12px; border-radius: 4px;
+    margin-top: 8px; color: #67e8f9; border: 1px solid #1e3a5f;
+  }
+
+  .tag { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+  .tag-blue { background: #1e3a5f; color: #60a5fa; }
+  .tag-purple { background: #2e1065; color: #a78bfa; }
+  .tag-red { background: #450a0a; color: #fca5a5; }
+  .tag-yellow { background: #422006; color: #fcd34d; }
+  .tag-green { background: #052e16; color: #6ee7b7; }
+  .tag-cyan { background: #083344; color: #67e8f9; }
+
+  /* Arrow between phases */
+  .arrow { text-align: center; margin: 24px 0; color: #475569; font-size: 24px; }
+  .arrow-label { font-size: 11px; color: #64748b; margin-top: 4px; }
+
+  /* Gate styling */
+  .gate { border-color: #ef4444 !important; background: #1a0a0a !important; }
+  .gate .box-title { color: #fca5a5; }
+
+  /* Result box */
+  .result { border-color: #10b981 !important; }
+  .result .box-title { color: #6ee7b7; }
+
+  /* Data source badges */
+  .sources { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .src { font-size: 9px; padding: 2px 6px; border-radius: 3px; background: #334155; color: #cbd5e1; }
+
+  /* Weight indicator */
+  .weight { float: right; font-size: 11px; color: #f59e0b; font-weight: 700; }
+
+  /* Legend */
+  .legend {
+    display: flex; gap: 20px; justify-content: center; margin-bottom: 32px;
+    flex-wrap: wrap; padding: 12px; background: #1e293b; border-radius: 8px;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 3px; }
+
+  /* Wide box */
+  .wide { grid-column: 1 / -1; }
+
+  .highlight { color: #fcd34d; font-weight: 600; }
+  .fail { color: #f87171; }
+  .pass { color: #4ade80; }
+
+  @media (max-width: 768px) {
+    .boxes-2, .boxes-3, .boxes-4 { grid-template-columns: 1fr; }
+    body { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<h1>PVQ-TM Calculation Flow</h1>
+<p class="subtitle">Complete pipeline from case input to scored occupations &mdash; 363 automated tests verify every step</p>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div> Input</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#8b5cf6"></div> Data Retrieval</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div> Exclusion Gate</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div> Scoring</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#10b981"></div> Composite</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#06b6d4"></div> Analysis</div>
+</div>
+
+<div class="flow">
+
+<!-- PHASE 1: INPUTS -->
+<div class="phase p-input">
+  <div class="phase-header">
+    <span class="phase-num">1</span>
+    <div><div class="phase-title">Case Inputs</div><div class="phase-desc">Evaluator enters all required data</div></div>
+  </div>
+  <div class="boxes boxes-4">
+    <div class="box">
+      <div class="box-title"><span class="tag tag-blue">CASE</span> Demographics</div>
+      <div class="box-content">
+        Client DOB, Date of Injury<br>
+        ZIP Code &rarr; Metro Area<br>
+        Injury Description<br>
+        Body Parts Affected
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-title"><span class="tag tag-blue">PRW</span> Past Relevant Work</div>
+      <div class="box-content">
+        Job Title, Employer<br>
+        O*NET Code, DOT Code<br>
+        SVP Level (1-9)<br>
+        Strength Level (S/L/M/H/V)<br>
+        Duration, Wages
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-title"><span class="tag tag-blue">SKILLS</span> Acquired Skills</div>
+      <div class="box-content">
+        Action Verb + Object<br>
+        Tools/Software Used<br>
+        Materials/Services<br>
+        SVP Level, Frequency<br>
+        Transferability Flag
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-title"><span class="tag tag-blue">PROFILES</span> Worker Traits</div>
+      <div class="box-content">
+        <b>PRE-injury:</b> 24 traits (0-4)<br>
+        <b>POST-injury:</b> 24 traits (0-4)<br>
+        6 Cognitive + 11 Physical<br>+ 7 Environmental
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="arrow">&darr;<div class="arrow-label">All inputs validated &amp; stored in database</div></div>
+
+<!-- PHASE 2: DATA RETRIEVAL -->
+<div class="phase p-data">
+  <div class="phase-header">
+    <span class="phase-num">2</span>
+    <div><div class="phase-title">Data Retrieval &amp; Candidate Generation</div><div class="phase-desc">Pull government occupational data and identify candidate occupations</div></div>
+  </div>
+  <div class="boxes boxes-3">
+    <div class="box">
+      <div class="box-title"><span class="tag tag-purple">TRADITIONAL</span> DOT/O*NET Candidates</div>
+      <div class="box-content">
+        Match via DOT Work Fields &amp; MPSMS<br>
+        Match via O*NET Related Occupations<br>
+        Match via O*NET Career Changers<br>
+        Filter: target SVP &le; source SVP
+      </div>
+      <div class="sources">
+        <span class="src">DOT</span><span class="src">O*NET 30.2</span>
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-title"><span class="tag tag-purple">CPC</span> Component Profile Candidates</div>
+      <div class="box-content">
+        Build 237-dim worker fingerprint<br>
+        Cosine similarity vs all 1,016 O*NET<br>
+        SVP gate + Strength gate<br>
+        Top 30 most similar occupations
+      </div>
+      <div class="sources">
+        <span class="src">O*NET</span><span class="src">ORS</span><span class="src">DOT</span>
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-title"><span class="tag tag-purple">DATA</span> Occupation Demand Vectors</div>
+      <div class="box-content">
+        For each candidate, build 24-trait demand:<br>
+        <b>Priority:</b> ORS &rarr; DOT &rarr; O*NET &rarr; Proxy<br>
+        <b>Strength:</b> ORS &rarr; DOT xwalk &rarr; O*NET est.<br>
+        <b>Cognitive:</b> DOT GED &rarr; O*NET abilities<br>
+        <b>Physical:</b> ORS &rarr; DOT DPT &rarr; SVP defaults
+      </div>
+      <div class="sources">
+        <span class="src">ORS (277 SOC)</span><span class="src">DOT (12,726)</span><span class="src">O*NET (1,016)</span><span class="src">OEWS</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="arrow">&darr;<div class="arrow-label">Deduplicated candidate list (traditional + CPC merged)</div></div>
+
+<!-- PHASE 3: EXCLUSION GATES -->
+<div class="phase p-gate">
+  <div class="phase-header">
+    <span class="phase-num">3</span>
+    <div><div class="phase-title">Exclusion Gates</div><div class="phase-desc">Hard pass/fail checks &mdash; any failure = PVQ 0 and excluded from viable set</div></div>
+  </div>
+  <div class="boxes boxes-3">
+    <div class="box gate">
+      <div class="box-title"><span class="tag tag-red">GATE 1</span> SVP Gate</div>
+      <div class="box-content">
+        Target SVP must &le; highest PRW SVP<br>
+        Per SSA Ruling 82-41<br>
+        SVP 1-3 = unskilled (no transfer)
+      </div>
+      <div class="box-formula">
+        IF target_svp > max(prw_svp) &rarr; <span class="fail">EXCLUDE</span>
+      </div>
+    </div>
+    <div class="box gate">
+      <div class="box-title"><span class="tag tag-red">GATE 2</span> Physical Demand Gates</div>
+      <div class="box-content">
+        4 explicit physical checks:<br>
+        &bull; Strength (S/L/M/H/V)<br>
+        &bull; Climb/Balance<br>
+        &bull; Stoop/Kneel<br>
+        &bull; Reach/Handle
+      </div>
+      <div class="box-formula">
+        IF worker_capacity < occ_demand &rarr; <span class="fail">EXCLUDE</span>
+      </div>
+    </div>
+    <div class="box gate">
+      <div class="box-title"><span class="tag tag-red">GATE 3</span> Full 24-Trait Gate</div>
+      <div class="box-content">
+        Every assessed trait compared:<br>
+        <span class="pass">Worker &ge; Demand = PASS</span><br>
+        <span class="fail">Worker &lt; Demand = FAIL</span><br>
+        <b>Single failure = excluded</b><br>
+        Null capacity = assumed passing
+      </div>
+      <div class="box-formula">
+        IF ANY trait fails &rarr; TFQ = 0, <span class="fail">EXCLUDE</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="arrow">&darr;<div class="arrow-label">Surviving candidates proceed to scoring; excluded candidates tracked for near-miss analysis</div></div>
+
+<!-- PHASE 4: SCORING -->
+<div class="phase p-score">
+  <div class="phase-header">
+    <span class="phase-num">4</span>
+    <div><div class="phase-title">Four-Dimension Scoring</div><div class="phase-desc">Each surviving candidate scored independently on four dimensions (0-100 each)</div></div>
+  </div>
+  <div class="boxes boxes-2">
+    <div class="box">
+      <div class="box-title"><span class="tag tag-yellow">STQ</span> Skill Transfer Quotient <span class="weight">Weight: 45%</span></div>
+      <div class="box-content">
+        Measures skill transferability from PRW to target occupation.<br>
+        Uses Jaccard similarity + token overlap (takes max).
+      </div>
+      <div class="box-formula">
+        STQ = 0.35 &times; Task/DWA Overlap<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;+ 0.25 &times; Work Field/MPSMS<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;+ 0.20 &times; Tools/Software<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;+ 0.10 &times; Materials/Services<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;+ 0.10 &times; Credentials/Knowledge
+      </div>
+      <div class="sources">
+        <span class="src">Acquired Skills</span><span class="src">O*NET Tasks</span><span class="src">DOT Work Fields</span><span class="src">O*NET Tools</span>
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-title"><span class="tag tag-yellow">TFQ</span> Trait Feasibility Quotient <span class="weight">Weight: 25%</span></div>
+      <div class="box-content">
+        Quantifies reserve margin across all 24 traits.<br>
+        Higher TFQ = more room between capacity and demands.
+      </div>
+      <div class="box-formula">
+        TFQ = (&Sigma; trait_margins) / (24 &times; 4) &times; 100<br>
+        <br>
+        margin = worker_capacity - occ_demand<br>
+        Range: 0-100 (0 = barely passing)
+      </div>
+      <div class="sources">
+        <span class="src">POST Profile</span><span class="src">ORS</span><span class="src">DOT</span><span class="src">O*NET</span>
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-title"><span class="tag tag-yellow">VAQ</span> Vocational Adjustment Quotient <span class="weight">Weight: 15%</span></div>
+      <div class="box-content">
+        Assesses transition difficulty across four dimensions.<br>
+        Auto-estimated from DOT/O*NET or manually rated by evaluator.
+      </div>
+      <div class="box-formula">
+        VAQ = avg(Tools, Work Processes,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Work Setting, Industry)<br>
+        <br>
+        Each: 100=very little | 67=slight<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;33=moderate | 0=substantial<br>
+        <br>
+        <span class="fail">Advanced Age: ALL must = 100 or EXCLUDE</span>
+      </div>
+      <div class="sources">
+        <span class="src">DOT GOE</span><span class="src">O*NET Tools</span><span class="src">Industry Designation</span>
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-title"><span class="tag tag-yellow">LMQ</span> Labor Market Quotient <span class="weight">Weight: 15%</span></div>
+      <div class="box-content">
+        Evaluates real-world job availability and wages.
+      </div>
+      <div class="box-formula">
+        LMQ = 0.25 &times; Employment Score<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;+ 0.25 &times; Wage Score<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;+ 0.20 &times; Projections Score<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;+ 0.15 &times; Local Demand Score<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;+ 0.15 &times; JOLTS Trend Score<br>
+        <br>
+        (weights redistribute if data missing)
+      </div>
+      <div class="sources">
+        <span class="src">OEWS Wages</span><span class="src">BLS Projections</span><span class="src">JOLTS</span><span class="src">CareerOneStop</span><span class="src">Census ZBP</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="arrow">&darr;<div class="arrow-label">Four scores computed for every surviving candidate</div></div>
+
+<!-- PHASE 5: COMPOSITE -->
+<div class="phase p-composite">
+  <div class="phase-header">
+    <span class="phase-num">5</span>
+    <div><div class="phase-title">PVQ Composite &amp; Ranking</div><div class="phase-desc">Weighted composite score determines final occupation ranking</div></div>
+  </div>
+  <div class="boxes boxes-3">
+    <div class="box result wide" style="grid-column: 1/3">
+      <div class="box-title"><span class="tag tag-green">PVQ</span> Public Vocational Quotient</div>
+      <div class="box-content" style="font-size: 14px;">
+        The final composite score for each occupation. Combines all four dimensions with empirically-derived weights.
+      </div>
+      <div class="box-formula" style="font-size: 14px; text-align: center; padding: 16px;">
+        <span class="highlight">PVQ = 0.45&times;STQ + 0.25&times;TFQ + 0.15&times;VAQ + 0.15&times;LMQ</span><br><br>
+        Range: 0-100 &nbsp;|&nbsp; Excluded occupations: PVQ = 0<br>
+        Occupations ranked by PVQ descending
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-title"><span class="tag tag-green">GRADE</span> Confidence Grade</div>
+      <div class="box-content">
+        <b>A</b> (7-8 pts): Comprehensive data<br>
+        <b>B</b> (5-6 pts): Most data available<br>
+        <b>C</b> (3-4 pts): Significant gaps<br>
+        <b>D</b> (0-2 pts): Minimal data<br><br>
+        Points from: STQ data (2), TFQ trait coverage (3), LMQ employment/wage/projections (3)
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="arrow">&darr;<div class="arrow-label">Ranked occupations with scores, grades, and detailed breakdowns</div></div>
+
+<!-- PHASE 6: COMPREHENSIVE ANALYSIS -->
+<div class="phase p-analysis">
+  <div class="phase-header">
+    <span class="phase-num">6</span>
+    <div><div class="phase-title">Comprehensive Analysis</div><div class="phase-desc">Additional analyses computed from the scored results</div></div>
+  </div>
+  <div class="boxes boxes-3">
+    <div class="box">
+      <div class="box-title"><span class="tag tag-cyan">VQ/TSP</span> Earning Capacity</div>
+      <div class="box-content">
+        VQ regression (24 weights &rarr; score 68-158)<br>
+        Band classification (1-4)<br>
+        TSP: Transferable Skills % (0-97%)<br>
+        ECLR geographic wage adjustment<br>
+        95% confidence intervals
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-title"><span class="tag tag-cyan">CPC</span> Component Profile Analysis</div>
+      <div class="box-content">
+        Numeric CPC code assigned<br>
+        Worker vs occupation similarity<br>
+        Gap analysis (strengths vs market demands)<br>
+        Profile breadth (narrow/moderate/broad)<br>
+        Labor market summary for matched occupations
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-title"><span class="tag tag-cyan">RFC</span> Residual Functional Capacity</div>
+      <div class="box-content">
+        Functional exertion level narrative<br>
+        Strengths and limitations summary<br>
+        Physical demands description<br>
+        Cognitive aptitude assessment<br>
+        Environmental tolerances
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-title"><span class="tag tag-cyan">NEAR</span> Near-Miss Analysis</div>
+      <div class="box-content">
+        Excluded occupations categorized:<br>
+        &bull; Marginal: failed by &lt; 0.5 on 1 trait<br>
+        &bull; Moderate: failed 2-3 traits<br>
+        &bull; Severe: failed 4+ traits<br>
+        Identifies accommodation opportunities
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-title"><span class="tag tag-cyan">VIABLE</span> Viable Set Coherence</div>
+      <div class="box-content">
+        SOC group clustering analysis<br>
+        Score distribution (mean, std dev)<br>
+        Wage range across viable set<br>
+        Coherence score (are results consistent?)<br>
+        Outlier detection
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-title"><span class="tag tag-cyan">LMA</span> Labor Market Access</div>
+      <div class="box-content">
+        Pre vs post injury comparison<br>
+        Occupations accessible before injury<br>
+        Occupations accessible after injury<br>
+        Net access reduction percentage<br>
+        Regional labor market conditions
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="arrow">&darr;<div class="arrow-label">Complete analysis ready for report generation and expert testimony</div></div>
+
+<!-- PHASE 7: OUTPUT -->
+<div class="phase p-composite">
+  <div class="phase-header">
+    <span class="phase-num">7</span>
+    <div><div class="phase-title">Output &amp; Validation</div><div class="phase-desc">Final results with accuracy validation</div></div>
+  </div>
+  <div class="boxes boxes-4">
+    <div class="box result">
+      <div class="box-title">Ranked Occupations</div>
+      <div class="box-content">Each with PVQ, STQ, TFQ, VAQ, LMQ, CPC code, confidence grade, wages, employment</div>
+    </div>
+    <div class="box result">
+      <div class="box-title">Excluded Occupations</div>
+      <div class="box-content">Each with exclusion reason, near-miss severity, which traits failed and by how much</div>
+    </div>
+    <div class="box result">
+      <div class="box-title">Narratives &amp; Analysis</div>
+      <div class="box-content">RFC narrative, viable set coherence, CPC gap analysis, labor market access, zero-viable explanation</div>
+    </div>
+    <div class="box result">
+      <div class="box-title">Validation Report</div>
+      <div class="box-content">363 automated checks verify every score, gate, formula, and data source. Deterministic: same inputs = same outputs, always.</div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<p style="text-align:center; margin-top:48px; color:#475569; font-size:12px;">
+  PVQ-TM v2.0 &mdash; 363 automated tests &mdash; 15 government data sources &mdash; Fully deterministic
+</p>
+
+</body>
+</html>

@@ -12,6 +12,7 @@ import {
   FileText,
   BookOpen,
   HelpCircle,
+  GitBranch,
   Menu,
   X,
 } from "lucide-react";
@@ -22,6 +23,7 @@ const navItems = [
   { href: "/cases", label: "Cases", icon: FolderOpen },
   { href: "/occupations", label: "Occupations", icon: Search },
   { href: "/cpc", label: "CPC Profiles", icon: Fingerprint },
+  { href: "/calculation-flow", label: "Calculation Flow", icon: GitBranch },
   { href: "/methodology", label: "Methodology", icon: BookOpen },
   { href: "/how-it-works", label: "How It Works", icon: HelpCircle },
   { href: "/admin/data-sync", label: "Data Sync", icon: Database },
