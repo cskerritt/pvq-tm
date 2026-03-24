@@ -481,10 +481,15 @@ export async function POST(
       const demand = (demandVector as Record<string, number | null>)[gate.key];
       const capacity = (workerTraits as Record<string, number | null>)[gate.key];
 
+      // Categorical comparison: floor demand to integer category level.
+      // Worker profiles use integers (0-4), O*NET demands may be decimal.
+      // A worker at category 2 should pass demand 2.99 (same category).
+      const demandCategory = demand !== null && demand !== undefined ? Math.floor(demand) : null;
+
       if (
-        demand !== null && demand !== undefined &&
+        demandCategory !== null &&
         capacity !== null && capacity !== undefined &&
-        capacity < demand
+        capacity < demandCategory
       ) {
         if (gate.key === "strength") {
           const demandLabel = STRENGTH_LABELS[demand] ?? `Level ${demand}`;

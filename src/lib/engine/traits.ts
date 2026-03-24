@@ -520,6 +520,18 @@ export interface TraitComparison {
 /**
  * Compare a worker's post-profile against an occupation's demands.
  * Returns comparison for each of the 24 traits.
+ *
+ * CATEGORICAL TOLERANCE: Worker profiles use integer values (0-4)
+ * representing categorical levels (Not Present, Seldom, Occasionally,
+ * Frequently, Constantly). Occupation demands from O*NET may produce
+ * decimal values (e.g., 2.01, 3.47) that fall WITHIN the same
+ * categorical band. To prevent false exclusions where both worker
+ * and occupation are in the same category, demands are floored to
+ * their integer category for the pass/fail comparison.
+ *
+ * Example: worker climbBalance=2 (Occasionally) vs demand=2.48
+ * (also Occasionally) → floor(2.48)=2, margin=0 → PASS
+ * Without this: margin = 2 - 2.48 = -0.48 → FALSE FAIL
  */
 export function compareTraits(
   workerProfile: TraitVector,
@@ -534,11 +546,14 @@ export function compareTraits(
     let passes = true;
 
     if (capacity !== null && demand !== null) {
-      // For aptitudes: worker must meet or exceed demand level
-      // For physical: worker capacity must meet or exceed demand
-      // For environmental: worker tolerance must meet or exceed exposure
-      margin = capacity - demand;
-      passes = margin >= 0;
+      // Floor the demand to its categorical integer level for comparison.
+      // This ensures that a worker at category N passes against any demand
+      // within category N (e.g., worker=2 passes demand=2.99 since both
+      // are "Occasionally"). The raw margin is still computed for TFQ
+      // reserve scoring but the pass/fail uses categorical comparison.
+      const demandCategory = Math.floor(demand);
+      margin = capacity - demand; // raw margin for TFQ scoring
+      passes = capacity >= demandCategory; // categorical pass/fail
     }
 
     return {
