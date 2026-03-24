@@ -3,6 +3,10 @@
  *
  * Uses JSON module imports (resolved by Turbopack/webpack) instead of
  * fs/path/process.cwd to avoid Edge Runtime warnings in Next.js.
+ *
+ * All loaders use module-level caching to avoid re-parsing large JSON
+ * files on every call. The O*NET full dataset is 26 MB — without caching,
+ * every API call that touches O*NET data would re-parse it.
  */
 
 export interface ORSOccupationData {
@@ -24,26 +28,6 @@ export interface OEWSOccupationData {
   p90: number | null; // annual 90th percentile
 }
 
-/**
- * Load ORS dataset from bundled JSON.
- * Returns a map of 6-digit SOC code → ORS data.
- */
-export async function loadORSData(): Promise<Record<string, ORSOccupationData>> {
-  // Dynamic JSON import — resolved by the bundler, no fs/path needed
-  const data = await import("@/data/ors-data.json");
-  return data.default as unknown as Record<string, ORSOccupationData>;
-}
-
-/**
- * Load OEWS dataset from bundled JSON.
- * Returns a map of SOC code (format "XX-XXXX") → OEWS wage data.
- */
-export async function loadOEWSData(): Promise<Record<string, OEWSOccupationData>> {
-  // Dynamic JSON import — resolved by the bundler, no fs/path needed
-  const data = await import("@/data/oews-data.json");
-  return data.default as unknown as Record<string, OEWSOccupationData>;
-}
-
 export interface DOTOccupationData {
   t: string;       // title
   s: number;       // SVP (1-9)
@@ -58,27 +42,9 @@ export interface DOTOccupationData {
   xw?: string;     // O*NET crosswalk code (old format)
 }
 
-/**
- * Load DOT dataset from bundled JSON.
- * Returns a map of DOT code (format "XXX.XXX-XXX") → DOT occupation data.
- */
-export async function loadDOTData(): Promise<Record<string, DOTOccupationData>> {
-  const data = await import("@/data/dot-data.json");
-  return data.default as unknown as Record<string, DOTOccupationData>;
-}
-
 export interface ONETOccupationData {
   t: string;       // title
   jz: number | null; // job zone
-}
-
-/**
- * Load O*NET occupation list from bundled JSON (lightweight — 62 KB).
- * Returns a map of O*NET code (format "XX-XXXX.XX") → basic occupation data.
- */
-export async function loadONETData(): Promise<Record<string, ONETOccupationData>> {
-  const data = await import("@/data/onet-occupations.json");
-  return data.default as unknown as Record<string, ONETOccupationData>;
 }
 
 /** Compact element entry in the full O*NET dataset */
@@ -144,19 +110,6 @@ export interface ONETFullOccupationData {
   at?: string[];           // alternate titles
 }
 
-/**
- * Load complete O*NET 30.2 dataset from bundled JSON (26 MB).
- * Contains ALL data for 1,016 occupations: tasks, skills, abilities,
- * knowledge, work activities, work context, tools/tech, DWAs,
- * related occupations, work styles, interests, education, alternate titles.
- *
- * Returns a map of O*NET code (format "XX-XXXX.XX") → full occupation data.
- */
-export async function loadONETFullData(): Promise<Record<string, ONETFullOccupationData>> {
-  const data = await import("@/data/onet-full.json");
-  return data.default as unknown as Record<string, ONETFullOccupationData>;
-}
-
 export interface JOLTSYearData {
   jo: number | null; // job openings (thousands)
   hi: number | null; // hires (thousands)
@@ -167,30 +120,9 @@ export interface JOLTSIndustryData {
   d: Record<string, JOLTSYearData>;   // year → data
 }
 
-/**
- * Load JOLTS (Job Openings and Labor Turnover Survey) data from bundled JSON.
- * Source: BLS Public Data API v2 — JOLTS series JTU*JOL and JTU*HIL.
- * Returns a map of NAICS industry code → { name, yearlyData }.
- * Values are in thousands (matching raw BLS format).
- */
 export interface MetroOEWSData {
   n: string; // Metro area name
   o: Record<string, number>; // SOC code → employment count
-}
-
-/**
- * Load metro-area OEWS employment data from bundled JSON.
- * Returns a map of BLS area code → { name, occupations: { socCode → employment } }
- * Contains 393 metropolitan areas with per-occupation employment counts.
- */
-export async function loadMetroOEWSData(): Promise<Record<string, MetroOEWSData>> {
-  const data = await import("@/data/oews-metro-data.json");
-  return data.default as unknown as Record<string, MetroOEWSData>;
-}
-
-export async function loadJOLTSData(): Promise<Record<string, JOLTSIndustryData>> {
-  const data = await import("@/data/jolts-data.json");
-  return data.default as unknown as Record<string, JOLTSIndustryData>;
 }
 
 export interface BLSProjectionsData {
@@ -202,12 +134,113 @@ export interface BLSProjectionsData {
   oa: number | null; // annual openings (avg 2024-34)
 }
 
+// ─── Module-Level Caches ─────────────────────────────────────────────
+
+let _orsCache: Record<string, ORSOccupationData> | null = null;
+let _oewsCache: Record<string, OEWSOccupationData> | null = null;
+let _dotCache: Record<string, DOTOccupationData> | null = null;
+let _onetCache: Record<string, ONETOccupationData> | null = null;
+let _onetFullCache: Record<string, ONETFullOccupationData> | null = null;
+let _metroOewsCache: Record<string, MetroOEWSData> | null = null;
+let _joltsCache: Record<string, JOLTSIndustryData> | null = null;
+let _blsProjectionsCache: Record<string, BLSProjectionsData> | null = null;
+
+// ─── Cached Loaders ─────────────────────────────────────────────────
+
+/**
+ * Load ORS dataset from bundled JSON.
+ * Returns a map of 6-digit SOC code → ORS data.
+ */
+export async function loadORSData(): Promise<Record<string, ORSOccupationData>> {
+  if (!_orsCache) {
+    const data = await import("@/data/ors-data.json");
+    _orsCache = data.default as unknown as Record<string, ORSOccupationData>;
+  }
+  return _orsCache;
+}
+
+/**
+ * Load OEWS dataset from bundled JSON.
+ * Returns a map of SOC code (format "XX-XXXX") → OEWS wage data.
+ */
+export async function loadOEWSData(): Promise<Record<string, OEWSOccupationData>> {
+  if (!_oewsCache) {
+    const data = await import("@/data/oews-data.json");
+    _oewsCache = data.default as unknown as Record<string, OEWSOccupationData>;
+  }
+  return _oewsCache;
+}
+
+/**
+ * Load DOT dataset from bundled JSON.
+ * Returns a map of DOT code (format "XXX.XXX-XXX") → DOT occupation data.
+ */
+export async function loadDOTData(): Promise<Record<string, DOTOccupationData>> {
+  if (!_dotCache) {
+    const data = await import("@/data/dot-data.json");
+    _dotCache = data.default as unknown as Record<string, DOTOccupationData>;
+  }
+  return _dotCache;
+}
+
+/**
+ * Load O*NET occupation list from bundled JSON (lightweight — 62 KB).
+ * Returns a map of O*NET code (format "XX-XXXX.XX") → basic occupation data.
+ */
+export async function loadONETData(): Promise<Record<string, ONETOccupationData>> {
+  if (!_onetCache) {
+    const data = await import("@/data/onet-occupations.json");
+    _onetCache = data.default as unknown as Record<string, ONETOccupationData>;
+  }
+  return _onetCache;
+}
+
+/**
+ * Load complete O*NET 30.2 dataset from bundled JSON (26 MB).
+ * Contains ALL data for 1,016 occupations: tasks, skills, abilities,
+ * knowledge, work activities, work context, tools/tech, DWAs,
+ * related occupations, work styles, interests, education, alternate titles.
+ *
+ * Returns a map of O*NET code (format "XX-XXXX.XX") → full occupation data.
+ */
+export async function loadONETFullData(): Promise<Record<string, ONETFullOccupationData>> {
+  if (!_onetFullCache) {
+    const data = await import("@/data/onet-full.json");
+    _onetFullCache = data.default as unknown as Record<string, ONETFullOccupationData>;
+  }
+  return _onetFullCache;
+}
+
+/**
+ * Load metro-area OEWS employment data from bundled JSON.
+ * Returns a map of BLS area code → { name, occupations: { socCode → employment } }
+ * Contains 393 metropolitan areas with per-occupation employment counts.
+ */
+export async function loadMetroOEWSData(): Promise<Record<string, MetroOEWSData>> {
+  if (!_metroOewsCache) {
+    const data = await import("@/data/oews-metro-data.json");
+    _metroOewsCache = data.default as unknown as Record<string, MetroOEWSData>;
+  }
+  return _metroOewsCache;
+}
+
+export async function loadJOLTSData(): Promise<Record<string, JOLTSIndustryData>> {
+  if (!_joltsCache) {
+    const data = await import("@/data/jolts-data.json");
+    _joltsCache = data.default as unknown as Record<string, JOLTSIndustryData>;
+  }
+  return _joltsCache;
+}
+
 /**
  * Load BLS Employment Projections 2024-2034 from bundled JSON.
  * Source: BLS Table 1.10 "Occupational projections and worker characteristics"
  * Returns a map of SOC code (format "XX-XXXX") → projections data.
  */
 export async function loadBLSProjectionsData(): Promise<Record<string, BLSProjectionsData>> {
-  const data = await import("@/data/bls-projections.json");
-  return data.default as unknown as Record<string, BLSProjectionsData>;
+  if (!_blsProjectionsCache) {
+    const data = await import("@/data/bls-projections.json");
+    _blsProjectionsCache = data.default as unknown as Record<string, BLSProjectionsData>;
+  }
+  return _blsProjectionsCache;
 }

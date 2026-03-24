@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 
 /**
@@ -6,8 +6,18 @@ import { prisma } from "@/lib/db";
  * Runs raw SQL to add any missing columns to the production database.
  * Uses IF NOT EXISTS so it's safe to run multiple times.
  * DELETE THIS FILE after the production schema is fixed.
+ *
+ * Protected by ADMIN_SECRET environment variable.
  */
-export async function POST() {
+export async function POST(req: NextRequest) {
+  // Require admin secret for destructive operations
+  const adminSecret = process.env.ADMIN_SECRET;
+  if (adminSecret) {
+    const authHeader = req.headers.get("x-admin-secret") ?? req.nextUrl.searchParams.get("secret");
+    if (authHeader !== adminSecret) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
   try {
     const statements = [
       // ============ Analysis table ============

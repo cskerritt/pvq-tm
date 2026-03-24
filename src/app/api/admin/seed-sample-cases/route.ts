@@ -1301,6 +1301,15 @@ const TARGET_ONET_TITLES: Record<string, string> = {
 // ─── Main Route Handler ────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
+  // Require admin secret for data-seeding operations
+  const adminSecret = process.env.ADMIN_SECRET;
+  if (adminSecret) {
+    const authHeader = req.headers.get("x-admin-secret") ?? req.nextUrl.searchParams.get("secret");
+    if (authHeader !== adminSecret) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
+
   const { count = 500 } = await req.json().catch(() => ({ count: 500 }));
   const total = Math.min(count, 500);
   const results: string[] = [];

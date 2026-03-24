@@ -37,7 +37,7 @@ export default function NewCasePage() {
           setMetroAreaName(data.areaName ?? "");
         }
       } catch {
-        // Silent
+        setMetroAreaName("(Lookup failed — enter manually or retry)");
       }
       setLookingUpZip(false);
     } else {

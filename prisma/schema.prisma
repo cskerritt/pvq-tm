@@ -83,6 +83,7 @@ model OccupationWages {
   createdAt   DateTime @default(now())
 
   @@unique([onetSocCode, areaType, areaCode, year])
+  @@index([onetSocCode])
 }
 
 model OccupationProjections {
@@ -237,6 +238,9 @@ model PastRelevantWork {
   case           Case           @relation(fields: [caseId], references: [id], onDelete: Cascade)
   dotOcc         OccupationDOT? @relation(fields: [dotCode], references: [id])
   acquiredSkills AcquiredSkill[]
+
+  @@index([caseId])
+  @@index([onetSocCode])
 }
 
 model AcquiredSkill {
@@ -260,6 +264,9 @@ model AcquiredSkill {
 
   case Case             @relation(fields: [caseId], references: [id], onDelete: Cascade)
   prw  PastRelevantWork @relation(fields: [prwId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([prwId])
 }
 
 model Analysis {
@@ -310,6 +317,8 @@ model Analysis {
 
   case              Case               @relation(fields: [caseId], references: [id], onDelete: Cascade)
   targetOccupations TargetOccupation[]
+
+  @@index([caseId])
 }
 
 model TargetOccupation {
@@ -398,6 +407,9 @@ model TargetOccupation {
 
   analysis Analysis       @relation(fields: [analysisId], references: [id], onDelete: Cascade)
   onetOcc  OccupationONET @relation(fields: [onetSocCode], references: [id])
+
+  @@index([analysisId])
+  @@index([onetSocCode])
 }
 
 model DataSyncLog {
