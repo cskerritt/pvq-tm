@@ -28,7 +28,7 @@ export async function GET(
           },
         },
         profiles: {
-          where: { profileType: "POST_INJURY" },
+          where: { profileType: "POST" },
           select: {
             reasoning: true,
             math: true,

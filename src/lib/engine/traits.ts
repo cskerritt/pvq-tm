@@ -185,7 +185,7 @@ export function normalizeDOTGED(gedLevel: number): number {
  */
 export function normalizeONETScore(score: number, maxScale = 100): number {
   const normalized = (score / maxScale) * 4;
-  return Math.round(Math.min(4, Math.max(0, normalized)));
+  return Math.round(Math.min(4, Math.max(0, normalized)) * 100) / 100;
 }
 
 /**

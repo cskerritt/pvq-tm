@@ -208,14 +208,17 @@ describe("B. Trait Normalization", () => {
     expect(normalizeDOTAptitude(5)).toBe(0); // lowest
   });
 
-  it("B4: O*NET score normalization produces 0-4 range", () => {
+  it("B4: O*NET score normalization produces 0-4 range with 2-decimal precision", () => {
     // Default maxScale=100 (O*NET importance scores are 0-100)
     expect(normalizeONETScore(0)).toBe(0);
     expect(normalizeONETScore(50)).toBe(2);
     expect(normalizeONETScore(100)).toBe(4);
+    expect(normalizeONETScore(75)).toBe(3); // 75/100*4 = 3.0
+    expect(normalizeONETScore(33)).toBeCloseTo(1.32, 2); // 33/100*4 = 1.32
     // Custom maxScale=7 (O*NET level scores)
     expect(normalizeONETScore(0, 7)).toBe(0);
     expect(normalizeONETScore(7, 7)).toBe(4);
+    expect(normalizeONETScore(3.5, 7)).toBe(2); // 3.5/7*4 = 2.0
   });
 
   it("B5: All 24 trait keys defined", () => {

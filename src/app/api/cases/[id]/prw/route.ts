@@ -66,14 +66,26 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: "PRW record not found for this case" }, { status: 404 });
     }
 
-    const { id: recordId, ...fields } = body;
+    const { id: recordId, ...rawFields } = body;
+
+    // Whitelist allowed fields to prevent caseId/createdAt tampering
+    const ALLOWED_FIELDS = [
+      "jobTitle", "employer", "dotCode", "onetSocCode", "svp", "skillLevel",
+      "strengthLevel", "startDate", "endDate", "durationMonths",
+      "dutiesDescription", "isSubstantialGainful", "actualWageHourly",
+      "actualWageAnnual", "wageYear", "hoursPerWeek",
+    ];
+    const fields: Record<string, unknown> = {};
+    for (const key of ALLOWED_FIELDS) {
+      if (key in rawFields) fields[key] = rawFields[key];
+    }
 
     // Convert date strings to Date objects if present
     if (fields.startDate !== undefined) {
-      fields.startDate = fields.startDate ? new Date(fields.startDate) : null;
+      fields.startDate = fields.startDate ? new Date(fields.startDate as string) : null;
     }
     if (fields.endDate !== undefined) {
-      fields.endDate = fields.endDate ? new Date(fields.endDate) : null;
+      fields.endDate = fields.endDate ? new Date(fields.endDate as string) : null;
     }
 
     const updated = await prisma.pastRelevantWork.update({

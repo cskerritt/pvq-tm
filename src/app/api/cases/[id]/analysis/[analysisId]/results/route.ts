@@ -6,10 +6,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string; analysisId: string }> }
 ) {
   try {
-  const { analysisId } = await params;
+  const { id, analysisId } = await params;
 
   const analysis = await prisma.analysis.findUnique({
-    where: { id: analysisId },
+    where: { id: analysisId, caseId: id },
     include: {
       targetOccupations: {
         orderBy: [{ excluded: "asc" }, { pvq: "desc" }],

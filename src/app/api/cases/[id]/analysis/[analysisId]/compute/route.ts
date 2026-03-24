@@ -103,7 +103,7 @@ export async function POST(
   const { id, analysisId } = await params;
 
   const analysis = await prisma.analysis.findUnique({
-    where: { id: analysisId },
+    where: { id: analysisId, caseId: id },
   });
   if (!analysis) {
     return NextResponse.json({ error: "Analysis not found" }, { status: 404 });
@@ -296,6 +296,37 @@ export async function POST(
   const orsMap = Object.fromEntries(
     orsRecords.map((o) => [o.onetSocCode, o])
   );
+
+  // ─── Batch-fetch wages and projections (eliminates N+1 queries) ───
+  const allTargetSocShort = [...new Set(allTargetOnetCodes.map((c) => c.replace(/\.\d+$/, "")))];
+  const [allNationalWages, allAreaWages, allProjections] = await Promise.all([
+    prisma.occupationWages.findMany({
+      where: { onetSocCode: { in: allTargetOnetCodes }, areaType: "national" },
+      orderBy: { year: "desc" },
+    }),
+    eclrAreaCode
+      ? prisma.occupationWages.findMany({
+          where: { onetSocCode: { in: allTargetOnetCodes }, areaCode: eclrAreaCode },
+          orderBy: { year: "desc" },
+        })
+      : Promise.resolve([]),
+    prisma.occupationProjections.findMany({
+      where: { socCode: { in: allTargetSocShort } },
+    }),
+  ]);
+  // Build lookup maps (take first = most recent year due to orderBy)
+  const nationalWageMap = new Map<string, (typeof allNationalWages)[number]>();
+  for (const w of allNationalWages) {
+    if (!nationalWageMap.has(w.onetSocCode)) nationalWageMap.set(w.onetSocCode, w);
+  }
+  const areaWageMap = new Map<string, (typeof allAreaWages)[number]>();
+  for (const w of allAreaWages) {
+    if (!areaWageMap.has(w.onetSocCode)) areaWageMap.set(w.onetSocCode, w);
+  }
+  const projectionsMap = new Map<string, (typeof allProjections)[number]>();
+  for (const p of allProjections) {
+    if (!projectionsMap.has(p.socCode)) projectionsMap.set(p.socCode, p);
+  }
 
   // Pre-extract PRW DOT data for STQ and VAQ
   const prwDotOccs = prwDotCodes.map((c) => dotMap[c]).filter(Boolean);
@@ -637,24 +668,15 @@ export async function POST(
     );
 
     // ─── LMQ ────────────────────────────────────────────────────────
-    const wages = await prisma.occupationWages.findFirst({
-      where: { onetSocCode: target.onetSocCode, areaType: "national" },
-      orderBy: { year: "desc" },
-    });
-    const projections = await prisma.occupationProjections.findFirst({
-      where: {
-        socCode: target.onetSocCode.replace(/\.\d+$/, ""),  // "43-4051.00" → "43-4051"
-      },
-    });
+    const wages = nationalWageMap.get(target.onetSocCode) ?? null;
+    const socShort = target.onetSocCode.replace(/\.\d+$/, "");
+    const projections = projectionsMap.get(socShort) ?? null;
 
     // ─── Area-Level Employment Lookup ─────────────────────────────
     let targetAreaEmployment: number | null = null;
     let targetAreaMedianWage: number | null = null;
     if (eclrAreaCode) {
-      const areaWages = await prisma.occupationWages.findFirst({
-        where: { onetSocCode: target.onetSocCode, areaCode: eclrAreaCode },
-        orderBy: { year: "desc" },
-      });
+      const areaWages = areaWageMap.get(target.onetSocCode) ?? null;
       targetAreaEmployment = areaWages?.employment ?? null;
       targetAreaMedianWage = areaWages?.medianWage ?? null;
     }
@@ -917,7 +939,7 @@ export async function POST(
     : null;
 
   await prisma.analysis.update({
-    where: { id: analysisId },
+    where: { id: analysisId, caseId: id },
     data: {
       step: 5,
       status: "completed",
@@ -1320,7 +1342,7 @@ export async function POST(
 
   // ── Save Comprehensive Analysis Results ─────────────────────────
   await prisma.analysis.update({
-    where: { id: analysisId },
+    where: { id: analysisId, caseId: id },
     data: {
       nearMissAnalysis: nearMissResult ? JSON.parse(JSON.stringify(nearMissResult)) : null,
       rfcNarrative: rfcResult ? JSON.parse(JSON.stringify(rfcResult)) : null,

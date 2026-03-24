@@ -317,7 +317,9 @@ export async function POST(req: NextRequest) {
       {
         success: false,
         error: error instanceof Error ? error.message : "Internal server error",
-        stack: error instanceof Error ? error.stack : undefined,
+        ...(process.env.NODE_ENV !== "production" && error instanceof Error
+          ? { stack: error.stack }
+          : {}),
       },
       { status: 500 }
     );

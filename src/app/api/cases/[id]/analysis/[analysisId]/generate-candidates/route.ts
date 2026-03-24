@@ -12,6 +12,9 @@ export async function POST(
   try {
   const { id, analysisId } = await params;
 
+  // Clear any existing candidates from previous runs to prevent duplicates
+  await prisma.targetOccupation.deleteMany({ where: { analysisId } });
+
   // Fetch the case's POST profile for strength data
   const postProfile = await prisma.workerProfile.findFirst({
     where: { caseId: id, profileType: "POST" },
@@ -107,7 +110,7 @@ export async function POST(
   }
 
   await prisma.analysis.update({
-    where: { id: analysisId },
+    where: { id: analysisId, caseId: id },
     data: { step: 3, status: "in_progress" },
   });
 

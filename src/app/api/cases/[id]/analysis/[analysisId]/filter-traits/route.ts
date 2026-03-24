@@ -270,7 +270,7 @@ export async function POST(
   }
 
   await prisma.analysis.update({
-    where: { id: analysisId },
+    where: { id: analysisId, caseId: id },
     data: { step: 4 },
   });
 
