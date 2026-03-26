@@ -663,11 +663,13 @@ export default function AnalysisPage() {
             </Button>
           ))}
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             onClick={() => setActive(null)}
+            className="border-dashed border-2"
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-4 w-4 mr-1" />
+            New Analysis
           </Button>
         </div>
       )}
