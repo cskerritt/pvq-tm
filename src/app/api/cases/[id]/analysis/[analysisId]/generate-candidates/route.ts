@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import {
   generateCandidates,
   generateCPCCandidates,
+  generateStrengthAwareCandidates,
 } from "@/lib/engine/candidates";
 
 export async function POST(
@@ -64,7 +65,32 @@ export async function POST(
     console.warn("[generate-candidates] CPC candidate generation failed:", cpcError);
   }
 
-  // Merge traditional + CPC candidates, deduplicating by O*NET code
+  // Phase 3: Strength-Aware Crosswalk — finds sedentary/light occupations
+  // that share cognitive/knowledge skills with PRW. Only activates when
+  // the worker has light/sedentary restrictions (postStrength <= 2).
+  // This is critical for trade workers (carpenters, construction) who
+  // otherwise only get other heavy-duty candidates from Phases 1 & 2.
+  const phase12Codes = new Set([
+    ...traditionalCandidates.map((c) => c.onetSocCode).filter(Boolean),
+    ...cpcCandidates.map((c) => c.onetSocCode).filter(Boolean),
+  ]);
+
+  let strengthCrosswalkCandidates: Awaited<ReturnType<typeof generateStrengthAwareCandidates>> = [];
+  try {
+    strengthCrosswalkCandidates = await generateStrengthAwareCandidates(
+      prwOnetCodes,
+      maxSvp,
+      postProfile?.strength ?? null,
+      phase12Codes
+    );
+    console.log(
+      `[generate-candidates] Strength crosswalk found ${strengthCrosswalkCandidates.length} sedentary/light candidates`
+    );
+  } catch (crosswalkError) {
+    console.warn("[generate-candidates] Strength crosswalk failed:", crosswalkError);
+  }
+
+  // Merge traditional + CPC + strength-crosswalk candidates, deduplicating by O*NET code
   const candidateMap = new Map<string, (typeof traditionalCandidates)[number]>();
   for (const c of traditionalCandidates) {
     if (c.onetSocCode && !candidateMap.has(c.onetSocCode)) {
@@ -76,9 +102,14 @@ export async function POST(
       candidateMap.set(c.onetSocCode, c);
     }
   }
+  for (const c of strengthCrosswalkCandidates) {
+    if (c.onetSocCode && !candidateMap.has(c.onetSocCode)) {
+      candidateMap.set(c.onetSocCode, c);
+    }
+  }
   const allCandidates = [...candidateMap.values()];
   console.log(
-    `[generate-candidates] After dedup: ${allCandidates.length} unique (from ${traditionalCandidates.length} traditional + ${cpcCandidates.length} CPC)`
+    `[generate-candidates] After dedup: ${allCandidates.length} unique (from ${traditionalCandidates.length} traditional + ${cpcCandidates.length} CPC + ${strengthCrosswalkCandidates.length} strength-crosswalk)`
   );
 
   // Store candidates as target occupations
@@ -118,6 +149,7 @@ export async function POST(
     count: created.length,
     traditionalCount: traditionalCandidates.length,
     cpcCount: cpcCandidates.length,
+    strengthCrosswalkCount: strengthCrosswalkCandidates.length,
     candidates: created,
   });
   } catch (error) {

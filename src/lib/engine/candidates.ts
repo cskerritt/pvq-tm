@@ -20,7 +20,7 @@ export interface CandidateOccupation {
   dotCode?: string;
   title: string;
   svp: number;
-  source: "DOT_WF" | "DOT_MPSMS" | "ONET_RELATED" | "ONET_CAREER_CHANGERS" | "ONET_SEARCH" | "CPC_SIMILARITY";
+  source: "DOT_WF" | "DOT_MPSMS" | "ONET_RELATED" | "ONET_CAREER_CHANGERS" | "ONET_SEARCH" | "CPC_SIMILARITY" | "STRENGTH_CROSSWALK";
   similarityScore?: number;
 }
 
@@ -279,5 +279,43 @@ export async function generateCPCCandidates(
     svp: jobZoneToMaxSvp(r.jobZone),
     source: "CPC_SIMILARITY" as const,
     similarityScore: r.cosineSimilarity,
+  }));
+}
+
+/**
+ * Generate additional candidates using the Strength-Aware Crosswalk.
+ *
+ * When a worker has post-injury physical restrictions (light/sedentary),
+ * the traditional pipeline only finds occupations at the same exertional
+ * level as the PRW. This finds sedentary/light occupations that share
+ * cognitive/knowledge components with the PRW — the jobs a carpenter
+ * could actually transition to (estimating, inspection, drafting, etc.).
+ *
+ * Uses "cognitive fingerprinting" — component similarity computed from
+ * only the knowledge, skills, abilities, and work style dimensions,
+ * with physical demand dimensions zeroed out.
+ */
+export async function generateStrengthAwareCandidates(
+  prwOnetCodes: string[],
+  maxSvp: number,
+  postStrength: number | null,
+  existingCodes: Set<string> = new Set()
+): Promise<CandidateOccupation[]> {
+  const { generateStrengthCrosswalkCandidates } =
+    await import("./strength-crosswalk");
+
+  const crosswalkResults = await generateStrengthCrosswalkCandidates(
+    prwOnetCodes,
+    maxSvp,
+    postStrength,
+    existingCodes
+  );
+
+  return crosswalkResults.map((r) => ({
+    onetSocCode: r.onetSocCode,
+    title: r.title,
+    svp: r.svp,
+    source: "STRENGTH_CROSSWALK" as const,
+    similarityScore: r.similarityScore,
   }));
 }
