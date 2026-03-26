@@ -247,6 +247,52 @@ export async function POST(
   // Non-excluded targets get full scoring; excluded targets still get analysis
   const targets = allTargetsInAnalysis.filter(t => !t.excluded);
 
+  // ─── Backfill O*NET records that are placeholders (null tasks) ──────
+  // This catches targets generated before the enrichment fix
+  const targetsNeedingEnrichment = allTargetsInAnalysis.filter(
+    (t) => t.onetOcc && !t.onetOcc.tasks
+  );
+  if (targetsNeedingEnrichment.length > 0) {
+    const { loadONETFullData } = await import("@/lib/data-loaders");
+    const onetFullData = await loadONETFullData();
+    let backfillCount = 0;
+    for (const t of targetsNeedingEnrichment) {
+      const fullData = onetFullData[t.onetSocCode];
+      if (fullData) {
+        // Cast JSON arrays through unknown → JSON-compatible for Prisma
+        const jsonOrNull = (v: unknown) => v ? JSON.parse(JSON.stringify(v)) : undefined;
+        await prisma.occupationONET.update({
+          where: { id: t.onetSocCode },
+          data: {
+            title: fullData.t || t.onetOcc!.title,
+            description: fullData.d || null,
+            tasks: jsonOrNull(fullData.ta),
+            dwas: jsonOrNull(fullData.dw),
+            toolsTech: jsonOrNull(fullData.tt),
+            knowledge: jsonOrNull(fullData.kn),
+            skills: jsonOrNull(fullData.sk),
+            abilities: jsonOrNull(fullData.ab),
+            workActivities: jsonOrNull(fullData.wa),
+            workContext: jsonOrNull(fullData.wc),
+            jobZone: fullData.jz || null,
+            relatedOccs: jsonOrNull(fullData.ro),
+          },
+        });
+        backfillCount++;
+      }
+    }
+    if (backfillCount > 0) {
+      console.log(`[compute] Backfilled ${backfillCount} O*NET placeholder records`);
+      // Reload targets with enriched data
+      const refreshedTargets = await prisma.targetOccupation.findMany({
+        where: { analysisId },
+        include: { onetOcc: true },
+      });
+      allTargetsInAnalysis.splice(0, allTargetsInAnalysis.length, ...refreshedTargets);
+      targets.splice(0, targets.length, ...refreshedTargets.filter(t => !t.excluded));
+    }
+  }
+
   // ─── Batch-fetch all DOT records (avoids N+1 queries) ───────────────
 
   const prwDotCodes = prwList
@@ -373,73 +419,156 @@ export async function POST(
     let sourceTasks = acquiredSkillTasks;
     if (acquiredSkillTasks.length === 0 && prwOnetOccs.length > 0) {
       sourceTasks = prwOnetOccs.flatMap((occ) =>
-        ((occ.tasks as { t?: string; id?: string }[]) ?? []).map(
-          (t) => t.t ?? ""
+        ((occ.tasks as { t?: string; title?: string; id?: string }[]) ?? []).map(
+          (t) => t.title ?? t.t ?? ""
         ).filter(Boolean)
       );
-      if (sourceTasks.length > 0) {
-        console.log(`[compute] No acquired skills; using ${sourceTasks.length} O*NET tasks as fallback for STQ`);
+    }
+    // ALWAYS supplement with O*NET tasks even when acquired skills exist
+    // (acquired skills are usually 3-5 items; O*NET tasks are 15-25)
+    if (prwOnetOccs.length > 0) {
+      const onetTasks = prwOnetOccs.flatMap((occ) =>
+        ((occ.tasks as { t?: string; title?: string }[]) ?? []).map(
+          (t) => t.title ?? t.t ?? ""
+        ).filter(Boolean)
+      );
+      // Merge without duplicating
+      const taskSet = new Set(sourceTasks.map(t => t.toLowerCase()));
+      for (const t of onetTasks) {
+        if (!taskSet.has(t.toLowerCase())) {
+          sourceTasks.push(t);
+          taskSet.add(t.toLowerCase());
+        }
       }
     }
 
+    // FIX GAP 1: Source DWAs — load actual O*NET DWAs from PRW occupations
+    // Previously only DPT labels like "Data: 1-Coordinating" were used.
+    // Now we load real DWAs like "Resolve customer complaints" from O*NET.
+    const sourceDWAsFromONET = prwOnetOccs.flatMap((occ) =>
+      ((occ.dwas as { title?: string; t?: string }[]) ?? []).map(
+        (d) => d.title ?? d.t ?? ""
+      ).filter(Boolean)
+    );
+    const allSourceDWAs = [...sourceDPTDescriptors, ...sourceDWAsFromONET];
+
     // Source tools: from acquired skills + O*NET tools from PRW occupations
+    // ALWAYS merge both sources — acquired skills may only list 2-3 tools
     const acquiredTools = prwList.flatMap((p) =>
       p.acquiredSkills
         .filter((s) => s.toolsSoftware)
         .map((s) => s.toolsSoftware!)
     );
-    const sourceTools = acquiredTools.length > 0
-      ? acquiredTools
-      : prwOnetOccs.flatMap((occ) =>
-          ((occ.toolsTech as { t?: string }[]) ?? []).map((t) => t.t ?? "").filter(Boolean)
-        );
+    const onetSourceTools = prwOnetOccs.flatMap((occ) =>
+      ((occ.toolsTech as { t?: string; title?: string }[]) ?? []).map(
+        (t) => t.title ?? t.t ?? ""
+      ).filter(Boolean)
+    );
+    // Merge both — acquired skills are primary, O*NET fills gaps
+    const sourceToolSet = new Set(acquiredTools.map(t => t.toLowerCase()));
+    const sourceTools = [...acquiredTools];
+    for (const t of onetSourceTools) {
+      if (!sourceToolSet.has(t.toLowerCase())) {
+        sourceTools.push(t);
+        sourceToolSet.add(t.toLowerCase());
+      }
+    }
 
-    // Source materials: from acquired skills + O*NET tools categorized as materials
+    // FIX GAP 3: Source materials — add O*NET tool categories as fallback
     const acquiredMaterials = prwList.flatMap((p) =>
       p.acquiredSkills
         .filter((s) => s.materialsServices)
         .map((s) => s.materialsServices!)
     );
+    const onetSourceMaterials = prwOnetOccs.flatMap((occ) =>
+      ((occ.toolsTech as { c?: string; category?: string }[]) ?? []).map(
+        (t) => t.category ?? t.c ?? ""
+      ).filter(Boolean)
+    );
+    const sourceMaterials = acquiredMaterials.length > 0
+      ? acquiredMaterials
+      : [...new Set(onetSourceMaterials)]; // deduplicate categories
 
-    // Source knowledge: populated from PRW O*NET knowledge areas (was always empty before)
+    // Source knowledge: populated from PRW O*NET knowledge areas
     const sourceKnowledge = prwOnetOccs.flatMap((occ) =>
-      ((occ.knowledge as { n?: string }[]) ?? []).map((k) => k.n ?? "").filter(Boolean)
+      ((occ.knowledge as { n?: string; name?: string }[]) ?? []).map(
+        (k) => k.name ?? k.n ?? ""
+      ).filter(Boolean)
     );
 
-    // Target materials: populate from O*NET tools/tech categories (was always empty before)
-    const targetMaterials = (
-      (target.onetOcc?.toolsTech as { t?: string; c?: string }[]) ?? []
-    ).map((t) => t.c ?? "").filter(Boolean);
+    // FIX GAP 2: WorkFields/MPSMS from O*NET work activities when DOT is empty
+    // DOT workFields/mpsms are always empty in our seed data, so extract
+    // equivalent data from O*NET work activities as a fallback
+    let effectiveSourceWorkFields = sourceWorkFields;
+    let effectiveSourceMPSMS = sourceMPSMS;
+    if (sourceWorkFields.length === 0 && prwOnetOccs.length > 0) {
+      effectiveSourceWorkFields = prwOnetOccs.flatMap((occ) =>
+        ((occ.workActivities as { name?: string; n?: string }[]) ?? []).map(
+          (wa) => wa.name ?? wa.n ?? ""
+        ).filter(Boolean)
+      );
+    }
+
+    let effectiveTargetWorkFields = targetDotOcc?.workFields ?? [];
+    let effectiveTargetMPSMS = targetDotOcc?.mpsms ?? [];
+    if (effectiveTargetWorkFields.length === 0 && target.onetOcc) {
+      effectiveTargetWorkFields = (
+        (target.onetOcc.workActivities as { name?: string; n?: string }[]) ?? []
+      ).map((wa) => wa.name ?? wa.n ?? "").filter(Boolean);
+    }
+
+    // Target materials: populate from O*NET tools/tech categories
+    const targetMaterials = [
+      ...new Set(
+        ((target.onetOcc?.toolsTech as { t?: string; c?: string; category?: string }[]) ?? [])
+          .map((t) => t.category ?? t.c ?? "")
+          .filter(Boolean)
+      ),
+    ];
+
+    // ─── Diagnostic: log STQ input sizes for debugging ─────────────
+    if (sourceTasks.length === 0 || (
+      ((target.onetOcc?.tasks as unknown[]) ?? []).length === 0
+    )) {
+      console.warn(
+        `[STQ][${target.onetSocCode}] Data gap: sourceTasks=${sourceTasks.length}, ` +
+        `targetTasks=${((target.onetOcc?.tasks as unknown[]) ?? []).length}, ` +
+        `sourceTools=${sourceTools.length}, sourceKnowledge=${sourceKnowledge.length}, ` +
+        `sourceDWAs=${allSourceDWAs.length}, ` +
+        `onetOcc=${target.onetOcc ? 'present' : 'MISSING'}, ` +
+        `onetTasks=${target.onetOcc?.tasks ? 'has data' : 'NULL'}`
+      );
+    }
 
     const stqInput: SkillTransferInput = {
       sourceSvp: Math.max(...prwList.map((p) => p.svp ?? 2), 2),
       sourceTasks,
-      sourceDWAs: sourceDPTDescriptors,
-      sourceWorkFields,
-      sourceMPSMS,
+      sourceDWAs: allSourceDWAs,
+      sourceWorkFields: effectiveSourceWorkFields,
+      sourceMPSMS: effectiveSourceMPSMS,
       sourceTools,
-      sourceMaterials: acquiredMaterials,
+      sourceMaterials,
       sourceKnowledge,
       targetSvp: target.svp ?? 2,
       targetTasks: (
         (target.onetOcc?.tasks as { title?: string; statement?: string; t?: string }[]) ??
         []
-      ).map((t) => t.title ?? t.statement ?? t.t ?? ""),
+      ).map((t) => t.title ?? t.statement ?? t.t ?? "").filter(Boolean),
       targetDWAs: [
         ...((target.onetOcc?.dwas as { title?: string; t?: string }[]) ?? []).map(
           (d) => d.title ?? d.t ?? ""
-        ),
+        ).filter(Boolean),
         ...targetDPTDescriptors,
       ],
-      targetWorkFields: targetDotOcc?.workFields ?? [],
-      targetMPSMS: targetDotOcc?.mpsms ?? [],
+      targetWorkFields: effectiveTargetWorkFields,
+      targetMPSMS: effectiveTargetMPSMS,
       targetTools: (
         (target.onetOcc?.toolsTech as { title?: string; t?: string }[]) ?? []
-      ).map((t) => t.title ?? t.t ?? ""),
+      ).map((t) => t.title ?? t.t ?? "").filter(Boolean),
       targetMaterials,
       targetKnowledge: (
         (target.onetOcc?.knowledge as { name?: string; n?: string }[]) ?? []
-      ).map((k) => k.name ?? k.n ?? ""),
+      ).map((k) => k.name ?? k.n ?? "").filter(Boolean),
     };
     const stqResult = computeSTQ(stqInput);
 

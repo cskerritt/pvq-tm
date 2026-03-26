@@ -5,6 +5,7 @@ import {
   generateCPCCandidates,
   generateStrengthAwareCandidates,
 } from "@/lib/engine/candidates";
+import { loadONETFullData, type ONETFullOccupationData } from "@/lib/data-loaders";
 
 export async function POST(
   req: NextRequest,
@@ -112,20 +113,55 @@ export async function POST(
     `[generate-candidates] After dedup: ${allCandidates.length} unique (from ${traditionalCandidates.length} traditional + ${cpcCandidates.length} CPC + ${strengthCrosswalkCandidates.length} strength-crosswalk)`
   );
 
+  // Load full O*NET dataset from local JSON for enrichment
+  const onetFullData = await loadONETFullData();
+
   // Store candidates as target occupations
   const created = [];
+  let enrichedCount = 0;
   for (const c of allCandidates) {
     if (!c.onetSocCode) continue;
 
-    // Ensure O*NET occupation exists in cache
+    // Ensure O*NET occupation exists in cache AND has full data
     let onetOcc = await prisma.occupationONET.findUnique({
       where: { id: c.onetSocCode },
     });
-    if (!onetOcc) {
-      // Create a minimal placeholder
-      onetOcc = await prisma.occupationONET.create({
-        data: { id: c.onetSocCode, title: c.title },
-      });
+
+    const needsEnrichment = !onetOcc || !onetOcc.tasks || !onetOcc.knowledge;
+
+    if (needsEnrichment) {
+      // Enrich from local O*NET JSON data (26MB dataset with full tasks/tools/knowledge)
+      const fullData = onetFullData[c.onetSocCode];
+      if (fullData) {
+        // Cast JSON arrays through stringify/parse for Prisma Json field compatibility
+        const j = (v: unknown) => v ? JSON.parse(JSON.stringify(v)) : undefined;
+        const enrichmentData = {
+          id: c.onetSocCode,
+          title: fullData.t || c.title,
+          description: fullData.d || null,
+          tasks: j(fullData.ta),
+          dwas: j(fullData.dw),
+          toolsTech: j(fullData.tt),
+          knowledge: j(fullData.kn),
+          skills: j(fullData.sk),
+          abilities: j(fullData.ab),
+          workActivities: j(fullData.wa),
+          workContext: j(fullData.wc),
+          jobZone: fullData.jz || null,
+          relatedOccs: j(fullData.ro),
+        };
+        onetOcc = await prisma.occupationONET.upsert({
+          where: { id: c.onetSocCode },
+          update: enrichmentData,
+          create: enrichmentData,
+        });
+        enrichedCount++;
+      } else if (!onetOcc) {
+        // No local data either — create minimal placeholder
+        onetOcc = await prisma.occupationONET.create({
+          data: { id: c.onetSocCode, title: c.title },
+        });
+      }
     }
 
     const target = await prisma.targetOccupation.create({
@@ -138,6 +174,9 @@ export async function POST(
       },
     });
     created.push(target);
+  }
+  if (enrichedCount > 0) {
+    console.log(`[generate-candidates] Enriched ${enrichedCount} O*NET records from local data`);
   }
 
   await prisma.analysis.update({
