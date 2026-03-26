@@ -60,6 +60,35 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params;
+    const { searchParams } = new URL(req.url);
+    const analysisId = searchParams.get("analysisId");
+
+    if (!analysisId) {
+      return NextResponse.json({ error: "Missing analysisId query param" }, { status: 400 });
+    }
+
+    // Verify it belongs to this case
+    const existing = await prisma.analysis.findFirst({
+      where: { id: analysisId, caseId: id },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "Analysis not found" }, { status: 404 });
+    }
+
+    // Delete target occupations first (cascade), then the analysis
+    await prisma.targetOccupation.deleteMany({ where: { analysisId } });
+    await prisma.analysis.delete({ where: { id: analysisId } });
+
+    return NextResponse.json({ success: true, deleted: analysisId });
+  } catch (error) {
+    console.error("[DELETE /api/cases/[id]/analysis]", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;

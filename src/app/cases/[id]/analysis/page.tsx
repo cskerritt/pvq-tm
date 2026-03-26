@@ -48,6 +48,7 @@ import {
   XCircle,
   CheckCircle2,
   RefreshCw,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { CaseBreadcrumb } from "@/components/case-breadcrumb";
@@ -507,6 +508,26 @@ export default function AnalysisPage() {
     }
   }
 
+  async function deleteAnalysis(analysisId: string) {
+    if (!confirm("Delete this analysis and all its results? This cannot be undone.")) return;
+    try {
+      const res = await fetch(
+        `/api/cases/${caseId}/analysis?analysisId=${analysisId}`,
+        { method: "DELETE" }
+      );
+      if (res.ok) {
+        toast.success("Analysis deleted");
+        setActive(null);
+        load();
+      } else {
+        const data = await res.json();
+        toast.error(data.error ?? "Failed to delete analysis");
+      }
+    } catch {
+      toast.error("Failed to delete analysis");
+    }
+  }
+
   // Compute intermediate review data
   const totalOccs = active?.targetOccupations?.length ?? 0;
   const viableOccs = active?.targetOccupations?.filter((t) => !t.excluded) ?? [];
@@ -648,19 +669,29 @@ export default function AnalysisPage() {
 
       {/* Analysis Selector */}
       {analyses.length > 0 && (
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap items-center">
           {analyses.map((a) => (
-            <Button
-              key={a.id}
-              variant={active?.id === a.id ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActive(a)}
-            >
-              {a.name ?? "Analysis"}{" "}
-              <Badge variant="secondary" className="ml-2">
-                {a.status}
-              </Badge>
-            </Button>
+            <div key={a.id} className="flex items-center gap-0.5">
+              <Button
+                variant={active?.id === a.id ? "default" : "outline"}
+                size="sm"
+                onClick={() => setActive(a)}
+              >
+                {a.name ?? "Analysis"}{" "}
+                <Badge variant="secondary" className="ml-2">
+                  {a.status}
+                </Badge>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                onClick={() => deleteAnalysis(a.id)}
+                title="Delete this analysis"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           ))}
           <Button
             variant="outline"
@@ -679,10 +710,26 @@ export default function AnalysisPage() {
         <>
           <Card>
             <CardHeader>
+              <div className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5" />
-                {active.name ?? "Analysis"} \u2014 Step {active.step} of 5
+                {active.name ?? "Analysis"} — Step {active.step} of 5
               </CardTitle>
+              {active.step < 5 && (
+                <Button
+                  size="sm"
+                  onClick={runFullPipeline}
+                  disabled={running || (active.step === 1 && !step1AllPassed)}
+                >
+                  {running ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Play className="mr-2 h-4 w-4" />
+                  )}
+                  {pipelineStep ?? "Run Full Analysis"}
+                </Button>
+              )}
+            </div>
               <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                 {/* Age Rule - inline editable */}
                 <div className="flex items-center gap-1">
@@ -901,15 +948,15 @@ export default function AnalysisPage() {
                       {isCurrent && !s.action && s.num === 4 && (
                         <Button
                           size="sm"
-                          onClick={runFullPipeline}
+                          onClick={() => runStep(5)}
                           disabled={running}
                         >
                           {running ? (
                             <Loader2 className="mr-1 h-3 w-3 animate-spin" />
                           ) : (
-                            <ArrowRight className="mr-1 h-3 w-3" />
+                            <Play className="mr-1 h-3 w-3" />
                           )}
-                          {pipelineStep ? "Running..." : "Compute PVQ"}
+                          Compute PVQ
                         </Button>
                       )}
                     </div>
