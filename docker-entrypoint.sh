@@ -30,6 +30,9 @@ if [ -n "$DATABASE_URL" ]; then
         ALTER TABLE \"TargetOccupation\" ADD COLUMN IF NOT EXISTS \"cpcCode\" TEXT;
         ALTER TABLE \"TargetOccupation\" ADD COLUMN IF NOT EXISTS \"cpcSimilarity\" DOUBLE PRECISION;
         ALTER TABLE \"Analysis\" ADD COLUMN IF NOT EXISTS \"cpcAnalysis\" JSONB;
+        ALTER TABLE \"Analysis\" ADD COLUMN IF NOT EXISTS \"analysisMode\" TEXT DEFAULT 'strict';
+        ALTER TABLE \"TargetOccupation\" ADD COLUMN IF NOT EXISTS \"pendingEvaluatorReview\" BOOLEAN DEFAULT false;
+        ALTER TABLE \"TargetOccupation\" ADD COLUMN IF NOT EXISTS \"hasTolerations\" BOOLEAN DEFAULT false;
       \`).then(() => {
         console.log('Fallback columns added via direct SQL.');
         pool.end();

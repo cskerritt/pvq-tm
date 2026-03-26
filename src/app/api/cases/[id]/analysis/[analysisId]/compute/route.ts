@@ -779,9 +779,8 @@ export async function POST(
         excluded: pvqResult.excluded,
         exclusionReason: pvqResult.exclusionReason,
         confidenceGrade: pvqResult.confidenceGrade,
-        // New fields — stored in vaqDetails/tfqDetails JSON until migration
-        // pendingEvaluatorReview and hasTolerations are part of the PVQ result
-        // and persisted via the vaqDetails/tfqDetails JSON columns
+        pendingEvaluatorReview: pvqResult.pendingEvaluatorReview ?? false,
+        hasTolerations: pvqResult.hasTolerations ?? false,
         // Pre-injury TFQ
         preTfq: preTfqScore,
         preTfqPasses: preTfqPasses,
