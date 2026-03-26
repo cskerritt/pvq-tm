@@ -3,6 +3,31 @@
 if [ -n "$DATABASE_URL" ]; then
   echo "Running Prisma migrations..."
 
+  # ─── Direct SQL: ensure all required columns exist BEFORE migration resolve ──
+  # The resolve loop below marks all migrations as "applied" which prevents
+  # migrate deploy from running new migration SQL. So we run ALTER TABLE
+  # statements directly with IF NOT EXISTS to guarantee columns exist.
+  echo "Ensuring required columns exist via direct SQL..."
+  node -e "
+    const { Pool } = require('pg');
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    pool.query(\`
+      ALTER TABLE \"TargetOccupation\" ADD COLUMN IF NOT EXISTS \"cpcCode\" TEXT;
+      ALTER TABLE \"TargetOccupation\" ADD COLUMN IF NOT EXISTS \"cpcSimilarity\" DOUBLE PRECISION;
+      ALTER TABLE \"Analysis\" ADD COLUMN IF NOT EXISTS \"cpcAnalysis\" JSONB;
+      ALTER TABLE \"Analysis\" ADD COLUMN IF NOT EXISTS \"analysisMode\" TEXT DEFAULT 'strict';
+      ALTER TABLE \"TargetOccupation\" ADD COLUMN IF NOT EXISTS \"pendingEvaluatorReview\" BOOLEAN DEFAULT false;
+      ALTER TABLE \"TargetOccupation\" ADD COLUMN IF NOT EXISTS \"hasTolerations\" BOOLEAN DEFAULT false;
+    \`).then(() => {
+      console.log('All required columns verified/created.');
+      pool.end();
+    }).catch(err => {
+      console.error('Direct SQL column check failed:', err.message);
+      pool.end();
+      process.exit(1);
+    });
+  "
+
   # Auto-resolve any previously failed migrations.
   # Scans the prisma/migrations directory and marks all migrations as applied
   # so migrate deploy only runs truly new ones. This handles the case where
@@ -21,26 +46,7 @@ if [ -n "$DATABASE_URL" ]; then
   if node node_modules/prisma/build/index.js migrate deploy; then
     echo "Migrations complete."
   else
-    echo "WARNING: Migration deploy returned non-zero. Attempting direct SQL fallback..."
-    # Fallback: run critical column additions directly if migrate deploy fails
-    node -e "
-      const { Pool } = require('pg');
-      const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-      pool.query(\`
-        ALTER TABLE \"TargetOccupation\" ADD COLUMN IF NOT EXISTS \"cpcCode\" TEXT;
-        ALTER TABLE \"TargetOccupation\" ADD COLUMN IF NOT EXISTS \"cpcSimilarity\" DOUBLE PRECISION;
-        ALTER TABLE \"Analysis\" ADD COLUMN IF NOT EXISTS \"cpcAnalysis\" JSONB;
-        ALTER TABLE \"Analysis\" ADD COLUMN IF NOT EXISTS \"analysisMode\" TEXT DEFAULT 'strict';
-        ALTER TABLE \"TargetOccupation\" ADD COLUMN IF NOT EXISTS \"pendingEvaluatorReview\" BOOLEAN DEFAULT false;
-        ALTER TABLE \"TargetOccupation\" ADD COLUMN IF NOT EXISTS \"hasTolerations\" BOOLEAN DEFAULT false;
-      \`).then(() => {
-        console.log('Fallback columns added via direct SQL.');
-        pool.end();
-      }).catch(err => {
-        console.error('Direct SQL fallback failed:', err.message);
-        pool.end();
-      });
-    "
+    echo "WARNING: Migration deploy returned non-zero (columns already ensured via direct SQL)."
   fi
 else
   echo "WARNING: DATABASE_URL not set — skipping migrations."
