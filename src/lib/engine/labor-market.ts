@@ -68,55 +68,62 @@ export interface LMQResult {
 }
 
 /**
- * Score national employment count (0-100).
+ * Score national employment count (0-100) using continuous log scaling.
  * Higher employment = more opportunity.
  *
- * Thresholds (national):
- * > 100,000 = 100
- * > 50,000  = 80
- * > 20,000  = 60
- * > 5,000   = 40
- * > 1,000   = 20
- * <= 1,000  = 10
+ * Uses logarithmic interpolation to avoid cliff effects at thresholds.
+ * Approximate mapping:
+ *   100     → 10
+ *   1,000   → 30
+ *   5,000   → 45
+ *   20,000  → 60
+ *   50,000  → 75
+ *   100,000 → 85
+ *   500,000 → 100
  */
 function scoreEmployment(employment: number | null): number {
   if (employment === null) return 50; // neutral if unknown
+  if (employment <= 0) return 5;
 
-  if (employment > 100000) return 100;
-  if (employment > 50000) return 80;
-  if (employment > 20000) return 60;
-  if (employment > 5000) return 40;
-  if (employment > 1000) return 20;
-  return 10;
+  // Log-based continuous scoring: maps ~100 → 10, ~500k → 100
+  const logScore = (Math.log10(Math.max(1, employment)) - 2) * (90 / 3.7) + 10;
+  return Math.round(Math.max(5, Math.min(100, logScore)));
 }
 
 /**
- * Score area-level (metro) employment count (0-100).
+ * Score area-level (metro) employment count (0-100) using continuous log scaling.
  * Lower thresholds than national since metro areas have smaller counts.
  *
- * > 10,000 = 100  (major employer in the area)
- * > 5,000  = 80
- * > 2,000  = 60
- * > 500    = 40
- * > 100    = 20
- * <= 100   = 10
+ * Approximate mapping:
+ *   10    → 10
+ *   100   → 30
+ *   500   → 50
+ *   2,000 → 65
+ *   5,000 → 75
+ *   10,000 → 85
+ *   50,000 → 100
  *
  * @deprecated Used as fallback when localDemandScore is not available.
  */
 function scoreAreaEmployment(areaEmployment: number | null): number {
   if (areaEmployment === null) return -1; // signal: no data
+  if (areaEmployment <= 0) return 5;
 
-  if (areaEmployment > 10000) return 100;
-  if (areaEmployment > 5000) return 80;
-  if (areaEmployment > 2000) return 60;
-  if (areaEmployment > 500) return 40;
-  if (areaEmployment > 100) return 20;
-  return 10;
+  // Log-based: maps ~10 → 10, ~50k → 100
+  const logScore = (Math.log10(Math.max(1, areaEmployment)) - 1) * (90 / 3.7) + 10;
+  return Math.round(Math.max(5, Math.min(100, logScore)));
 }
 
 /**
- * Score wage comparison (0-100).
+ * Score wage comparison (0-100) using continuous interpolation.
  * Compares target median wage against worker's prior earnings.
+ *
+ * With prior earnings: continuous mapping from ratio to score.
+ *   ratio ≥ 1.0 → 100 (meets or exceeds prior earnings)
+ *   ratio 0.0   → 10
+ *   Linear interpolation between.
+ *
+ * Without prior earnings: continuous mapping from absolute wage.
  */
 function scoreWage(
   medianWage: number | null,
@@ -125,34 +132,32 @@ function scoreWage(
   if (medianWage === null) return { score: 50, ratio: null };
 
   if (priorEarnings === null || priorEarnings === 0) {
-    // No prior earnings to compare — score on absolute wage
-    if (medianWage > 60000) return { score: 80, ratio: null };
-    if (medianWage > 40000) return { score: 60, ratio: null };
-    if (medianWage > 25000) return { score: 40, ratio: null };
-    return { score: 20, ratio: null };
+    // No prior earnings — continuous score on absolute wage
+    // Maps: $15k→20, $30k→45, $45k→65, $60k→80, $80k+→100
+    const absScore = (medianWage / 80000) * 100;
+    return {
+      score: Math.round(Math.max(10, Math.min(100, absScore))),
+      ratio: null,
+    };
   }
 
   const ratio = medianWage / priorEarnings;
 
-  if (ratio >= 1.0) return { score: 100, ratio };
-  if (ratio >= 0.9) return { score: 80, ratio };
-  if (ratio >= 0.75) return { score: 60, ratio };
-  if (ratio >= 0.5) return { score: 40, ratio };
-  return { score: 20, ratio };
+  // Continuous: ratio 0→10, ratio 1.0→100, capped at 100
+  const score = 10 + Math.min(90, ratio * 90);
+  return {
+    score: Math.round(Math.max(10, Math.min(100, score))),
+    ratio,
+  };
 }
 
 /**
- * Score projected employment (0-100).
+ * Score projected employment (0-100) using continuous interpolation.
  *
  * Scores growth and openings independently, then averages.
- * This prevents penalizing high-growth fields with moderate
- * openings (or vice versa).
  *
- * Growth scoring:
- *   > 10% = 100, > 5% = 80, > 0% = 60, > -5% = 40, <= -5% = 20
- *
- * Openings scoring:
- *   > 10,000 = 100, > 5,000 = 80, > 1,000 = 60, > 500 = 40, <= 500 = 20
+ * Growth: continuous mapping from -10% → 10 to +15% → 100
+ * Openings: log-scaled continuous mapping
  */
 function scoreProjections(
   projectedOpenings: number | null,
@@ -163,31 +168,21 @@ function scoreProjections(
   let growthScore: number;
   if (projectedGrowthPct === null) {
     growthScore = 50;
-  } else if (projectedGrowthPct > 10) {
-    growthScore = 100;
-  } else if (projectedGrowthPct > 5) {
-    growthScore = 80;
-  } else if (projectedGrowthPct > 0) {
-    growthScore = 60;
-  } else if (projectedGrowthPct > -5) {
-    growthScore = 40;
   } else {
-    growthScore = 20;
+    // Linear: -10% → 10, 0% → 50, +15% → 100
+    growthScore = 50 + (projectedGrowthPct / 15) * 50;
+    growthScore = Math.max(10, Math.min(100, Math.round(growthScore)));
   }
 
   let openingsScore: number;
   if (projectedOpenings === null) {
     openingsScore = 50;
-  } else if (projectedOpenings > 10000) {
-    openingsScore = 100;
-  } else if (projectedOpenings > 5000) {
-    openingsScore = 80;
-  } else if (projectedOpenings > 1000) {
-    openingsScore = 60;
-  } else if (projectedOpenings > 500) {
-    openingsScore = 40;
+  } else if (projectedOpenings <= 0) {
+    openingsScore = 10;
   } else {
-    openingsScore = 20;
+    // Log-based: ~100 → 20, ~1000 → 45, ~5000 → 65, ~10000 → 75, ~50000 → 100
+    openingsScore = (Math.log10(Math.max(1, projectedOpenings)) - 1.5) * (90 / 3.2) + 20;
+    openingsScore = Math.max(10, Math.min(100, Math.round(openingsScore)));
   }
 
   return Math.round((growthScore + openingsScore) / 2);

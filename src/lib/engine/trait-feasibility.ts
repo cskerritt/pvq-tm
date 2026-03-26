@@ -22,24 +22,45 @@ import {
 /** Source type for trait provenance tracking */
 export type TraitSource = "ORS" | "DOT" | "ONET" | "DPT_PROXY" | "SVP_PROXY" | "proxy";
 
+/**
+ * Analysis mode controls how strictly trait failures are enforced.
+ *
+ * "strict" — SSA/Daubert litigation mode. Any single trait failure = exclusion.
+ * "clinical" — Rehabilitation/counseling mode. Allows 1 marginal failure
+ *   (deficit ≤ 1 categorical level) with a TFQ penalty instead of exclusion.
+ *   This is appropriate for vocational counseling, rehabilitation planning,
+ *   and non-litigation contexts where near-viable occupations are informative.
+ */
+export type AnalysisMode = "strict" | "clinical";
+
 export interface TFQResult {
   tfq: number;
   passes: boolean;
   failedTraits: TraitComparison[];
   traitComparisons: TraitComparison[];
   reserveMargin: number;
+  /** Analysis mode used for this computation. Defaults to "strict" for backward compatibility. */
+  analysisMode?: AnalysisMode;
+  /** In clinical mode, marginal failures that were tolerated (not excluded) */
+  toleratedFailures?: TraitComparison[];
 }
 
 /**
  * Compute the Trait Feasibility Quotient (TFQ).
  *
- * If any trait fails (demand exceeds capacity), the occupation is excluded.
- * Among survivors, TFQ = normalized reserve margin.
+ * Strict mode (default): any trait failure = automatic exclusion.
+ * Clinical mode: allows 1 marginal failure (deficit ≤ 1 category) with
+ * a TFQ penalty instead of exclusion. This is useful for rehabilitation
+ * planning where near-viable occupations should be surfaced.
+ *
+ * Among survivors, TFQ = normalized reserve margin (penalized in clinical
+ * mode if marginal failures were tolerated).
  */
 export function computeTFQ(
   workerPostProfile: TraitVector,
   occupationDemands: TraitVector,
-  sources?: Partial<Record<string, TraitSource>>
+  sources?: Partial<Record<string, TraitSource>>,
+  mode: AnalysisMode = "strict"
 ): TFQResult {
   const comparisons = compareTraits(
     workerPostProfile,
@@ -48,25 +69,74 @@ export function computeTFQ(
   );
 
   const failedTraits = comparisons.filter((c) => !c.passes);
-  const passes = failedTraits.length === 0;
 
-  if (!passes) {
+  // ─── Strict mode: any failure = exclusion ──────────────────────
+  if (mode === "strict") {
+    if (failedTraits.length > 0) {
+      return {
+        tfq: 0,
+        passes: false,
+        failedTraits,
+        traitComparisons: comparisons,
+        reserveMargin: 0,
+        analysisMode: "strict",
+      };
+    }
+  }
+
+  // ─── Clinical mode: tolerate up to 1 marginal failure ──────────
+  if (mode === "clinical" && failedTraits.length > 0) {
+    // Classify failures: marginal (deficit ≤ 1 category) vs severe
+    const marginalFailures = failedTraits.filter((f) => {
+      if (f.margin === null) return false;
+      // margin is negative for failures; deficit = |margin|
+      // Marginal = deficit ≤ 1.0 (one categorical level)
+      return Math.abs(f.margin) <= 1.0;
+    });
+    const severeFailures = failedTraits.filter((f) => {
+      if (f.margin === null) return true;
+      return Math.abs(f.margin) > 1.0;
+    });
+
+    // Allow at most 1 marginal failure; any severe failure = exclusion
+    if (severeFailures.length > 0 || marginalFailures.length > 1) {
+      return {
+        tfq: 0,
+        passes: false,
+        failedTraits,
+        traitComparisons: comparisons,
+        reserveMargin: 0,
+        analysisMode: "clinical",
+      };
+    }
+
+    // 1 marginal failure tolerated — compute TFQ with penalty
+    const reserveMargin = calculateReserveMargin(
+      workerPostProfile,
+      occupationDemands
+    );
+
+    // Apply 15-point penalty per tolerated marginal failure
+    const penalty = marginalFailures.length * 15;
+    const tfq = Math.min(100, Math.max(0, reserveMargin - penalty));
+
     return {
-      tfq: 0,
-      passes: false,
-      failedTraits,
+      tfq: Math.round(tfq * 100) / 100,
+      passes: true,
+      failedTraits: [], // not blocking in clinical mode
       traitComparisons: comparisons,
-      reserveMargin: 0,
+      reserveMargin: Math.round(reserveMargin * 100) / 100,
+      analysisMode: "clinical",
+      toleratedFailures: marginalFailures,
     };
   }
 
+  // ─── All traits pass (both modes) ─────────────────────────────
   const reserveMargin = calculateReserveMargin(
     workerPostProfile,
     occupationDemands
   );
 
-  // TFQ = reserve margin (already 0-100 scale from calculateReserveMargin)
-  // Clamp between 0-100
   const tfq = Math.min(100, Math.max(0, reserveMargin));
 
   return {
@@ -75,6 +145,7 @@ export function computeTFQ(
     failedTraits: [],
     traitComparisons: comparisons,
     reserveMargin: Math.round(reserveMargin * 100) / 100,
+    analysisMode: mode,
   };
 }
 

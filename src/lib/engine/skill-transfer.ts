@@ -80,8 +80,27 @@ function findMatches(a: string[], b: string[]): string[] {
 }
 
 /**
- * Compute fuzzy overlap using normalized token overlap.
- * More forgiving than strict Jaccard — tokenizes strings and compares.
+ * Simple English suffix stemmer.
+ * Strips common suffixes so "operating"/"operations"/"operator" all
+ * reduce to the same stem. Not a full Porter stemmer, but handles
+ * the most frequent vocational vocabulary mismatches.
+ */
+function simpleStem(word: string): string {
+  if (word.length <= 4) return word;
+  return word
+    .replace(/ying$/, "y")
+    .replace(/(tion|sion|ment|ness|ence|ance|ible|able|ious|eous|ical|ally|ings|ated|ting|ling|ling)$/, "")
+    .replace(/(ing|ies|ied|ers|est|ous|ful|ive|ize|ise|ant|ent|ism|ist|ity)$/, "")
+    .replace(/(ed|er|ly|al|or|es|en)$/, "")
+    .replace(/(s)$/, "");
+}
+
+/**
+ * Compute fuzzy overlap using normalized token overlap with stemming.
+ * More forgiving than strict Jaccard — tokenizes strings, stems them,
+ * and compares. This catches vocabulary mismatches like
+ * "customer service" vs "customer relations" (shared: "customer"),
+ * "operating" vs "operations" (shared stem: "operat").
  */
 function tokenOverlap(a: string[], b: string[]): number {
   if (a.length === 0 && b.length === 0) return 0;
@@ -90,7 +109,10 @@ function tokenOverlap(a: string[], b: string[]): number {
     const tokens = new Set<string>();
     for (const s of arr) {
       for (const word of s.toLowerCase().split(/\s+/)) {
-        if (word.length > 2) tokens.add(word);
+        if (word.length > 2) {
+          tokens.add(word);           // exact token
+          tokens.add(simpleStem(word)); // stemmed token
+        }
       }
     }
     return tokens;
@@ -103,6 +125,23 @@ function tokenOverlap(a: string[], b: string[]): number {
 
   if (union.size === 0) return 0;
   return intersection.size / union.size;
+}
+
+/**
+ * Compute Dice coefficient — more generous than Jaccard for partial overlap.
+ * Dice = 2×|A∩B| / (|A| + |B|), always ≥ Jaccard for the same sets.
+ */
+function diceSimilarity(a: string[], b: string[]): number {
+  if (a.length === 0 && b.length === 0) return 0;
+
+  const setA = new Set(a.map((s) => simpleStem(s.toLowerCase().trim())));
+  const setB = new Set(b.map((s) => simpleStem(s.toLowerCase().trim())));
+
+  const intersection = new Set([...setA].filter((x) => setB.has(x)));
+  const denominator = setA.size + setB.size;
+
+  if (denominator === 0) return 0;
+  return (2 * intersection.size) / denominator;
 }
 
 /**
@@ -170,10 +209,12 @@ export function computeSTQ(input: SkillTransferInput): STQResult {
   const allSourceTasks = [...input.sourceTasks, ...input.sourceDWAs];
   const allTargetTasks = [...input.targetTasks, ...input.targetDWAs];
 
-  // Use a blend of Jaccard and token overlap for robustness
+  // Use best-of-three: Jaccard, token overlap (with stemming), and Dice coefficient
+  // This catches exact matches, partial-word matches, and vocabulary mismatches
   const taskJaccard = jaccardSimilarity(allSourceTasks, allTargetTasks);
   const taskToken = tokenOverlap(allSourceTasks, allTargetTasks);
-  const taskDwaOverlap = Math.max(taskJaccard, taskToken) * 100;
+  const taskDice = diceSimilarity(allSourceTasks, allTargetTasks);
+  const taskDwaOverlap = Math.max(taskJaccard, taskToken, taskDice) * 100;
 
   // Work Field / MPSMS similarity
   const wfSimilarity = jaccardSimilarity(
@@ -186,10 +227,11 @@ export function computeSTQ(input: SkillTransferInput): STQResult {
   );
   const wfMpsmsOverlap = ((wfSimilarity + mpsmsSimilarity) / 2) * 100;
 
-  // Tools overlap
+  // Tools overlap — use all three methods
   const toolsJaccard = jaccardSimilarity(input.sourceTools, input.targetTools);
   const toolsToken = tokenOverlap(input.sourceTools, input.targetTools);
-  const toolsOverlap = Math.max(toolsJaccard, toolsToken) * 100;
+  const toolsDice = diceSimilarity(input.sourceTools, input.targetTools);
+  const toolsOverlap = Math.max(toolsJaccard, toolsToken, toolsDice) * 100;
 
   // Materials/services overlap
   const matJaccard = jaccardSimilarity(
@@ -197,7 +239,8 @@ export function computeSTQ(input: SkillTransferInput): STQResult {
     input.targetMaterials
   );
   const matToken = tokenOverlap(input.sourceMaterials, input.targetMaterials);
-  const materialsOverlap = Math.max(matJaccard, matToken) * 100;
+  const matDice = diceSimilarity(input.sourceMaterials, input.targetMaterials);
+  const materialsOverlap = Math.max(matJaccard, matToken, matDice) * 100;
 
   // Credential/knowledge overlap
   const credJaccard = jaccardSimilarity(
@@ -205,7 +248,8 @@ export function computeSTQ(input: SkillTransferInput): STQResult {
     input.targetKnowledge
   );
   const credToken = tokenOverlap(input.sourceKnowledge, input.targetKnowledge);
-  const credentialOverlap = Math.max(credJaccard, credToken) * 100;
+  const credDice = diceSimilarity(input.sourceKnowledge, input.targetKnowledge);
+  const credentialOverlap = Math.max(credJaccard, credToken, credDice) * 100;
 
   // Weighted composite
   const stq =
@@ -242,8 +286,107 @@ export function computeSTQ(input: SkillTransferInput): STQResult {
 }
 
 /**
+ * Compute task/DWA overlap for unskilled workers (SVP < 4).
+ * Instead of skill transfer (which requires SVP 4+), this scores
+ * based on task familiarity — the degree to which prior work
+ * activities overlap with the target occupation.
+ *
+ * Uses the same similarity methods but with adjusted weights:
+ * 50% task/DWA overlap, 30% tools, 20% work field similarity.
+ * Gate always passes for unskilled targets (SVP ≤ 3).
+ */
+function computeUnskilledSTQ(
+  prwEntries: SkillTransferInput[],
+  targetData: {
+    targetSvp: number;
+    targetTasks: string[];
+    targetDWAs: string[];
+    targetWorkFields: string[];
+    targetMPSMS: string[];
+    targetTools: string[];
+    targetMaterials: string[];
+    targetKnowledge: string[];
+  }
+): STQResult {
+  // Unskilled pathway only applies to unskilled targets
+  if (targetData.targetSvp > 3) {
+    return {
+      stq: 0,
+      passesGate: false,
+      gateReason: "Unskilled pathway only applies to SVP 1-3 targets",
+      components: { taskDwaOverlap: 0, wfMpsmsOverlap: 0, toolsOverlap: 0, materialsOverlap: 0, credentialOverlap: 0 },
+      details: { matchedTasks: [], matchedDWAs: [], matchedTools: [], matchedMaterials: [], matchedKnowledge: [] },
+    };
+  }
+
+  let bestTaskOverlap = 0;
+  let bestToolsOverlap = 0;
+  let bestWfOverlap = 0;
+  let bestMatchedTasks: string[] = [];
+  let bestMatchedDWAs: string[] = [];
+  let bestMatchedTools: string[] = [];
+
+  for (const prw of prwEntries) {
+    const allSourceTasks = [...prw.sourceTasks, ...prw.sourceDWAs];
+    const allTargetTasks = [...targetData.targetTasks, ...targetData.targetDWAs];
+
+    const taskScore = Math.max(
+      jaccardSimilarity(allSourceTasks, allTargetTasks),
+      tokenOverlap(allSourceTasks, allTargetTasks),
+      diceSimilarity(allSourceTasks, allTargetTasks)
+    ) * 100;
+
+    const toolsScore = Math.max(
+      jaccardSimilarity(prw.sourceTools, targetData.targetTools),
+      tokenOverlap(prw.sourceTools, targetData.targetTools),
+      diceSimilarity(prw.sourceTools, targetData.targetTools)
+    ) * 100;
+
+    const wfScore = ((
+      jaccardSimilarity(prw.sourceWorkFields, targetData.targetWorkFields) +
+      jaccardSimilarity(prw.sourceMPSMS, targetData.targetMPSMS)
+    ) / 2) * 100;
+
+    const combined = 0.50 * taskScore + 0.30 * toolsScore + 0.20 * wfScore;
+    if (combined > (0.50 * bestTaskOverlap + 0.30 * bestToolsOverlap + 0.20 * bestWfOverlap)) {
+      bestTaskOverlap = taskScore;
+      bestToolsOverlap = toolsScore;
+      bestWfOverlap = wfScore;
+      bestMatchedTasks = findMatches(prw.sourceTasks, targetData.targetTasks);
+      bestMatchedDWAs = findMatches(prw.sourceDWAs, targetData.targetDWAs);
+      bestMatchedTools = findMatches(prw.sourceTools, targetData.targetTools);
+    }
+  }
+
+  const stq = 0.50 * bestTaskOverlap + 0.30 * bestToolsOverlap + 0.20 * bestWfOverlap;
+
+  return {
+    stq: Math.round(stq * 100) / 100,
+    passesGate: true, // unskilled targets always pass the SVP gate
+    components: {
+      taskDwaOverlap: Math.round(bestTaskOverlap * 100) / 100,
+      wfMpsmsOverlap: Math.round(bestWfOverlap * 100) / 100,
+      toolsOverlap: Math.round(bestToolsOverlap * 100) / 100,
+      materialsOverlap: 0,
+      credentialOverlap: 0,
+    },
+    details: {
+      matchedTasks: bestMatchedTasks,
+      matchedDWAs: bestMatchedDWAs,
+      matchedTools: bestMatchedTools,
+      matchedMaterials: [],
+      matchedKnowledge: [],
+    },
+  };
+}
+
+/**
  * Compute aggregate STQ across multiple PRW entries.
  * Uses the best match from any PRW entry.
+ *
+ * If all PRW is unskilled (SVP < 4) and the target is also unskilled,
+ * falls back to the unskilled worker pathway which scores task
+ * familiarity instead of formal skill transfer.
  */
 export function computeAggregateSTQ(
   prwEntries: SkillTransferInput[],
@@ -268,19 +411,29 @@ export function computeAggregateSTQ(
     targetKnowledge: string[];
   }
 ): STQResult {
+  const skilledPRW = prwEntries.filter((prw) => isValidTransferableSkill(prw.sourceSvp));
+
+  // Standard pathway: try skilled PRW entries first
   let bestResult: STQResult | null = null;
-
-  for (const prw of prwEntries) {
-    if (!isValidTransferableSkill(prw.sourceSvp)) continue;
-
+  for (const prw of skilledPRW) {
     const result = computeSTQ({
       ...prw,
       ...targetData,
     });
-
     if (!bestResult || result.stq > bestResult.stq) {
       bestResult = result;
     }
+  }
+
+  // If we got a result from skilled PRW, use it
+  if (bestResult && (bestResult.passesGate || bestResult.stq > 0)) {
+    return bestResult;
+  }
+
+  // Unskilled worker pathway: if no skilled PRW exists and target is unskilled,
+  // compute task familiarity instead of formal skill transfer
+  if (skilledPRW.length === 0 && prwEntries.length > 0 && targetData.targetSvp <= 3) {
+    return computeUnskilledSTQ(prwEntries, targetData);
   }
 
   return (

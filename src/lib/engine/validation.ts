@@ -31,7 +31,7 @@ interface AnalysisData {
   skills: Array<Record<string, unknown>>;
   postProfile: Record<string, unknown>;
   preProfile: Record<string, unknown> | null;
-  analysisConfig: { ageRule?: string; priorEarnings?: number };
+  analysisConfig: { ageRule?: string; priorEarnings?: number; analysisMode?: string };
 }
 
 export function validateAnalysis(data: AnalysisData): ValidationReport {
@@ -189,6 +189,21 @@ function validateTFQ(data: AnalysisData, checks: ValidationCheck[]) {
     severity: "error",
     message: `Excluded (${excluded}) + Viable (${viable}) = ${excluded + viable}, Total = ${targets.length}`,
   });
+
+  // Clinical mode: report tolerated failures
+  const analysisMode = data.analysisConfig.analysisMode;
+  if (analysisMode === "clinical") {
+    const withTolerations = targets.filter((t) => t.hasTolerations);
+    if (withTolerations.length > 0) {
+      checks.push({
+        category: "TFQ",
+        check: "Clinical mode tolerated failures",
+        passed: true,
+        severity: "info",
+        message: `${withTolerations.length} occupations have marginal trait failures tolerated in clinical mode`,
+      });
+    }
+  }
 }
 
 // ─── VAQ Validation ──────────────────────────────────────────────────
@@ -198,21 +213,38 @@ function validateVAQ(data: AnalysisData, checks: ValidationCheck[]) {
   const ageRule = data.analysisConfig.ageRule;
   const viableTargets = targets.filter((t) => !t.excluded);
 
-  // If advanced age, any VAQ dimension < 100 should exclude
+  // If advanced age, check VAQ enforcement — but allow pending-review targets
   if (ageRule === "advanced_age" || ageRule === "closely_approaching") {
     const badVaq = viableTargets.filter((t) => {
       const vaq = t.vaq as number | null;
-      return vaq != null && vaq < 100;
+      const pendingReview = t.pendingEvaluatorReview as boolean | undefined;
+      // Auto-estimated targets with pending review are allowed through
+      return vaq != null && vaq < 100 && !pendingReview;
     });
+    const pendingReviewCount = viableTargets.filter(
+      (t) => t.pendingEvaluatorReview
+    ).length;
+
     checks.push({
       category: "VAQ",
       check: "Advanced age VAQ enforcement",
       passed: badVaq.length === 0,
-      severity: "error",
+      severity: badVaq.length === 0 ? "info" : "error",
       message: badVaq.length === 0
-        ? "All viable targets meet advanced age VAQ requirement (100)"
-        : `${badVaq.length} viable targets have VAQ < 100 despite advanced age rule`,
+        ? `All viable targets meet advanced age VAQ requirement${pendingReviewCount > 0 ? ` (${pendingReviewCount} pending evaluator review)` : ""}`
+        : `${badVaq.length} viable targets have VAQ < 100 despite advanced age rule (not auto-estimated)`,
     });
+
+    // Warn about pending review targets
+    if (pendingReviewCount > 0) {
+      checks.push({
+        category: "VAQ",
+        check: "Auto-estimated VAQ pending evaluator review",
+        passed: true,
+        severity: "warning",
+        message: `${pendingReviewCount} viable targets have auto-estimated VAQ that needs evaluator confirmation for advanced age rule`,
+      });
+    }
   }
 
   // VAQ should be 0-100

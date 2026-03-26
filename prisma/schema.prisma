@@ -276,6 +276,7 @@ model Analysis {
   status         String   @default("draft")
   step           Int      @default(1)
   ageRule        String?
+  analysisMode   String?  @default("strict") // "strict" (SSA/litigation) or "clinical" (rehabilitation)
   priorEarnings  Float?
   targetArea     String?
   targetAreaName String?
@@ -339,8 +340,10 @@ model TargetOccupation {
   pvq             Float?
   excluded        Boolean @default(false)
   exclusionReason String?
-  confidenceGrade String?
-  notes           String?
+  confidenceGrade        String?
+  notes                  String?
+  pendingEvaluatorReview Boolean? @default(false) // VAQ auto-estimated, needs evaluator confirmation
+  hasTolerations         Boolean? @default(false) // clinical mode: marginal trait failures tolerated
 
   preTfq                 Float?
   preTfqPasses           Boolean?

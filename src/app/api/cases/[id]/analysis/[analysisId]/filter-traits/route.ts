@@ -244,7 +244,15 @@ export async function POST(
     }
 
     // ─── Full TFQ Computation ───────────────────────────────────────
-    const tfqResult = computeTFQ(workerTraits, demandVector, demandSources);
+    // Look up analysis mode from the analysis record (defaults to "strict" if column not yet migrated)
+    let analysisMode: "strict" | "clinical" = "strict";
+    try {
+      const analysisRecord = await prisma.analysis.findUnique({ where: { id: analysisId } });
+      if (analysisRecord && "analysisMode" in analysisRecord) {
+        analysisMode = (analysisRecord as Record<string, unknown>).analysisMode as "strict" | "clinical" ?? "strict";
+      }
+    } catch { /* column may not exist pre-migration */ }
+    const tfqResult = computeTFQ(workerTraits, demandVector, demandSources, analysisMode);
 
     if (!tfqResult.passes) {
       await prisma.targetOccupation.update({

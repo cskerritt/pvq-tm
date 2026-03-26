@@ -584,9 +584,13 @@ export function passesAllTraits(
  * This becomes the basis for TFQ scoring among surviving occupations.
  * Returns average margin as a percentage of the 0-4 scale.
  *
- * Always normalizes against ALL 24 traits to prevent inflation
- * when only a few traits have data. Unrated traits contribute
- * a margin of 0 (neutral), not excluded from the denominator.
+ * Uses a hybrid denominator approach:
+ * - Normalizes against RATED traits (not all 24) so that sparse data
+ *   doesn't artificially deflate TFQ scores.
+ * - Applies a data coverage penalty: if fewer than 12 traits are rated,
+ *   the score is scaled by (ratedCount / 12) to discourage reliance
+ *   on very sparse profiles while not crushing scores when 15+ traits
+ *   have real data.
  */
 export function calculateReserveMargin(
   workerProfile: TraitVector,
@@ -604,10 +608,15 @@ export function calculateReserveMargin(
     0
   );
 
-  // Normalize against ALL 24 traits, not just rated ones.
-  // This prevents TFQ inflation when only a few traits have data.
-  // Unrated traits implicitly contribute margin=0 (neutral).
-  return (totalMargin / (TRAIT_KEYS.length * 4)) * 100;
+  // Normalize against rated traits so sparse data doesn't crush scores
+  const rawMargin = (totalMargin / (ratedTraits.length * 4)) * 100;
+
+  // Apply a data coverage penalty when fewer than half of traits are rated.
+  // Full credit at 12+ rated traits; linear penalty below that.
+  const COVERAGE_THRESHOLD = 12;
+  const coverageFactor = Math.min(1.0, ratedTraits.length / COVERAGE_THRESHOLD);
+
+  return rawMargin * coverageFactor;
 }
 
 /**

@@ -43,17 +43,27 @@ export interface VAQResult {
   disqualifyingReason?: string;
   adjustment: VocationalAdjustment;
   ageRule: AgeRule;
+  /** True when VAQ was auto-estimated and advanced-age gate was deferred */
+  pendingEvaluatorReview?: boolean;
+  /** True when VAQ dimensions were auto-estimated from data */
+  autoEstimated?: boolean;
 }
 
 /**
  * Compute the Vocational Adjustment Quotient (VAQ).
  *
  * For standard cases: VAQ is the average of the four dimension scores.
- * For advanced-age cases: any score below 100 is disqualifying.
+ * For advanced-age cases: any score below 100 is disqualifying,
+ *   UNLESS the adjustment was auto-estimated (not evaluator-confirmed),
+ *   in which case the occupation is marked "pending evaluator review"
+ *   instead of being hard-excluded.
+ *
+ * @param autoEstimated - True if the adjustment was data-driven (not evaluator input)
  */
 export function computeVAQ(
   adjustment: VocationalAdjustment,
-  ageRule: AgeRule = "standard"
+  ageRule: AgeRule = "standard",
+  autoEstimated: boolean = false
 ): VAQResult {
   const scores: number[] = [
     adjustment.tools,
@@ -74,12 +84,26 @@ export function computeVAQ(
     if (adjustment.industry < 100) failingDimensions.push("industry");
 
     if (failingDimensions.length > 0) {
+      // If auto-estimated, defer the hard exclusion — flag for evaluator review
+      if (autoEstimated) {
+        return {
+          vaq: Math.round(vaq * 100) / 100,
+          passes: true, // tentatively passes
+          disqualifyingReason: `Auto-estimated VAQ: adjustment needed in ${failingDimensions.join(", ")}. Pending evaluator confirmation for advanced age rule.`,
+          adjustment,
+          ageRule,
+          pendingEvaluatorReview: true,
+          autoEstimated: true,
+        };
+      }
+
       return {
         vaq: 0,
         passes: false,
         disqualifyingReason: `Advanced age rule requires very little or no vocational adjustment. Adjustment needed in: ${failingDimensions.join(", ")}`,
         adjustment,
         ageRule,
+        autoEstimated: false,
       };
     }
   }
@@ -89,6 +113,7 @@ export function computeVAQ(
     passes: true,
     adjustment,
     ageRule,
+    autoEstimated,
   };
 }
 
@@ -152,7 +177,8 @@ export function estimateVAQ(
  * Tools adjustment: Compare O*NET tools/technology overlap.
  * >75% overlap → 100 (very little), >50% → 67 (slight),
  * >25% → 33 (moderate), ≤25% → 0 (substantial).
- * No data → 67 (conservative default).
+ * No data → 33 (conservative default — assumes moderate adjustment needed
+ * when we lack evidence to say otherwise).
  */
 function estimateToolsAdjustment(
   sourceOnetOccs: ONETLikeOcc[],
@@ -161,7 +187,7 @@ function estimateToolsAdjustment(
   const sourceTools = extractToolNames(sourceOnetOccs);
   const targetTools = extractToolNamesFromOcc(targetOnetOcc);
 
-  if (sourceTools.size === 0 || targetTools.size === 0) return 67;
+  if (sourceTools.size === 0 || targetTools.size === 0) return 33;
 
   const intersection = new Set(
     [...sourceTools].filter((t) => targetTools.has(t))
@@ -181,7 +207,8 @@ function estimateToolsAdjustment(
 /**
  * Work Processes adjustment: Compare GOE codes between source and target.
  * Same GOE group (first 4+ chars) → 100, same division (first 2 chars) → 67,
- * different → 33. No GOE data → 67.
+ * different → 33. No GOE data → 33 (conservative — unknown processes
+ * assumed to require moderate adjustment).
  */
 function estimateWorkProcessesAdjustment(
   sourceDotOccs: DOTLikeOcc[],
@@ -192,7 +219,7 @@ function estimateWorkProcessesAdjustment(
     .filter((g): g is string => g !== null);
   const targetGOE = targetDotOcc ? extractGOE(targetDotOcc) : null;
 
-  if (sourceGOEs.length === 0 || !targetGOE) return 67;
+  if (sourceGOEs.length === 0 || !targetGOE) return 33;
 
   // Check if any source GOE matches at group level (first 4+ chars)
   const targetGroup = targetGOE.substring(0, 4);
@@ -214,7 +241,7 @@ function estimateWorkProcessesAdjustment(
 /**
  * Work Setting adjustment: Compare industry designations.
  * Same industry designation → 100, shares significant words → 67,
- * completely different → 33. No data → 67.
+ * completely different → 33. No data → 33 (conservative).
  */
 function estimateWorkSettingAdjustment(
   sourceDotOccs: DOTLikeOcc[],
@@ -225,7 +252,7 @@ function estimateWorkSettingAdjustment(
     .filter((i): i is string => i !== null && i !== undefined);
   const targetIndustry = targetDotOcc?.industryDesig;
 
-  if (sourceIndustries.length === 0 || !targetIndustry) return 67;
+  if (sourceIndustries.length === 0 || !targetIndustry) return 33;
 
   // Exact match
   if (sourceIndustries.some((i) => i.toLowerCase() === targetIndustry.toLowerCase())) {
@@ -247,7 +274,7 @@ function estimateWorkSettingAdjustment(
 /**
  * Industry adjustment: Broader industry-level comparison.
  * Uses the first significant word of industry designation as the "sector."
- * Same sector → 100, any word overlap → 67, different → 33. No data → 67.
+ * Same sector → 100, any word overlap → 67, different → 33. No data → 33 (conservative).
  */
 function estimateIndustryAdjustment(
   sourceDotOccs: DOTLikeOcc[],
@@ -258,7 +285,7 @@ function estimateIndustryAdjustment(
     .filter((i): i is string => i !== null && i !== undefined);
   const targetIndustry = targetDotOcc?.industryDesig;
 
-  if (sourceIndustries.length === 0 || !targetIndustry) return 67;
+  if (sourceIndustries.length === 0 || !targetIndustry) return 33;
 
   // Extract primary sector (first significant word)
   const targetSector = primarySector(targetIndustry);

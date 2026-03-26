@@ -10,7 +10,7 @@
  */
 
 import { type STQResult } from "./skill-transfer";
-import { type TFQResult } from "./trait-feasibility";
+import { type TFQResult, type AnalysisMode } from "./trait-feasibility";
 import { type VAQResult } from "./vocational-adjustment";
 import { type LMQResult } from "./labor-market";
 
@@ -23,6 +23,12 @@ export interface PVQResult {
   excluded: boolean;
   exclusionReason?: string;
   confidenceGrade: "A" | "B" | "C" | "D";
+  /** Analysis mode used (strict = SSA/litigation, clinical = rehabilitation) */
+  analysisMode?: AnalysisMode;
+  /** True when VAQ is auto-estimated and needs evaluator confirmation */
+  pendingEvaluatorReview?: boolean;
+  /** True when this occupation has tolerated marginal trait failures (clinical mode) */
+  hasTolerations?: boolean;
   components: {
     stqResult: STQResult;
     tfqResult: TFQResult;
@@ -43,8 +49,12 @@ export const PVQ_WEIGHTS = {
  *
  * An occupation is excluded if:
  * - STQ SVP gate fails
- * - TFQ any trait fails
- * - VAQ fails (advanced-age rule)
+ * - TFQ trait gate fails (strict: any failure; clinical: >1 marginal or any severe)
+ * - VAQ fails (advanced-age rule, unless auto-estimated → pending review)
+ *
+ * When analysis mode is "clinical", the TFQ tolerance for marginal failures
+ * allows more occupations through the gate, producing a richer viable set
+ * for rehabilitation planning.
  */
 export function computePVQ(
   stqResult: STQResult,
@@ -52,6 +62,8 @@ export function computePVQ(
   vaqResult: VAQResult,
   lmqResult: LMQResult
 ): PVQResult {
+  const analysisMode = tfqResult.analysisMode ?? "strict";
+
   // Check exclusion gates in order
   if (!stqResult.passesGate) {
     return {
@@ -63,6 +75,7 @@ export function computePVQ(
       excluded: true,
       exclusionReason: stqResult.gateReason ?? "SVP gate failed",
       confidenceGrade: gradeConfidence(stqResult, tfqResult, lmqResult),
+      analysisMode,
       components: { stqResult, tfqResult, vaqResult, lmqResult },
     };
   }
@@ -80,6 +93,7 @@ export function computePVQ(
       excluded: true,
       exclusionReason: `Post-profile trait failure: ${failedNames}`,
       confidenceGrade: gradeConfidence(stqResult, tfqResult, lmqResult),
+      analysisMode,
       components: { stqResult, tfqResult, vaqResult, lmqResult },
     };
   }
@@ -95,6 +109,7 @@ export function computePVQ(
       exclusionReason:
         vaqResult.disqualifyingReason ?? "Vocational adjustment too great",
       confidenceGrade: gradeConfidence(stqResult, tfqResult, lmqResult),
+      analysisMode,
       components: { stqResult, tfqResult, vaqResult, lmqResult },
     };
   }
@@ -114,6 +129,9 @@ export function computePVQ(
     lmq: lmqResult.lmq,
     excluded: false,
     confidenceGrade: gradeConfidence(stqResult, tfqResult, lmqResult),
+    analysisMode,
+    pendingEvaluatorReview: vaqResult.pendingEvaluatorReview,
+    hasTolerations: (tfqResult.toleratedFailures?.length ?? 0) > 0,
     components: { stqResult, tfqResult, vaqResult, lmqResult },
   };
 }

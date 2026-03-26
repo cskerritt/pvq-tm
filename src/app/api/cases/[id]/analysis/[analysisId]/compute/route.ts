@@ -539,7 +539,8 @@ export async function POST(
       }
     }
 
-    const tfqResult = computeTFQ(workerTraits, demandVector, demandSources);
+    const analysisMode = ("analysisMode" in analysis ? (analysis as Record<string, unknown>).analysisMode as string : "strict") === "clinical" ? "clinical" as const : "strict" as const;
+    const tfqResult = computeTFQ(workerTraits, demandVector, demandSources, analysisMode);
 
     // Merge gate failures into TFQ result
     if (gateFailures.length > 0 && tfqResult.passes) {
@@ -570,7 +571,7 @@ export async function POST(
     let preTfqPasses: boolean | null = null;
     let preTfqDetailsJson: unknown = null;
     if (preTraits) {
-      const preTfqResult = computeTFQ(preTraits, demandVector, demandSources);
+      const preTfqResult = computeTFQ(preTraits, demandVector, demandSources, analysisMode);
       preTfqScore = preTfqResult.tfq;
       preTfqPasses = preTfqResult.passes;
       preTfqDetailsJson = JSON.parse(JSON.stringify({
@@ -659,12 +660,14 @@ export async function POST(
           : null
       );
     }
+    const isAutoEstimated = "autoEstimated" in adj && (adj as Record<string, unknown>).autoEstimated === true;
     const vaqResult = computeVAQ(
       adj,
       (analysis.ageRule as
         | "standard"
         | "advanced_age"
-        | "closely_approaching") ?? "standard"
+        | "closely_approaching") ?? "standard",
+      isAutoEstimated
     );
 
     // ─── LMQ ────────────────────────────────────────────────────────
@@ -776,6 +779,9 @@ export async function POST(
         excluded: pvqResult.excluded,
         exclusionReason: pvqResult.exclusionReason,
         confidenceGrade: pvqResult.confidenceGrade,
+        // New fields — stored in vaqDetails/tfqDetails JSON until migration
+        // pendingEvaluatorReview and hasTolerations are part of the PVQ result
+        // and persisted via the vaqDetails/tfqDetails JSON columns
         // Pre-injury TFQ
         preTfq: preTfqScore,
         preTfqPasses: preTfqPasses,
