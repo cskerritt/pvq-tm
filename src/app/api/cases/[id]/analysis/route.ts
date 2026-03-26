@@ -81,14 +81,58 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
     }
 
+    // Auto-derive targetArea from case ZIP code if not explicitly provided
+    let targetArea = body.targetArea ?? null;
+    let targetAreaName = body.targetAreaName ?? null;
+
+    if (!targetArea) {
+      // Check if case has metroAreaCode already set
+      const caseData = await prisma.case.findUnique({
+        where: { id },
+        select: { metroAreaCode: true, metroAreaName: true, zipCode: true },
+      });
+
+      if (caseData?.metroAreaCode) {
+        targetArea = caseData.metroAreaCode;
+        targetAreaName = caseData.metroAreaName ?? targetAreaName;
+      } else if (caseData?.zipCode) {
+        // Look up metro area from ZIP code via internal geo API
+        try {
+          const baseUrl = process.env.NEXT_PUBLIC_BASE_URL
+            || process.env.RAILWAY_PUBLIC_DOMAIN
+              ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+              : `http://localhost:${process.env.PORT || 3000}`;
+          const geoRes = await fetch(`${baseUrl}/api/geo/zip-to-metro?zip=${caseData.zipCode}`);
+          if (geoRes.ok) {
+            const geoData = await geoRes.json();
+            if (geoData.areaCode) {
+              targetArea = geoData.areaCode;
+              targetAreaName = geoData.areaName ?? null;
+              // Also update the case record for future analyses
+              await prisma.case.update({
+                where: { id },
+                data: {
+                  metroAreaCode: geoData.areaCode,
+                  metroAreaName: geoData.areaName ?? null,
+                },
+              });
+            }
+          }
+        } catch (e) {
+          console.warn("[Analysis POST] Failed to auto-derive metro area from ZIP:", e);
+          // Non-fatal — analysis will use national-level data
+        }
+      }
+    }
+
     const analysis = await prisma.analysis.create({
       data: {
         caseId: id,
         name: body.name ?? `Analysis ${new Date().toLocaleDateString()}`,
         ageRule: body.ageRule,
         priorEarnings,
-        targetArea: body.targetArea,
-        targetAreaName: body.targetAreaName,
+        targetArea,
+        targetAreaName,
       },
     });
     return NextResponse.json(analysis, { status: 201 });
