@@ -265,9 +265,10 @@ describe("TFQ edge cases", () => {
     const result = computeTFQ(worker, demands);
 
     expect(result.passes).toBe(true);
-    // Margin: (4-1) = 3 for 1 trait, normalized against 24*4 = 96
-    // TFQ = (3/96)*100 ≈ 3.13
-    expect(result.tfq).toBeCloseTo(3.13, 1);
+    // Margin: (4-1) = 3 for 1 rated trait, normalized against rated: (3/(1*4))*100 = 75
+    // Coverage penalty: min(1, 1/12) = 1/12
+    // TFQ = 75 * (1/12) ≈ 6.25
+    expect(result.tfq).toBeCloseTo(6.25, 1);
   });
 
   it("should report 100 TFQ when all traits have max margin", () => {
@@ -290,8 +291,10 @@ describe("calculateReserveMargin edge cases", () => {
     const demands = sparseVector({ reasoning: 0 });
 
     const margin = calculateReserveMargin(worker, demands);
-    // 1 trait with margin 4, normalized against 24*4=96
-    expect(margin).toBeCloseTo((4 / 96) * 100, 1);
+    // 1 rated trait with margin 4, normalized against rated: (4/(1*4))*100 = 100
+    // Coverage penalty: min(1, 1/12) = 1/12
+    // Result = 100 * (1/12) ≈ 8.33
+    expect(margin).toBeCloseTo(8.33, 1);
   });
 
   it("should return 0 when no traits are rated", () => {
@@ -318,8 +321,8 @@ describe("LMQ edge cases", () => {
       const result = computeLMQ(
         makeLMQInput({ projectedGrowthPct: 50, projectedOpenings: 8000 })
       );
-      // Growth=100, Openings=80, avg=90
-      expect(result.components.projectionsScore).toBe(90);
+      // Growth=100, Openings=log-based ~87, avg=94
+      expect(result.components.projectionsScore).toBe(94);
     });
 
     it("should score moderate growth + high openings well", () => {
@@ -334,24 +337,24 @@ describe("LMQ edge cases", () => {
       const result = computeLMQ(
         makeLMQInput({ projectedGrowthPct: -3, projectedOpenings: 3000 })
       );
-      // Growth=40, Openings=60, avg=50
-      expect(result.components.projectionsScore).toBe(50);
+      // Growth=40, Openings=log-based ~76, avg=58
+      expect(result.components.projectionsScore).toBe(58);
     });
 
     it("should score null growth with known openings using neutral growth", () => {
       const result = computeLMQ(
         makeLMQInput({ projectedGrowthPct: null, projectedOpenings: 15000 })
       );
-      // Growth=50(neutral), Openings=100, avg=75
-      expect(result.components.projectionsScore).toBe(75);
+      // Growth=50(neutral), Openings=log-based ~95, avg=73
+      expect(result.components.projectionsScore).toBe(73);
     });
 
     it("should score known growth with null openings using neutral openings", () => {
       const result = computeLMQ(
         makeLMQInput({ projectedGrowthPct: 8, projectedOpenings: null })
       );
-      // Growth=80, Openings=50(neutral), avg=65
-      expect(result.components.projectionsScore).toBe(65);
+      // Growth=77, Openings=50(neutral), avg=64
+      expect(result.components.projectionsScore).toBe(64);
     });
 
     it("should score both null as neutral", () => {
@@ -365,8 +368,8 @@ describe("LMQ edge cases", () => {
       const result = computeLMQ(
         makeLMQInput({ projectedGrowthPct: -10, projectedOpenings: 100 })
       );
-      // Growth=20, Openings=20, avg=20
-      expect(result.components.projectionsScore).toBe(20);
+      // Growth=17->clamped to 10, Openings=log-based ~42, avg=26
+      expect(result.components.projectionsScore).toBe(26);
     });
   });
 
@@ -375,7 +378,7 @@ describe("LMQ edge cases", () => {
       const result = computeLMQ(
         makeLMQInput({ medianWage: 45000, priorEarnings: 0 })
       );
-      expect(result.components.wageScore).toBe(60); // absolute: >40k
+      expect(result.components.wageScore).toBe(56); // absolute: 45000/80000*100 = 56
       expect(result.details.wageRatio).toBeNull();
     });
 
@@ -391,7 +394,7 @@ describe("LMQ edge cases", () => {
       const result = computeLMQ(
         makeLMQInput({ medianWage: 10000, priorEarnings: 100000 })
       );
-      expect(result.components.wageScore).toBe(20); // ratio 0.1 < 0.5
+      expect(result.components.wageScore).toBe(19); // ratio 0.1, score = 10 + min(90, 0.1*90) = 19
     });
   });
 
@@ -400,8 +403,9 @@ describe("LMQ edge cases", () => {
       const result = computeLMQ(
         makeLMQInput({ areaEmployment: 5500 })
       );
-      expect(result.components.areaEmploymentScore).toBe(80);
-      expect(result.components.localDemandScore).toBe(80);
+      // Log-based area scoring: 5500 -> 77
+      expect(result.components.areaEmploymentScore).toBe(77);
+      expect(result.components.localDemandScore).toBe(77);
       expect(result.details.weightsUsed).toHaveProperty("localDemand");
     });
 
@@ -596,11 +600,11 @@ describe("VAQ edge cases", () => {
   it("should handle estimateVAQ with no DOT or O*NET data", () => {
     const result = estimateVAQ([], null, [], null);
     expect(result.autoEstimated).toBe(true);
-    // All default to 67 (slight)
-    expect(result.tools).toBe(67);
-    expect(result.workProcesses).toBe(67);
-    expect(result.workSetting).toBe(67);
-    expect(result.industry).toBe(67);
+    // No data -> defaults to 33 (moderate) for all dimensions
+    expect(result.tools).toBe(33);
+    expect(result.workProcesses).toBe(33);
+    expect(result.workSetting).toBe(33);
+    expect(result.industry).toBe(33);
   });
 
   it("should handle estimateVAQ with identical source/target industry", () => {

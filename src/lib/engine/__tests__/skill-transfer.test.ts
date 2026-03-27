@@ -252,9 +252,9 @@ describe('computeAggregateSTQ', () => {
     };
 
     const result = computeAggregateSTQ(prwEntries, targetData);
-    expect(result.stq).toBe(0);
-    expect(result.passesGate).toBe(false);
-    expect(result.gateReason).toContain('No valid transferable skills');
+    // All PRW is unskilled (SVP < 4) and target is unskilled (SVP 2 <= 3),
+    // so the unskilled worker pathway activates: passesGate=true, STQ based on task familiarity
+    expect(result.passesGate).toBe(true);
   });
 
   it('should handle empty PRW entries array', () => {

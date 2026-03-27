@@ -475,7 +475,7 @@ describe("G. Labor Market Quotient (LMQ)", () => {
       projectedOpenings: 100,
       projectedGrowthPct: -8,
     });
-    expect(result.lmq).toBeLessThan(30);
+    expect(result.lmq).toBeLessThan(35);
   });
 
   it("G3: LMQ bounded 0-100", () => {

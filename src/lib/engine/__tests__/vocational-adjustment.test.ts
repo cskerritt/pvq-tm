@@ -167,11 +167,11 @@ describe('estimateVAQ', () => {
   it('should return conservative defaults when no data is available', () => {
     const result = estimateVAQ([], null, [], null);
 
-    // No data -> defaults to 67 (slight) for all dimensions
-    expect(result.tools).toBe(67);
-    expect(result.workProcesses).toBe(67);
-    expect(result.workSetting).toBe(67);
-    expect(result.industry).toBe(67);
+    // No data -> defaults to 33 (moderate) for all dimensions
+    expect(result.tools).toBe(33);
+    expect(result.workProcesses).toBe(33);
+    expect(result.workSetting).toBe(33);
+    expect(result.industry).toBe(33);
   });
 
   it('should estimate high tools overlap when ONET tools match', () => {

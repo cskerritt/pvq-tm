@@ -664,16 +664,16 @@ describe("Integration: PVQ from components", () => {
 // ─── Section 13: Fixture Data Integrity ───────────────────────────────────
 
 describe("Fixture Data Integrity", () => {
-  it("has 18 benchmark occupations", () => {
-    expect(benchmarkOccupations).toHaveLength(18);
+  it("has 100 benchmark occupations", () => {
+    expect(benchmarkOccupations).toHaveLength(100);
   });
 
-  it("has 4 worker profiles", () => {
-    expect(benchmarkWorkerProfiles).toHaveLength(4);
+  it("has 8 worker profiles", () => {
+    expect(benchmarkWorkerProfiles).toHaveLength(8);
   });
 
-  it("has 12 benchmark pairs", () => {
-    expect(benchmarkPairs).toHaveLength(12);
+  it("has 32 benchmark pairs", () => {
+    expect(benchmarkPairs).toHaveLength(32);
   });
 
   it("all pairs reference valid occupations and profiles", () => {
@@ -712,12 +712,13 @@ describe("Fixture Data Integrity", () => {
     expect(bands.has(4)).toBe(true);
   });
 
-  it("occupations span multiple strength levels", () => {
+  it("occupations span all 5 strength levels", () => {
     const strengths = new Set(benchmarkOccupations.map((o) => o.strength));
     expect(strengths.has("S")).toBe(true);
     expect(strengths.has("L")).toBe(true);
     expect(strengths.has("M")).toBe(true);
     expect(strengths.has("H")).toBe(true);
+    expect(strengths.has("V")).toBe(true);
   });
 
   it("OEWS wage data is realistic (all wages > $20k and < $300k)", () => {

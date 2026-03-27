@@ -29,33 +29,30 @@ describe('computeLMQ', () => {
     expect(result.components.projectionsScore).toBeGreaterThan(0);
   });
 
-  it('should return maximum employment score for very high employment', () => {
+  it('should return high employment score for very high employment', () => {
     const input = makeInput({ employment: 150000 });
     const result = computeLMQ(input);
 
-    expect(result.components.employmentScore).toBe(100);
+    // Log-based continuous scoring: 150k -> 87
+    expect(result.components.employmentScore).toBe(87);
   });
 
-  it('should return lowest employment score for very low employment', () => {
+  it('should return low employment score for very low employment', () => {
     const input = makeInput({ employment: 500 });
     const result = computeLMQ(input);
 
-    expect(result.components.employmentScore).toBe(10);
+    // Log-based continuous scoring: 500 -> 27
+    expect(result.components.employmentScore).toBe(27);
   });
 
-  it('should score employment at correct thresholds', () => {
-    // > 100,000 = 100
-    expect(computeLMQ(makeInput({ employment: 100001 })).components.employmentScore).toBe(100);
-    // > 50,000 = 80
-    expect(computeLMQ(makeInput({ employment: 50001 })).components.employmentScore).toBe(80);
-    // > 20,000 = 60
-    expect(computeLMQ(makeInput({ employment: 20001 })).components.employmentScore).toBe(60);
-    // > 5,000 = 40
-    expect(computeLMQ(makeInput({ employment: 5001 })).components.employmentScore).toBe(40);
-    // > 1,000 = 20
-    expect(computeLMQ(makeInput({ employment: 1001 })).components.employmentScore).toBe(20);
-    // <= 1,000 = 10
-    expect(computeLMQ(makeInput({ employment: 1000 })).components.employmentScore).toBe(10);
+  it('should score employment using log-based continuous scaling', () => {
+    // Log-based continuous scoring (no cliff thresholds)
+    expect(computeLMQ(makeInput({ employment: 100001 })).components.employmentScore).toBe(83);
+    expect(computeLMQ(makeInput({ employment: 50001 })).components.employmentScore).toBe(76);
+    expect(computeLMQ(makeInput({ employment: 20001 })).components.employmentScore).toBe(66);
+    expect(computeLMQ(makeInput({ employment: 5001 })).components.employmentScore).toBe(51);
+    expect(computeLMQ(makeInput({ employment: 1001 })).components.employmentScore).toBe(34);
+    expect(computeLMQ(makeInput({ employment: 1000 })).components.employmentScore).toBe(34);
   });
 
   it('should give perfect wage score when target wage meets prior earnings', () => {
@@ -70,21 +67,23 @@ describe('computeLMQ', () => {
     const input = makeInput({ medianWage: 20000, priorEarnings: 50000 });
     const result = computeLMQ(input);
 
-    // ratio = 0.4, score = 20
-    expect(result.components.wageScore).toBe(20);
+    // ratio = 0.4, continuous score = 10 + min(90, 0.4*90) = 10 + 36 = 46
+    expect(result.components.wageScore).toBe(46);
   });
 
   it('should use absolute wage scoring when priorEarnings is null', () => {
     const highWage = computeLMQ(makeInput({ medianWage: 70000, priorEarnings: null }));
     const lowWage = computeLMQ(makeInput({ medianWage: 20000, priorEarnings: null }));
 
-    expect(highWage.components.wageScore).toBe(80);
-    expect(lowWage.components.wageScore).toBe(20);
+    // Absolute scoring: wage/80000*100 -> 70000/80000*100=87.5->88, 20000/80000*100=25
+    expect(highWage.components.wageScore).toBe(88);
+    expect(lowWage.components.wageScore).toBe(25);
   });
 
   it('should use absolute wage scoring when priorEarnings is zero', () => {
     const result = computeLMQ(makeInput({ medianWage: 45000, priorEarnings: 0 }));
-    expect(result.components.wageScore).toBe(60);
+    // Absolute scoring: 45000/80000*100 = 56.25 -> 56
+    expect(result.components.wageScore).toBe(56);
   });
 
   it('should return neutral scores when data is null', () => {
@@ -103,7 +102,7 @@ describe('computeLMQ', () => {
     expect(result.components.employmentScore).toBe(50);
     expect(result.components.wageScore).toBe(50);
     expect(result.components.projectionsScore).toBe(50);
-    // LMQ = 0.4*50 + 0.35*50 + 0.25*50 = 50
+    // All null -> neutral, LMQ = 50
     expect(result.lmq).toBe(50);
   });
 
@@ -118,23 +117,25 @@ describe('computeLMQ', () => {
     const input = makeInput({ projectedGrowthPct: -5, projectedOpenings: 500 });
     const result = computeLMQ(input);
 
-    expect(result.components.projectionsScore).toBe(20);
+    // Log-based scoring: growth -5 -> 33, openings 500 -> 55, avg -> 44
+    expect(result.components.projectionsScore).toBe(44);
   });
 
   it('should compute correct weighted composite', () => {
     // Set up inputs that produce known scores
     const input = makeInput({
-      employment: 150000,       // score = 100
-      medianWage: 60000,        // >= priorEarnings=50000, ratio >= 1.0, score = 100
+      employment: 150000,       // log-based score = 87
+      medianWage: 60000,        // ratio=1.2 >= 1.0, score = 100
       priorEarnings: 50000,
-      projectedGrowthPct: 15,   // growth > 10 AND openings > 10000, score = 100
+      projectedGrowthPct: 15,   // growth=100, openings log-based=95, avg=98
       projectedOpenings: 15000,
     });
 
     const result = computeLMQ(input);
 
-    // LMQ = 0.4*100 + 0.35*100 + 0.25*100 = 100
-    expect(result.lmq).toBe(100);
+    // Weights redistribute: emp=0.357, wage=0.357, proj=0.286
+    // LMQ = 0.357*87 + 0.357*100 + 0.286*98 = 94.79
+    expect(result.lmq).toBeCloseTo(94.79, 1);
   });
 
   it('should preserve all detail fields in output', () => {

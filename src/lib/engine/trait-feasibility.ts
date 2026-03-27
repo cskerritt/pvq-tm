@@ -728,7 +728,12 @@ export function buildDOTDemandVector(
 export function buildOccupationDemands(
   orsData?: Record<string, unknown> | null,
   dotData?: Record<string, unknown> | null,
-  onetData?: Record<string, unknown> | null
+  onetData?: Record<string, unknown> | null,
+  orsProxyData?: {
+    traits: Record<string, number>;
+    sources: Record<string, string>;
+    confidence?: Record<string, number>;
+  } | null
 ): {
   demands: TraitVector;
   sources: Partial<Record<string, TraitSource>>;
@@ -752,6 +757,27 @@ export function buildOccupationDemands(
     else if (onetData && key in onetData && onetData[key] !== null && onetData[key] !== undefined) {
       demands[key] = onetData[key] as number;
       sources[key] = "ONET";
+    }
+    // Then ORS proxy (group inheritance, similar occupation, context mapping)
+    else if (
+      orsProxyData &&
+      key in orsProxyData.traits &&
+      orsProxyData.traits[key] !== null &&
+      orsProxyData.traits[key] !== undefined &&
+      orsProxyData.sources[key] !== "PROXY" // Skip bare defaults — let fallback chain handle those
+    ) {
+      demands[key] = orsProxyData.traits[key];
+      // Map proxy source types to TraitSource
+      const proxySource = orsProxyData.sources[key];
+      if (proxySource === "ORS_GROUP" || proxySource === "ORS_SIMILAR") {
+        sources[key] = "ORS"; // Treat group/similar ORS as ORS-grade
+      } else if (proxySource === "ONET_CONTEXT") {
+        sources[key] = "ONET";
+      } else if (proxySource === "DOT_ADJUSTED" || proxySource === "DOT") {
+        sources[key] = "DOT";
+      } else {
+        sources[key] = "proxy";
+      }
     }
     // Not available yet
     else {
