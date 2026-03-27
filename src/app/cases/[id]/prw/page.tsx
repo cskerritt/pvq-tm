@@ -23,7 +23,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, Search, Briefcase, Trash2, Pencil, ExternalLink, Loader2, Sparkles, ChevronDown, ChevronUp, CheckSquare, Square } from "lucide-react";
+import { Plus, Search, Briefcase, Trash2, Pencil, ExternalLink, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
 import { CaseBreadcrumb } from "@/components/case-breadcrumb";
 import { WizardNav, WizardNavButtons } from "@/components/wizard-nav";
@@ -113,13 +113,6 @@ interface DOTEntry {
   traits: Record<string, number | null>;
 }
 
-interface SuggestedSkill {
-  actionVerb: string;
-  object: string;
-  context?: string;
-  toolsSoftware?: string;
-  selected: boolean;
-}
 
 // Typical acquired skills based on O*NET SOC major group
 const SKILL_TEMPLATES: Record<string, Array<{ verb: string; object: string; context: string; tools?: string }>> = {
@@ -224,14 +217,9 @@ export default function PRWPage() {
   const [selectedDot, setSelectedDot] = useState<DOTEntry | null>(null);
   const [loadingDot, setLoadingDot] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [generatingDuties, setGeneratingDuties] = useState(false);
-  const [generatedDuties, setGeneratedDuties] = useState("");
   const [expandedPRW, setExpandedPRW] = useState<string | null>(null);
 
   const [wageData, setWageData] = useState<Record<string, WageInfo>>({});
-  const [suggestedSkills, setSuggestedSkills] = useState<Record<string, SuggestedSkill[]>>({});
-  const [generatingSkillsFor, setGeneratingSkillsFor] = useState<string | null>(null);
-  const [savingSkillsFor, setSavingSkillsFor] = useState<string | null>(null);
 
   // Controlled form state for reliable auto-fill
   const [formJobTitle, setFormJobTitle] = useState("");
@@ -446,7 +434,6 @@ export default function PRWPage() {
     setSelectedOcc(occ);
     setSearchResults([]);
     setCombinedResults([]);
-    setGeneratedDuties("");
     setAutoFillSource(null);
     setAutoFillWages(null);
     // Auto-fill job title and O*NET code
@@ -458,7 +445,6 @@ export default function PRWPage() {
   function handleSelectCombined(result: CombinedSearchResult) {
     setCombinedResults([]);
     setSearchResults([]);
-    setGeneratedDuties("");
 
     // Set job title
     setFormJobTitle(result.title);
@@ -496,84 +482,6 @@ export default function PRWPage() {
     );
   }
 
-  async function generateDutiesWithAI() {
-    if (!selectedOcc) {
-      toast.error("Select an occupation first");
-      return;
-    }
-    setGeneratingDuties(true);
-    try {
-      const res = await fetch("/api/ai/duties", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jobTitle: selectedOcc.title,
-          onetCode: selectedOcc.code,
-          dotCode: selectedDot?.dotCode ?? undefined,
-          svp: selectedDot?.svp ?? undefined,
-          strength: selectedDot?.strength ?? undefined,
-        }),
-      });
-      if (res.status === 503) {
-        toast.error("AI not available — OpenAI key not configured");
-        return;
-      }
-      const data = await res.json();
-      if (data.description) {
-        setGeneratedDuties(data.description);
-        setFormDuties(data.description);
-        toast.success("Duties description generated!");
-      } else {
-        toast.error("AI could not generate duties");
-      }
-    } catch {
-      toast.error("Failed to generate duties");
-    }
-    setGeneratingDuties(false);
-  }
-
-  async function generateSkillsWithAI(prwId: string) {
-    if (!selectedOcc) return;
-    try {
-      const res = await fetch("/api/ai/skills", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jobTitle: selectedOcc.title,
-          onetCode: selectedOcc.code,
-          svp: selectedDot?.svp ?? undefined,
-          strength: selectedDot?.strength ?? undefined,
-          dutiesDescription: generatedDuties || undefined,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.skills?.length > 0) {
-          for (const skill of data.skills) {
-            await fetch(`/api/cases/${caseId}/skills`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                prwId,
-                actionVerb: skill.actionVerb,
-                object: skill.object,
-                context: skill.context || null,
-                toolsSoftware: skill.toolsSoftware || null,
-                svpLevel: selectedDot?.svp ?? null,
-                evidenceSource: "AI-generated (OpenAI)",
-                isTransferable: true,
-              }),
-            });
-          }
-          return true;
-        }
-      }
-    } catch {
-      // Fall back to template-based skills
-    }
-    return false;
-  }
-
   function openEdit(entry: PRWEntry) {
     setEditingId(entry.id);
     setSelectedOcc(
@@ -599,7 +507,6 @@ export default function PRWPage() {
     setFormActualWageAnnual(entry.actualWageAnnual !== null ? String(entry.actualWageAnnual) : "");
     setFormHoursPerWeek(entry.hoursPerWeek !== null ? String(entry.hoursPerWeek) : "40");
     setFormWageYear(entry.wageYear !== null ? String(entry.wageYear) : "");
-    setGeneratedDuties("");
     setDialogOpen(true);
   }
 
@@ -611,7 +518,6 @@ export default function PRWPage() {
     setSearchQuery("");
     setSearchResults([]);
     setCombinedResults([]);
-    setGeneratedDuties("");
     setAutoFillSource(null);
     setAutoFillWages(null);
     // Reset form state
@@ -729,12 +635,8 @@ export default function PRWPage() {
             await autoPopulateProfiles(selectedDot);
           }
 
-          toast.info("Generating acquired skills with AI...");
-          const aiSuccess = await generateSkillsWithAI(savedPrw.id);
-          if (!aiSuccess) {
-            toast.info("AI unavailable, using template skills...");
-            await autoPopulateSkills(savedPrw.id, selectedOcc.code, selectedDot);
-          }
+          toast.info("Generating acquired skills from templates...");
+          await autoPopulateSkills(savedPrw.id, selectedOcc.code, selectedDot);
           toast.success("Profiles and skills auto-populated!");
         }
 
@@ -769,91 +671,6 @@ export default function PRWPage() {
     } else {
       toast.error("Failed to delete");
     }
-  }
-
-  async function generateSkillSuggestions(entry: PRWEntry) {
-    setGeneratingSkillsFor(entry.id);
-    try {
-      const res = await fetch("/api/ai/skills", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jobTitle: entry.jobTitle,
-          onetCode: entry.onetSocCode ?? undefined,
-          svp: entry.svp ?? undefined,
-          strength: entry.strengthLevel ?? undefined,
-          dutiesDescription: entry.dutiesDescription ?? undefined,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.skills?.length > 0) {
-          setSuggestedSkills((prev) => ({
-            ...prev,
-            [entry.id]: data.skills.map((s: { actionVerb: string; object: string; context?: string; toolsSoftware?: string }) => ({
-              ...s,
-              selected: true,
-            })),
-          }));
-          toast.success(`Generated ${data.skills.length} skill suggestions`);
-        } else {
-          toast.info("No skills generated");
-        }
-      } else if (res.status === 503) {
-        toast.error("AI not available - OpenAI key not configured");
-      } else {
-        toast.error("Failed to generate skills");
-      }
-    } catch {
-      toast.error("Failed to generate skills");
-    }
-    setGeneratingSkillsFor(null);
-  }
-
-  function toggleSkillSelection(prwId: string, index: number) {
-    setSuggestedSkills((prev) => ({
-      ...prev,
-      [prwId]: prev[prwId].map((s, i) =>
-        i === index ? { ...s, selected: !s.selected } : s
-      ),
-    }));
-  }
-
-  async function saveSelectedSkills(prwId: string, entry: PRWEntry) {
-    const skills = suggestedSkills[prwId]?.filter((s) => s.selected);
-    if (!skills?.length) {
-      toast.info("No skills selected");
-      return;
-    }
-    setSavingSkillsFor(prwId);
-    try {
-      for (const skill of skills) {
-        await fetch(`/api/cases/${caseId}/skills`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prwId,
-            actionVerb: skill.actionVerb,
-            object: skill.object,
-            context: skill.context || null,
-            toolsSoftware: skill.toolsSoftware || null,
-            svpLevel: entry.svp ?? null,
-            evidenceSource: "AI-generated (OpenAI)",
-            isTransferable: true,
-          }),
-        });
-      }
-      toast.success(`Saved ${skills.length} skills to inventory`);
-      setSuggestedSkills((prev) => {
-        const updated = { ...prev };
-        delete updated[prwId];
-        return updated;
-      });
-      load();
-    } catch {
-      toast.error("Failed to save skills");
-    }
-    setSavingSkillsFor(null);
   }
 
   function getSvpLabel(svp: number | null): string {
@@ -1015,8 +832,7 @@ export default function PRWPage() {
               {/* Auto-filled fields section */}
               {(formDotCode || formSvp || formSkillLevel || formStrength) && (
                 <div className="rounded-md border border-green-200 bg-green-50/50 dark:bg-green-950/20 p-3 space-y-2">
-                  <p className="text-xs font-medium text-green-700 dark:text-green-400 flex items-center gap-1">
-                    <Sparkles className="h-3 w-3" />
+                  <p className="text-xs font-medium text-green-700 dark:text-green-400">
                     Auto-filled from {autoFillSource ?? "occupation data"} — editable if needed
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
@@ -1265,25 +1081,7 @@ export default function PRWPage() {
               </div>
 
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="dutiesDescription">Duties Description</Label>
-                  {selectedOcc && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={generateDutiesWithAI}
-                      disabled={generatingDuties}
-                      className="text-xs"
-                    >
-                      {generatingDuties ? (
-                        <><Loader2 className="mr-1 h-3 w-3 animate-spin" />Generating...</>
-                      ) : (
-                        <><Sparkles className="mr-1 h-3 w-3" />Generate with AI</>
-                      )}
-                    </Button>
-                  )}
-                </div>
+                <Label htmlFor="dutiesDescription">Duties Description</Label>
                 <Textarea
                   id="dutiesDescription"
                   rows={4}
@@ -1291,25 +1089,17 @@ export default function PRWPage() {
                   onChange={(e) => setFormDuties(e.target.value)}
                   placeholder="Describe the primary duties, tools used, and work environment..."
                 />
-                {generatedDuties && (
-                  <p className="text-xs text-green-600 flex items-center gap-1">
-                    <Sparkles className="h-3 w-3" />
-                    AI-generated — review and edit as needed
-                  </p>
-                )}
               </div>
 
               {/* Auto-populate info */}
               {!editingId && selectedOcc && (
                 <div className="rounded-md border bg-muted/30 p-3 text-sm">
-                  <p className="font-medium text-green-700 mb-1 flex items-center gap-1">
-                    <Sparkles className="h-4 w-4" />
+                  <p className="font-medium text-green-700 mb-1">
                     Auto-Populate on Save:
                   </p>
                   <ul className="text-muted-foreground space-y-1 text-xs">
                     {selectedDot && <li>Worker Profiles (all 4 rows) from DOT trait data</li>}
-                    <li>Acquired Skills via AI (falls back to templates if AI unavailable)</li>
-                    {generatedDuties && <li>AI-generated duties description included</li>}
+                    <li>Acquired Skills from DOT/O*NET templates</li>
                   </ul>
                   <p className="text-xs text-muted-foreground mt-1">
                     You can adjust the Evaluative and Post profiles afterward.
@@ -1421,75 +1211,6 @@ export default function PRWPage() {
                   </div>
                 </div>
 
-                {/* Generate Skills inline */}
-                <div className="mt-2 flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-xs"
-                    onClick={() => generateSkillSuggestions(e)}
-                    disabled={generatingSkillsFor === e.id}
-                  >
-                    {generatingSkillsFor === e.id ? (
-                      <><Loader2 className="mr-1 h-3 w-3 animate-spin" />Generating...</>
-                    ) : (
-                      <><Sparkles className="mr-1 h-3 w-3" />Generate Skills</>
-                    )}
-                  </Button>
-                </div>
-
-                {/* Suggested Skills List */}
-                {suggestedSkills[e.id]?.length > 0 && (
-                  <div className="mt-3 rounded-md border bg-muted/20 p-3 space-y-2">
-                    <p className="text-xs font-medium flex items-center gap-1">
-                      <Sparkles className="h-3 w-3 text-purple-500" />
-                      AI-Generated Skills -- select to save
-                    </p>
-                    <div className="space-y-1">
-                      {suggestedSkills[e.id].map((skill, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => toggleSkillSelection(e.id, idx)}
-                          className="flex items-start gap-2 w-full text-left px-2 py-1 rounded hover:bg-muted text-sm"
-                        >
-                          {skill.selected ? (
-                            <CheckSquare className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                          ) : (
-                            <Square className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                          )}
-                          <span className={skill.selected ? "" : "text-muted-foreground"}>
-                            <span className="font-medium">{skill.actionVerb}</span>{" "}
-                            {skill.object}
-                            {skill.context && <span className="text-muted-foreground"> -- {skill.context}</span>}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="flex gap-2 pt-1">
-                      <Button
-                        size="sm"
-                        className="text-xs"
-                        onClick={() => saveSelectedSkills(e.id, e)}
-                        disabled={savingSkillsFor === e.id}
-                      >
-                        {savingSkillsFor === e.id ? (
-                          <><Loader2 className="mr-1 h-3 w-3 animate-spin" />Saving...</>
-                        ) : (
-                          <>Save Selected Skills ({suggestedSkills[e.id].filter((s) => s.selected).length})</>
-                        )}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-xs"
-                        onClick={() => setSuggestedSkills((prev) => { const u = { ...prev }; delete u[e.id]; return u; })}
-                      >
-                        Dismiss
-                      </Button>
-                    </div>
-                  </div>
-                )}
 
                 {/* Expanded DOT Details */}
                 {expandedPRW === e.id && (

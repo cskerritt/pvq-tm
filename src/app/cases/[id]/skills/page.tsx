@@ -29,7 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Wrench, CheckCircle, XCircle, Trash2, Pencil, Sparkles, Loader2 } from "lucide-react";
+import { Plus, Wrench, CheckCircle, XCircle, Trash2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { CaseBreadcrumb } from "@/components/case-breadcrumb";
 import { WizardNav, WizardNavButtons } from "@/components/wizard-nav";
@@ -67,7 +67,6 @@ export default function SkillsPage() {
   const [prwList, setPrwList] = useState<PRWEntry[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [generatingAI, setGeneratingAI] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -145,57 +144,6 @@ export default function SkillsPage() {
     } else {
       toast.error("Failed to delete");
     }
-  }
-
-  async function generateAISkills(prw: PRWEntry) {
-    setGeneratingAI(true);
-    try {
-      const res = await fetch("/api/ai/skills", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jobTitle: prw.jobTitle,
-          onetCode: prw.onetSocCode ?? undefined,
-          svp: prw.svp ?? undefined,
-          strength: prw.strengthLevel ?? undefined,
-          dutiesDescription: prw.dutiesDescription ?? undefined,
-        }),
-      });
-
-      if (res.status === 503) {
-        toast.error("AI not available — OpenAI key not configured");
-        return;
-      }
-
-      const data = await res.json();
-      if (data.skills?.length > 0) {
-        let count = 0;
-        for (const skill of data.skills) {
-          const saveRes = await fetch(`/api/cases/${caseId}/skills`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              prwId: prw.id,
-              actionVerb: skill.actionVerb,
-              object: skill.object,
-              context: skill.context || null,
-              toolsSoftware: skill.toolsSoftware || null,
-              svpLevel: prw.svp ?? null,
-              evidenceSource: "AI-generated (OpenAI)",
-              isTransferable: true,
-            }),
-          });
-          if (saveRes.ok) count++;
-        }
-        toast.success(`${count} AI-generated skills added for "${prw.jobTitle}"`);
-        load();
-      } else {
-        toast.error("AI could not generate skills");
-      }
-    } catch {
-      toast.error("Failed to generate skills");
-    }
-    setGeneratingAI(false);
   }
 
   const editingSkill = editingId ? skills.find((s) => s.id === editingId) : null;
@@ -389,41 +337,6 @@ export default function SkillsPage() {
         </Dialog>
       </div>
 
-      {/* AI Generate Skills for PRW */}
-      {prwList.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-purple-600" />
-              AI Skill Generation
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-xs text-muted-foreground mb-3">
-              Generate occupation-specific acquired skills using AI for each PRW entry.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {prwList.map((prw) => (
-                <Button
-                  key={prw.id}
-                  variant="outline"
-                  size="sm"
-                  disabled={generatingAI}
-                  onClick={() => generateAISkills(prw)}
-                >
-                  {generatingAI ? (
-                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                  ) : (
-                    <Sparkles className="mr-1 h-3 w-3" />
-                  )}
-                  Generate for &quot;{prw.jobTitle}&quot;
-                </Button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {prwList.length === 0 && (
         <Card>
           <CardContent className="py-6 text-center">
@@ -442,7 +355,7 @@ export default function SkillsPage() {
               No acquired skills documented yet
             </p>
             <p className="text-xs text-muted-foreground">
-              Use the AI buttons above, or manually add skills using the format: Action Verb (e.g. &quot;operated&quot;) +
+              Manually add skills using the format: Action Verb (e.g. &quot;operated&quot;) +
               Object (e.g. &quot;CNC lathe&quot;) + Context (e.g. &quot;in manufacturing setting&quot;)
             </p>
           </CardContent>

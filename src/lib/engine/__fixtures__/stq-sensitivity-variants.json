@@ -1,0 +1,296 @@
+[
+  {
+    "occupationId": "benchmark-001",
+    "title": "Cashier",
+    "socCode": "41-2011",
+    "variants": [
+      {
+        "id": "variant-1",
+        "source": "DOT description (211.462-010)",
+        "tasks": [
+          "Receives cash from customers or employees in payment for goods or services and records amounts received",
+          "Recomputes or computes bill, itemized lists, and tickets showing amount due using adding machine or cash register",
+          "Makes change, cashes checks, and issues receipts or tickets to customers",
+          "Records amounts received and prepares reports of transactions",
+          "Reads and records totals shown on cash register tape and verifies against cash on hand"
+        ],
+        "tools": ["cash register", "adding machine", "receipt printer"]
+      },
+      {
+        "id": "variant-2",
+        "source": "O*NET tasks rephrased",
+        "tasks": [
+          "Process customer payments including cash, debit card, and credit card transactions",
+          "Calculate total purchases and apply applicable discounts and coupons",
+          "Provide correct change and generate printed transaction records for buyers",
+          "Balance cash drawer at end of shift and reconcile transaction logs",
+          "Scan merchandise barcodes and resolve pricing discrepancies"
+        ],
+        "tools": ["point-of-sale terminal", "barcode scanner", "currency counter"]
+      },
+      {
+        "id": "variant-3",
+        "source": "Job posting language",
+        "tasks": [
+          "Handle monetary transactions from customers purchasing retail goods",
+          "Operate checkout systems to ring up sales and complete purchases",
+          "Accept multiple forms of payment and return appropriate change",
+          "Maintain accurate daily sales records and perform register closeout procedures",
+          "Greet shoppers and assist with bagging purchased items"
+        ],
+        "tools": ["POS system", "card reader", "bag dispenser"]
+      },
+      {
+        "id": "variant-4",
+        "source": "Plain language equivalent",
+        "tasks": [
+          "Take money from people buying things at a store",
+          "Use the register to add up what customers owe",
+          "Give back the right amount of coins and bills when they pay with cash",
+          "Keep track of how much money came in during your shift",
+          "Help customers at the front counter and answer questions about prices"
+        ],
+        "tools": ["checkout machine", "bill validator", "coin dispenser"]
+      }
+    ]
+  },
+  {
+    "occupationId": "benchmark-002",
+    "title": "Bookkeeper",
+    "socCode": "43-3031",
+    "variants": [
+      {
+        "id": "variant-1",
+        "source": "DOT description (210.382-014)",
+        "tasks": [
+          "Keeps records of financial transactions for establishment, using calculator and computer",
+          "Verifies, allocates, and posts details of business transactions to subsidiary accounts in journals or computer files from documents",
+          "Summarizes details in separate ledgers or computer files and transfers data to general ledger",
+          "Reconciles and balances accounts",
+          "Compiles reports to show statistics such as cash receipts and expenditures, accounts payable and receivable, and profit and loss"
+        ],
+        "tools": ["calculator", "computer", "ledger books", "spreadsheet software"]
+      },
+      {
+        "id": "variant-2",
+        "source": "O*NET tasks rephrased",
+        "tasks": [
+          "Maintain complete records of all monetary inflows and outflows using accounting software",
+          "Categorize and enter financial transaction data into the general ledger system",
+          "Prepare trial balances and ensure debits equal credits across all accounts",
+          "Generate accounts payable and accounts receivable aging reports",
+          "Process payroll calculations and prepare tax withholding documentation"
+        ],
+        "tools": ["QuickBooks", "Excel", "payroll software", "ten-key calculator"]
+      },
+      {
+        "id": "variant-3",
+        "source": "Job posting language",
+        "tasks": [
+          "Manage day-to-day financial record-keeping for a small to mid-size organization",
+          "Input invoices, receipts, and payment information into the accounting platform",
+          "Perform monthly bank statement reconciliation and flag discrepancies",
+          "Produce financial summaries and budget variance analyses for management review",
+          "Handle vendor payment scheduling and customer billing cycles"
+        ],
+        "tools": ["cloud accounting platform", "document scanner", "banking portal", "spreadsheet application"]
+      }
+    ]
+  },
+  {
+    "occupationId": "benchmark-003",
+    "title": "Registered Nurse",
+    "socCode": "29-1141",
+    "variants": [
+      {
+        "id": "variant-1",
+        "source": "DOT description (075.364-010)",
+        "tasks": [
+          "Administers prescribed medications and treatments in accordance with approved nursing techniques",
+          "Observes patient, records significant conditions and reactions, and notifies supervisor or physician of patient's condition",
+          "Takes temperature, pulse, blood pressure, and other vital signs to detect deviations from normal",
+          "Prepares equipment and aids physician during treatment and examination of patient",
+          "Maintains awareness of comfort and safety needs of patient"
+        ],
+        "tools": ["stethoscope", "blood pressure cuff", "thermometer", "syringe", "medical chart"]
+      },
+      {
+        "id": "variant-2",
+        "source": "O*NET tasks rephrased",
+        "tasks": [
+          "Deliver direct patient care by administering medications, IV fluids, and wound treatments per physician orders",
+          "Monitor vital signs including heart rate, respiration, blood pressure, and oxygen saturation levels",
+          "Document clinical observations and patient status changes in the electronic health record system",
+          "Collaborate with interdisciplinary healthcare teams to develop and modify care plans",
+          "Educate patients and family members about disease management, medication regimens, and post-discharge instructions"
+        ],
+        "tools": ["electronic health record system", "vital signs monitor", "infusion pump", "pulse oximeter", "medication administration record"]
+      },
+      {
+        "id": "variant-3",
+        "source": "Job posting language",
+        "tasks": [
+          "Provide bedside nursing care to assigned patients in an acute care hospital setting",
+          "Assess patient conditions through physical examination and diagnostic data review",
+          "Execute treatment protocols and medication administration following safety guidelines",
+          "Coordinate with physicians, therapists, and case managers to ensure continuity of care",
+          "Respond to medical emergencies and initiate life-saving interventions as trained"
+        ],
+        "tools": ["clinical workstation", "patient monitoring equipment", "automated medication dispensing cabinet", "point-of-care testing device"]
+      },
+      {
+        "id": "variant-4",
+        "source": "Plain language equivalent",
+        "tasks": [
+          "Take care of sick people in the hospital by giving them their medicines and checking how they feel",
+          "Measure patients' temperature, heart rate, and blood pressure regularly throughout the shift",
+          "Write down what happens with each patient so the doctor and next nurse know the situation",
+          "Work with doctors and other hospital staff to figure out the best way to help each patient get better",
+          "Teach patients about their health conditions and how to take care of themselves at home"
+        ],
+        "tools": ["medical instruments", "computer charting system", "medicine cart", "monitoring screens"]
+      }
+    ]
+  },
+  {
+    "occupationId": "benchmark-004",
+    "title": "Machinist",
+    "socCode": "51-4041",
+    "variants": [
+      {
+        "id": "variant-1",
+        "source": "DOT description (600.280-022)",
+        "tasks": [
+          "Sets up and operates conventional, special-purpose, and numerical control machines and machining centers to fabricate metallic and nonmetallic parts",
+          "Studies specifications such as blueprint, sketch, or description of part to be fabricated",
+          "Determines sequence of operations, tools needed, and dimensions and tolerances",
+          "Measures, marks, and scribes metal stock for machining",
+          "Selects, aligns, and secures holding fixtures, cutting tools, attachments, accessories, and materials on machines"
+        ],
+        "tools": ["lathe", "milling machine", "drill press", "grinder", "micrometer", "calipers"]
+      },
+      {
+        "id": "variant-2",
+        "source": "O*NET tasks rephrased",
+        "tasks": [
+          "Program and operate CNC equipment to produce precision metal components within specified tolerances",
+          "Interpret engineering drawings and geometric dimensioning and tolerancing specifications",
+          "Select appropriate cutting parameters including speed, feed rate, and depth of cut for various materials",
+          "Perform quality inspections using precision measuring instruments to verify part conformance",
+          "Maintain, troubleshoot, and perform preventive maintenance on machine tool equipment"
+        ],
+        "tools": ["CNC machining center", "coordinate measuring machine", "digital micrometer", "surface roughness tester", "CAM software"]
+      },
+      {
+        "id": "variant-3",
+        "source": "Job posting language",
+        "tasks": [
+          "Manufacture custom metal parts and components from raw stock using manual and computer-controlled machine tools",
+          "Read and interpret technical blueprints and work orders to determine fabrication requirements",
+          "Choose appropriate tooling configurations and establish optimal machining parameters",
+          "Inspect finished workpieces with gauges and measurement devices to ensure dimensional accuracy",
+          "Document production data and maintain machine logs for quality assurance tracking"
+        ],
+        "tools": ["turning center", "vertical mill", "band saw", "dial indicator", "gauge block set"]
+      }
+    ]
+  },
+  {
+    "occupationId": "benchmark-005",
+    "title": "Attorney",
+    "socCode": "23-1011",
+    "variants": [
+      {
+        "id": "variant-1",
+        "source": "DOT description (110.107-010)",
+        "tasks": [
+          "Conducts criminal and civil litigation, draws up legal documents, advises clients as to legal rights, and practices other phases of law",
+          "Gathers evidence in divorce, civil, criminal, and other cases to formulate defense or to initiate legal action",
+          "Conducts research of legal issues and precedent court rulings to prepare cases for trial",
+          "Interviews clients and witnesses to ascertain facts of case",
+          "Represents client in court and before quasi-judicial and administrative agencies of government"
+        ],
+        "tools": ["legal research databases", "dictation equipment", "law library", "court filing system"]
+      },
+      {
+        "id": "variant-2",
+        "source": "O*NET tasks rephrased",
+        "tasks": [
+          "Analyze the probable outcomes of legal proceedings and advise clients on potential courses of action",
+          "Draft pleadings, motions, briefs, contracts, and other legal instruments",
+          "Perform case law research using online legal databases to identify applicable statutes and precedents",
+          "Negotiate settlements and plea agreements on behalf of clients",
+          "Present arguments and examine witnesses during trial and appellate proceedings"
+        ],
+        "tools": ["Westlaw", "LexisNexis", "case management software", "electronic court filing portal"]
+      },
+      {
+        "id": "variant-3",
+        "source": "Job posting language",
+        "tasks": [
+          "Provide legal counsel to individuals and organizations on a range of civil and criminal matters",
+          "Prepare and file litigation documents with state and federal courts",
+          "Conduct thorough legal analysis and due diligence for client transactions and disputes",
+          "Advocate for client interests through mediation, arbitration, and courtroom advocacy",
+          "Manage caseload including client communications, deadlines, and compliance with procedural rules"
+        ],
+        "tools": ["legal practice management platform", "document automation software", "e-discovery tools", "virtual hearing technology"]
+      }
+    ]
+  },
+  {
+    "occupationId": "benchmark-006",
+    "title": "Carpenter",
+    "socCode": "47-2031",
+    "variants": [
+      {
+        "id": "variant-1",
+        "source": "DOT description (860.381-022)",
+        "tasks": [
+          "Constructs, erects, installs, and repairs structures and fixtures of wood, plywood, and wallboard",
+          "Studies blueprints, sketches, or building plans for information pertaining to type of material required and dimensions",
+          "Selects specified type of lumber or other materials and measures, marks, and cuts material using hand and power tools",
+          "Assembles cut and shaped materials and fastens them together with nails, dowel pins, or glue",
+          "Verifies trueness of structure with plumb bob, level, and square"
+        ],
+        "tools": ["circular saw", "hammer", "tape measure", "level", "framing square", "nail gun"]
+      },
+      {
+        "id": "variant-2",
+        "source": "O*NET tasks rephrased",
+        "tasks": [
+          "Build and install wooden frameworks for residential and commercial structures including walls, floors, and roofing systems",
+          "Read architectural plans and construction specifications to determine layout and material quantities",
+          "Cut, shape, and join lumber and engineered wood products using powered and hand-operated cutting equipment",
+          "Secure structural components using mechanical fasteners, adhesives, and connection hardware",
+          "Verify alignment, levelness, and plumbness of installed assemblies using precision measuring tools"
+        ],
+        "tools": ["miter saw", "pneumatic nailer", "laser level", "construction adhesive applicator", "speed square"]
+      },
+      {
+        "id": "variant-3",
+        "source": "Job posting language",
+        "tasks": [
+          "Perform rough and finish carpentry work on new construction and renovation projects",
+          "Interpret project drawings and specifications to execute framing, trim, and cabinetry installations",
+          "Operate power saws, routers, planers, and other woodworking machinery safely and efficiently",
+          "Fasten building materials together and to structural supports using appropriate methods",
+          "Ensure all work meets building code requirements and passes inspection standards"
+        ],
+        "tools": ["table saw", "cordless drill", "chalk line", "reciprocating saw", "wood clamps"]
+      },
+      {
+        "id": "variant-4",
+        "source": "Plain language equivalent",
+        "tasks": [
+          "Build things out of wood like walls, doors, cabinets, and shelves for houses and buildings",
+          "Look at building plans to figure out what materials are needed and where everything goes",
+          "Measure and cut pieces of wood to the right size using saws and other cutting tools",
+          "Put the pieces together using nails, screws, or wood glue to make them strong and sturdy",
+          "Check that everything is straight and level before finishing the job"
+        ],
+        "tools": ["hand saw", "power drill", "measuring tape", "bubble level", "sandpaper"]
+      }
+    ]
+  }
+]

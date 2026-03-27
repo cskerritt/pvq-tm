@@ -1240,6 +1240,108 @@ Each grade includes:
 - Specific penalties identifying data quality concerns
 - Actionable recommendations for improving confidence (e.g., "Obtain ORS data for additional trait coverage")
 
+### 14.6 Standard Error of Measurement
+
+Each PVQ-TM quotient carries an inherent measurement uncertainty arising from data source limitations, scale discretization, and proxy-derived values. The Standard Error of Measurement (SEM) quantifies the expected variability of each quotient score.
+
+**Expected SEM Ranges by Quotient:**
+
+| Quotient | SEM Range | Primary Sources of Uncertainty |
+|----------|-----------|-------------------------------|
+| STQ | 2.0 - 5.0 | Text tokenization variance, Jaccard vs. token overlap selection |
+| TFQ | 0.5 - 2.0 | Trait scale discretization (0-4 integers), ORS vs. DOT data priority |
+| VAQ | 0.0 - 3.0 | Auto-estimation from occupational data vs. evaluator judgment |
+| LMQ | 1.0 - 3.0 | Dynamic weight redistribution when optional components unavailable |
+| VQ | 0.20 - 8.69 $/hr | Per-band SEE from published VQS regression (see Section 11.2) |
+
+**PVQ Composite Error Propagation:**
+
+Because PVQ is a linear weighted sum of independent quotients, the composite SEM is bounded by:
+
+```
+SEM_PVQ = sqrt( (0.45 x SEM_STQ)^2 + (0.25 x SEM_TFQ)^2
+              + (0.15 x SEM_VAQ)^2 + (0.15 x SEM_LMQ)^2 )
+```
+
+Under typical conditions (STQ SEM = 3.0, TFQ SEM = 1.0, VAQ SEM = 1.5, LMQ SEM = 2.0):
+
+```
+SEM_PVQ = sqrt( (1.35)^2 + (0.25)^2 + (0.225)^2 + (0.30)^2 )
+        = sqrt( 1.8225 + 0.0625 + 0.050625 + 0.09 )
+        = sqrt( 2.025625 )
+        ~ 1.42
+```
+
+This means the PVQ composite score is expected to be accurate within approximately +/- 1.4 points under typical data conditions.
+
+For full methodology details, see `docs/sem-methodology.md`.
+
+---
+
+### 14.7 Test/Retest Reliability
+
+PVQ-TM is a deterministic computational system. Given identical inputs, it always produces identical outputs. There is no randomness, no machine learning inference, no stochastic sampling, and no model weights that change between runs.
+
+**Determinism Guarantee:**
+
+The system uses only pure arithmetic functions: addition, multiplication, division, comparison, rounding, and clamping. All intermediate values are computed from explicit formulas with fixed coefficients. No function in the computation pipeline maintains mutable state between invocations.
+
+**Benchmark Fixture Set:**
+
+Determinism is formally verified against a frozen benchmark fixture set:
+- **18 benchmark occupations** spanning all 4 VQ bands and all strength levels (Sedentary through Heavy)
+- **4 worker profiles** covering sedentary-only, light work, medium unrestricted, and advanced-age-sedentary scenarios
+- **12 benchmark pairs** testing all combinations of pass/fail outcomes across the three exclusion gates (SVP, TFQ, VAQ)
+
+**SHA-256 Hash Verification:**
+
+Each benchmark pair's expected results are serialized to canonical JSON (keys sorted recursively) and hashed with SHA-256. The frozen hashes are stored in `src/lib/engine/__fixtures__/expected-hashes.json`. Any change to computation logic that would alter outputs causes the hash verification tests to fail immediately.
+
+**Multi-Run Reproducibility Proof:**
+
+Each benchmark pair is computed 50 consecutive times within a single test run. All 50 results are asserted to be bitwise identical (JSON string equality). This proves:
+- No floating-point drift accumulates across runs
+- No shared mutable state leaks between computations
+- No hidden randomness exists in any code path
+
+**Order Independence:**
+
+Benchmark pairs are computed in forward order and reverse order. Results are compared by pair ID and asserted identical. This proves no shared mutable state exists between independent computation invocations.
+
+**Automated Test Infrastructure:**
+
+The determinism and reproducibility proofs are implemented as automated Vitest test suites:
+- `src/lib/engine/__tests__/determinism.test.ts` — 59 tests covering hash verification, identical re-computation, normalization determinism, and VQ regression determinism
+- `src/lib/engine/__tests__/reproducibility.test.ts` — 15 tests covering multi-run consistency (50 iterations) and order independence
+
+These tests run as part of the standard CI pipeline via `npm run test:benchmarks`.
+
+---
+
+### 14.8 Data Version Manifest
+
+Each PVQ-TM analysis depends on specific versions of external data sources. The Data Version Manifest (`src/lib/engine/data-versions.ts`) documents the exact version of every external data dependency:
+
+| Data Source | Version | Publisher |
+|-------------|---------|-----------|
+| DOT | 4th Edition, Revised (1991) | U.S. Department of Labor |
+| O*NET | 29.1 (November 2024) | U.S. Department of Labor/ETA |
+| OEWS | May 2024 | Bureau of Labor Statistics |
+| BLS Projections | 2022-2032 | Bureau of Labor Statistics |
+| JOLTS | Current through February 2025 | Bureau of Labor Statistics |
+| ORS | 2023 | Bureau of Labor Statistics |
+| VQS Regression | McCroskey et al. (2011), Year 2007 SOC data | Vocationology, Inc. |
+
+**Version Tracking:**
+
+Each analysis records which data versions were active at the time of computation. When data sources are updated (e.g., a new O*NET release or OEWS survey year), the version manifest is updated and new benchmark hashes are generated. This ensures that:
+
+1. Any analysis can be reproduced by matching the data version manifest
+2. Changes in external data are explicitly tracked and their effects on benchmark outputs are measurable
+3. An opposing expert can verify which data vintage was used for any given analysis
+
+The manifest is importable as a TypeScript module and can be included in analysis metadata and PDF reports.
+
 ---
 
 ## 15. Data Sources and Provenance

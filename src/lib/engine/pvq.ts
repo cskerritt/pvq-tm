@@ -29,6 +29,20 @@ export interface PVQResult {
   pendingEvaluatorReview?: boolean;
   /** True when this occupation has tolerated marginal trait failures (clinical mode) */
   hasTolerations?: boolean;
+  /** Standard Error of Measurement for each component and the composite */
+  sem?: {
+    stq: number;
+    tfq: {
+      reserveMarginSEM: number;
+      flipProbability: number;
+      criticalTraits: string[];
+    };
+    vaq: number;
+    lmq: number;
+    pvq: number;
+    ci90: [number, number];
+    ci95: [number, number];
+  };
   components: {
     stqResult: STQResult;
     tfqResult: TFQResult;

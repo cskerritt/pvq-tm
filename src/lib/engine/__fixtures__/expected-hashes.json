@@ -1,0 +1,23 @@
+{
+  "generatedAt": "2026-03-27T00:00:00Z",
+  "hashAlgorithm": "SHA-256",
+  "dataVersions": {
+    "dot": "4th Edition, Revised (1991)",
+    "onet": "29.1",
+    "oews": "May 2024"
+  },
+  "pairHashes": {
+    "pair-001": "d621f018cd48e44735cc083c0ac4599946996523d25b9953b34e33349de50b68",
+    "pair-002": "c5cbaedcdce34d04044bde9a85589ef591f05b6193bb7b23f5ee0fed56440866",
+    "pair-003": "803607138ee449a7433bd1e6d16a1ff6b723dd733c9931256a4136de3ca32e4b",
+    "pair-004": "0ebbd6a4d665e41328eee473447b61566f2269456cc6321c31652f1203cfa531",
+    "pair-005": "996c380dedb4a2e2e92b2d74160ac8332d7ff6437e7c99eaf674e2876690355f",
+    "pair-006": "929621cc4427f1e986fe4f638aff95f774dada13ba90d449f33b3d3bd0a6b2fe",
+    "pair-007": "897536f9215066a2a6ad4e390bc3ac903c0f5ad900542c950627e2bac2b48b22",
+    "pair-008": "98954e4fbaeb09a7223d680c9df57457c737cb581f6b36120fad9f56807206bc",
+    "pair-009": "13dd3172d8e67dd87bffdb423900e13e0cff5f699e2570a6d3db3fe2cde3ed2f",
+    "pair-010": "d5f066290cbeeff84fa017e3139abf641be55d49fb0d7acedd91310756c49e7e",
+    "pair-011": "91208efee46c16bcb12583e2a8678cd1c82b3e5bf2859c66957a7c06fe975534",
+    "pair-012": "38e6fc102e7ac8364a5357d5633a5df5bcacdd3900516fbe210a6bbc52865fb5"
+  }
+}

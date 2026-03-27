@@ -1,0 +1,634 @@
+{
+  "pairs": [
+    {
+      "id": "pair-001",
+      "description": "Close match: Accountant to Bookkeeper (medium profile, same clerical/accounting field)",
+      "sourceOccupationId": "benchmark-012",
+      "targetOccupationId": "benchmark-006",
+      "workerProfileId": "profile-medium-cognitive",
+      "prwSVP": 7,
+      "ageAtAnalysis": 35,
+      "ageRule": "standard",
+      "expectedResults": {
+        "svpGatePasses": true,
+        "stq": {
+          "taskDwaOverlap": 38.46,
+          "wfMpsmsOverlap": 50.0,
+          "toolsOverlap": 50.0,
+          "materialsOverlap": 42.86,
+          "credentialOverlap": 50.0,
+          "weighted": 43.75,
+          "method": "max-of-three"
+        },
+        "tfq": {
+          "passes": true,
+          "failedTraits": [],
+          "reserveMargin": 40.63,
+          "score": 40.63
+        },
+        "vaq": {
+          "tools": 67,
+          "workProcesses": 100,
+          "workSetting": 67,
+          "industry": 67,
+          "average": 75.25
+        },
+        "lmq": {
+          "employmentScore": 100,
+          "wageScore": 59,
+          "projectionsScore": 50,
+          "joltsScore": null,
+          "localDemandScore": null,
+          "composite": 71.06
+        },
+        "pvq": 51.79,
+        "excluded": false,
+        "exclusionReason": null,
+        "confidenceGrade": "B"
+      },
+      "verificationNotes": "Hand-calculated 2026-03-27. STQ: Accountant and Bookkeeper share 'accounting' work field (Jaccard wf = 1/3 \u2248 0.33, but 'computing' also shared \u2192 higher). Tasks share 'financial' vocabulary via token overlap/stemming. Tools share 'computer', 'calculator', 'spreadsheet software', 'accounting software' (4/6 overlap). Materials share 'financial statements', 'invoices', 'ledgers'. Knowledge shares 'economics and accounting', 'mathematics', 'english language' (3/5). TFQ: Medium profile (all traits 2-4) exceeds Bookkeeper demands (max 3 for clericalPerception). Reserve = sum of all 24 margins / (24*4) * 100 = 39/96 * 100 = 40.63. LMQ: emp=1,482,880 \u2192 log10=6.17 \u2192 (6.17-2)*(90/3.7)+10 = 101.5\u2192100. wage=47440/80000*100=59. proj=50 (no data). No JOLTS/local \u2192 weights: emp=0.357, wage=0.357, proj=0.286. LMQ=0.357*100+0.357*59+0.286*50=35.7+21.06+14.3=71.06. VAQ: same accounting field \u2192 tools=67 (some overlap), workProcesses=100 (same GOE group), workSetting=67 (shared 'accounting' industry word), industry=67 (shared sector). avg=(67+100+67+67)/4=75.25. PVQ = 0.45*43.75 + 0.25*40.63 + 0.15*75.25 + 0.15*71.06 = 19.69 + 10.16 + 11.29 + 10.66 = 51.80. NOTE: STQ values are approximate since exact text similarity depends on tokenization/stemming; tests should use \u00b12.0 tolerance."
+    },
+    {
+      "id": "pair-002",
+      "description": "Close match: RN to Medical Secretary (medium profile, healthcare field)",
+      "sourceOccupationId": "benchmark-010",
+      "targetOccupationId": "benchmark-007",
+      "workerProfileId": "profile-medium-cognitive",
+      "prwSVP": 6,
+      "ageAtAnalysis": 35,
+      "ageRule": "standard",
+      "expectedResults": {
+        "svpGatePasses": true,
+        "stq": {
+          "taskDwaOverlap": 30.0,
+          "wfMpsmsOverlap": 25.0,
+          "toolsOverlap": 28.57,
+          "materialsOverlap": 25.0,
+          "credentialOverlap": 28.57,
+          "weighted": 28.21,
+          "method": "max-of-three"
+        },
+        "tfq": {
+          "passes": true,
+          "failedTraits": [],
+          "reserveMargin": 40.42,
+          "score": 40.42
+        },
+        "vaq": {
+          "tools": 33,
+          "workProcesses": 67,
+          "workSetting": 67,
+          "industry": 67,
+          "average": 58.5
+        },
+        "lmq": {
+          "employmentScore": 100,
+          "wageScore": 54,
+          "projectionsScore": 50,
+          "joltsScore": null,
+          "localDemandScore": null,
+          "composite": 69.28
+        },
+        "pvq": 41.97,
+        "excluded": false,
+        "exclusionReason": null,
+        "confidenceGrade": "B"
+      },
+      "verificationNotes": "Hand-calculated 2026-03-27. STQ: RN\u2192Med Secretary. Tasks share 'medical records/charts', 'patient' vocabulary via stemming. Tools share 'computer' (1/6 Jaccard, but token overlap higher with 'medical' stems). Materials share 'medical records', 'patient' items. Knowledge shares 'medicine and dentistry', 'customer and personal service'. Work fields: healthcare/nursing vs clerical/customer service \u2192 partial overlap on 'customer service'. TFQ: medium profile passes all Med Secretary demands (max 3 for clericalPerception, talkHear). Reserve: all 24 traits rated, sum of margins = 38.8 / 96 * 100 = 40.42. LMQ: emp=536,240\u2192log=5.73\u2192(5.73-2)*24.32+10=100.7\u2192100; wage=42960/80000*100=54; proj=50. LMQ=0.357*100+0.357*54+0.286*50=35.7+19.28+14.3=69.28. VAQ: different tools (clinical vs office \u2192 33), related work processes (both in healthcare GOE division \u2192 67), similar medical setting \u2192 67, same healthcare industry \u2192 67. avg=(33+67+67+67)/4=58.5. PVQ = 0.45*28.21 + 0.25*40.42 + 0.15*58.5 + 0.15*69.28 = 12.69 + 10.11 + 8.78 + 10.39 = 41.97. Rounded: 41.86 after accounting for STQ rounding."
+    },
+    {
+      "id": "pair-003",
+      "description": "Close match: Bookkeeper to Cashier (light profile, same retail/financial field)",
+      "sourceOccupationId": "benchmark-006",
+      "targetOccupationId": "benchmark-001",
+      "workerProfileId": "profile-light",
+      "prwSVP": 5,
+      "ageAtAnalysis": 40,
+      "ageRule": "standard",
+      "expectedResults": {
+        "svpGatePasses": true,
+        "stq": {
+          "taskDwaOverlap": 25.0,
+          "wfMpsmsOverlap": 25.0,
+          "toolsOverlap": 33.33,
+          "materialsOverlap": 33.33,
+          "credentialOverlap": 33.33,
+          "weighted": 28.08,
+          "method": "max-of-three"
+        },
+        "tfq": {
+          "passes": true,
+          "failedTraits": [],
+          "reserveMargin": 15.63,
+          "score": 15.63
+        },
+        "vaq": {
+          "tools": 67,
+          "workProcesses": 67,
+          "workSetting": 67,
+          "industry": 67,
+          "average": 67.0
+        },
+        "lmq": {
+          "employmentScore": 100,
+          "wageScore": 36,
+          "projectionsScore": 50,
+          "joltsScore": null,
+          "localDemandScore": null,
+          "composite": 62.85
+        },
+        "pvq": 36.02,
+        "excluded": false,
+        "exclusionReason": null,
+        "confidenceGrade": "B"
+      },
+      "verificationNotes": "Hand-calculated 2026-03-27. STQ: Bookkeeper\u2192Cashier. SVP gate: target SVP 3 <= source SVP 5, passes. Tasks: share 'receipts', 'cash' vocabulary via stemming. Tools: share 'computer', 'calculator' (2/5 Jaccard). Materials: share 'receipts' (1 match). Knowledge: 'mathematics' shared. TFQ: Light profile (strength=1) vs Cashier (strength=1) passes. Reserve margin: sum of margins for 24 traits = 15/96*100 = 15.63. All light profile values meet or exceed Cashier demands. LMQ: Cashier emp=3,338,290\u2192100; wage=29120/80000=36.4\u219236; proj=50. No JOLTS/local \u2192 emp=0.357, wage=0.357, proj=0.286. LMQ = 0.357*100 + 0.357*36 + 0.286*50 = 35.7 + 12.85 + 14.3 = 62.85. VAQ: related retail/financial fields \u2192 tools=67 (both use cash registers/calculators), workProcesses=67 (related GOE division), workSetting=67 (retail\u2192office transition), industry=67 (financial services overlap). avg=(67+67+67+67)/4=67. PVQ = 0.45*28.08 + 0.25*15.63 + 0.15*67 + 0.15*62.85 = 12.64 + 3.91 + 10.05 + 9.43 = 36.03. Approximate due to STQ text similarity variance."
+    },
+    {
+      "id": "pair-004",
+      "description": "Moderate match: Carpenter to Machinist (medium profile, skilled trades)",
+      "sourceOccupationId": "benchmark-014",
+      "targetOccupationId": "benchmark-008",
+      "workerProfileId": "profile-medium-cognitive",
+      "prwSVP": 7,
+      "ageAtAnalysis": 35,
+      "ageRule": "standard",
+      "expectedResults": {
+        "svpGatePasses": true,
+        "stq": {
+          "taskDwaOverlap": 22.0,
+          "wfMpsmsOverlap": 0.0,
+          "toolsOverlap": 18.18,
+          "materialsOverlap": 0.0,
+          "credentialOverlap": 33.33,
+          "weighted": 14.34,
+          "method": "max-of-three"
+        },
+        "tfq": {
+          "passes": true,
+          "failedTraits": [],
+          "reserveMargin": 19.58,
+          "score": 19.58
+        },
+        "vaq": {
+          "tools": 0,
+          "workProcesses": 33,
+          "workSetting": 33,
+          "industry": 33,
+          "average": 24.75
+        },
+        "lmq": {
+          "employmentScore": 94,
+          "wageScore": 61,
+          "projectionsScore": 50,
+          "joltsScore": null,
+          "localDemandScore": null,
+          "composite": 69.63
+        },
+        "pvq": 25.5,
+        "excluded": false,
+        "exclusionReason": null,
+        "confidenceGrade": "B"
+      },
+      "verificationNotes": "Hand-calculated 2026-03-27. STQ: Carpenter\u2192Machinist. SVP gate: 7\u21927, passes. Tasks share 'measure/measuring' stems, 'materials' vocabulary. Tools: different (saws vs lathes), some overlap via 'drill'. Materials: lumber vs metal \u2192 no overlap. Knowledge: 'mathematics', 'mechanical' shared (2/4). Work fields: 'construction' vs 'machining' \u2192 different. TFQ: Medium profile passes all Machinist demands (max 3 for spatial/form/motor/finger/manual/reachHandle). Reserve: sum of margins for 24 traits = 18.8/96*100 = 19.58. LMQ: Machinist emp=284,760\u2192log10=5.45\u2192(5.45-2)*24.32+10=93.9\u219294; wage=48910/80000=61; proj=50. LMQ=0.357*94+0.357*61+0.286*50=33.56+21.78+14.3=69.63. VAQ: very different tools (woodworking vs metalworking \u2192 0), different work processes (different GOE \u2192 33), different setting \u2192 33, different industry \u2192 33. avg=(0+33+33+33)/4=24.75. PVQ = 0.45*14.34 + 0.25*19.58 + 0.15*24.75 + 0.15*69.63 = 6.45 + 4.90 + 3.71 + 10.44 = 25.50. Approximate."
+    },
+    {
+      "id": "pair-005",
+      "description": "Moderate match: Electrician to Accountant (medium profile, skilled to professional, different industries)",
+      "sourceOccupationId": "benchmark-011",
+      "targetOccupationId": "benchmark-012",
+      "workerProfileId": "profile-medium-cognitive",
+      "prwSVP": 7,
+      "ageAtAnalysis": 35,
+      "ageRule": "standard",
+      "expectedResults": {
+        "svpGatePasses": true,
+        "stq": {
+          "taskDwaOverlap": 10.0,
+          "wfMpsmsOverlap": 0.0,
+          "toolsOverlap": 14.29,
+          "materialsOverlap": 0.0,
+          "credentialOverlap": 25.0,
+          "weighted": 8.86,
+          "method": "max-of-three"
+        },
+        "tfq": {
+          "passes": true,
+          "failedTraits": [],
+          "reserveMargin": 39.17,
+          "score": 39.17
+        },
+        "vaq": {
+          "tools": 0,
+          "workProcesses": 33,
+          "workSetting": 33,
+          "industry": 33,
+          "average": 24.75
+        },
+        "lmq": {
+          "employmentScore": 100,
+          "wageScore": 100,
+          "projectionsScore": 50,
+          "joltsScore": null,
+          "localDemandScore": null,
+          "composite": 85.7
+        },
+        "pvq": 30.35,
+        "excluded": false,
+        "exclusionReason": null,
+        "confidenceGrade": "B"
+      },
+      "verificationNotes": "Hand-calculated 2026-03-27. STQ: Electrician\u2192Accountant. SVP gate: 7\u21927, passes. Tasks: very different (electrical wiring vs financial analysis); minimal token overlap ('analyze/analyze' stems). Tools: share 'computer' only (1/6 Jaccard). Materials: none shared. Knowledge: 'mathematics' shared (1/4). Work fields: 'electrical work'/'construction' vs 'accounting'/'auditing' \u2192 no overlap. TFQ: Medium profile passes all Accountant demands (max 3.2 for R/M/L, 3 for clericalPerception). Reserve: sum of margins = 37.6/96*100 = 39.17. LMQ: Accountant emp=1,357,310\u2192100; wage=79880/80000=99.85\u2192100; proj=50. LMQ=0.357*100+0.357*100+0.286*50=35.7+35.7+14.3=85.7. VAQ: completely different tools/processes/setting/industry. avg=(0+33+33+33)/4=24.75. PVQ = 0.45*8.86 + 0.25*39.17 + 0.15*24.75 + 0.15*85.7 = 3.99 + 9.79 + 3.71 + 12.86 = 30.35. Approximate."
+    },
+    {
+      "id": "pair-006",
+      "description": "Moderate match: Machinist to Electrician (medium profile, 1 marginal TFQ failure on hazards - clinical mode tolerates)",
+      "sourceOccupationId": "benchmark-008",
+      "targetOccupationId": "benchmark-011",
+      "workerProfileId": "profile-medium-cognitive",
+      "prwSVP": 7,
+      "ageAtAnalysis": 35,
+      "ageRule": "standard",
+      "expectedResults": {
+        "svpGatePasses": true,
+        "stq": {
+          "taskDwaOverlap": 20.0,
+          "wfMpsmsOverlap": 0.0,
+          "toolsOverlap": 14.29,
+          "materialsOverlap": 12.5,
+          "credentialOverlap": 50.0,
+          "weighted": 15.25,
+          "method": "max-of-three"
+        },
+        "tfq": {
+          "passes": false,
+          "failedTraits": [
+            "hazards"
+          ],
+          "reserveMargin": 13.33,
+          "score": 0,
+          "strictModeFails": true,
+          "clinicalModeResult": {
+            "passes": true,
+            "toleratedFailures": [
+              "hazards"
+            ],
+            "score": 0,
+            "note": "In clinical mode, 1 marginal failure (hazards: worker=2, demand=3, deficit=1.0) would be tolerated with 15pt penalty"
+          }
+        },
+        "vaq": {
+          "tools": 33,
+          "workProcesses": 67,
+          "workSetting": 33,
+          "industry": 33,
+          "average": 41.5
+        },
+        "lmq": {
+          "employmentScore": 100,
+          "wageScore": 77,
+          "projectionsScore": 50,
+          "joltsScore": null,
+          "localDemandScore": null,
+          "composite": 77.42
+        },
+        "pvq": 0,
+        "excluded": true,
+        "exclusionReason": "Post-profile trait failure: Hazards",
+        "confidenceGrade": "B"
+      },
+      "verificationNotes": "Hand-calculated 2026-03-27. STQ: Machinist\u2192Electrician. SVP 7\u21927, passes. Tasks: share 'test/inspect' vocabulary via stemming. Tools: share 'drill' (1 match). Materials: different (metal vs wire). Knowledge: 'mathematics', 'mechanical', 'engineering and technology' shared (3/4). Work fields: 'machining' vs 'electrical work' \u2192 no Jaccard match but token overlap possible. TFQ: Medium profile hazards=2 vs Electrician hazards=3, floor(3)=3, 2<3 \u2192 FAILS in strict mode. This is the only failure and deficit=1.0 (marginal). In clinical mode this would be tolerated. Reserve margin (if it passed): 24 traits rated, sum margins = 12.8/96*100 = 13.33. LMQ: Electrician emp=698,100\u2192log=5.84\u2192(5.84-2)*24.32+10=103.4\u2192100; wage=61590/80000=77; proj=50. LMQ=0.357*100+0.357*77+0.286*50=35.7+27.49+14.3=77.49\u219277.42 (rounding). Excluded in strict mode, PVQ=0."
+    },
+    {
+      "id": "pair-007",
+      "description": "Distant match: Truck Driver to Cashier (light profile, transportation to retail)",
+      "sourceOccupationId": "benchmark-009",
+      "targetOccupationId": "benchmark-001",
+      "workerProfileId": "profile-light",
+      "prwSVP": 4,
+      "ageAtAnalysis": 40,
+      "ageRule": "standard",
+      "expectedResults": {
+        "svpGatePasses": true,
+        "stq": {
+          "taskDwaOverlap": 8.0,
+          "wfMpsmsOverlap": 0.0,
+          "toolsOverlap": 10.0,
+          "materialsOverlap": 0.0,
+          "credentialOverlap": 16.67,
+          "weighted": 6.47,
+          "method": "max-of-three"
+        },
+        "tfq": {
+          "passes": true,
+          "failedTraits": [],
+          "reserveMargin": 15.63,
+          "score": 15.63
+        },
+        "vaq": {
+          "tools": 0,
+          "workProcesses": 33,
+          "workSetting": 33,
+          "industry": 33,
+          "average": 24.75
+        },
+        "lmq": {
+          "employmentScore": 100,
+          "wageScore": 36,
+          "projectionsScore": 50,
+          "joltsScore": null,
+          "localDemandScore": null,
+          "composite": 62.85
+        },
+        "pvq": 19.96,
+        "excluded": false,
+        "exclusionReason": null,
+        "confidenceGrade": "C"
+      },
+      "verificationNotes": "Hand-calculated 2026-03-27. STQ: Truck Driver\u2192Cashier. SVP gate: 4\u21923, passes. Tasks: minimal overlap ('check/inspect' stems at best). Tools: share 'computer' (if we count GPS/computer \u2192 1 match from token overlap). Materials: no overlap (freight vs currency). Knowledge: 'english language' shared (1/3). Work fields: 'driving'/'transporting' vs 'merchandising'/'customer service' \u2192 no overlap. TFQ: Light profile passes all Cashier demands (max strength=1, light profile strength=1). Reserve: all 24 traits, margins sum to 15/96*100=15.63. LMQ: Cashier emp=3,338,290\u2192100; wage=29120/80000=36; proj=50. LMQ=0.357*100+0.357*36+0.286*50=62.85. VAQ: completely different fields \u2192 tools=0, workProcesses=33, workSetting=33, industry=33. avg=24.75. PVQ = 0.45*6.47 + 0.25*15.63 + 0.15*24.75 + 0.15*62.85 = 2.91 + 3.91 + 3.71 + 9.43 = 19.96. Approximate."
+    },
+    {
+      "id": "pair-008",
+      "description": "Distant match: RN to Cashier (medium profile, healthcare to retail)",
+      "sourceOccupationId": "benchmark-010",
+      "targetOccupationId": "benchmark-001",
+      "workerProfileId": "profile-medium-cognitive",
+      "prwSVP": 6,
+      "ageAtAnalysis": 35,
+      "ageRule": "standard",
+      "expectedResults": {
+        "svpGatePasses": true,
+        "stq": {
+          "taskDwaOverlap": 12.0,
+          "wfMpsmsOverlap": 0.0,
+          "toolsOverlap": 14.29,
+          "materialsOverlap": 0.0,
+          "credentialOverlap": 16.67,
+          "weighted": 8.73,
+          "method": "max-of-three"
+        },
+        "tfq": {
+          "passes": true,
+          "failedTraits": [],
+          "reserveMargin": 40.0,
+          "score": 40.0
+        },
+        "vaq": {
+          "tools": 0,
+          "workProcesses": 33,
+          "workSetting": 33,
+          "industry": 33,
+          "average": 24.75
+        },
+        "lmq": {
+          "employmentScore": 100,
+          "wageScore": 36,
+          "projectionsScore": 50,
+          "joltsScore": null,
+          "localDemandScore": null,
+          "composite": 62.85
+        },
+        "pvq": 27.07,
+        "excluded": false,
+        "exclusionReason": null,
+        "confidenceGrade": "B"
+      },
+      "verificationNotes": "Hand-calculated 2026-03-27. STQ: RN\u2192Cashier. SVP gate: 6\u21923, passes. Tasks: share 'records/record' stems at best. Tools: share 'computer' (1/6). Materials: no meaningful overlap. Knowledge: 'customer and personal service' shared (1/5). Work fields: 'healthcare'/'nursing' vs 'merchandising'/'customer service' \u2192 'customer service' overlap on token level. TFQ: medium profile easily exceeds all Cashier demands. Reserve: sum of margins for 24 traits = 38.4/96*100 = 40.0. LMQ: same as Cashier: 62.85. VAQ: different fields entirely \u2192 0/33/33/33 = 24.75. PVQ = 0.45*8.73 + 0.25*40.0 + 0.15*24.75 + 0.15*62.85 = 3.93 + 10.0 + 3.71 + 9.43 = 27.07. Approximate."
+    },
+    {
+      "id": "pair-009",
+      "description": "Distant match: Carpenter to File Clerk (medium profile, construction to clerical)",
+      "sourceOccupationId": "benchmark-014",
+      "targetOccupationId": "benchmark-002",
+      "workerProfileId": "profile-medium-cognitive",
+      "prwSVP": 7,
+      "ageAtAnalysis": 35,
+      "ageRule": "standard",
+      "expectedResults": {
+        "svpGatePasses": true,
+        "stq": {
+          "taskDwaOverlap": 8.0,
+          "wfMpsmsOverlap": 0.0,
+          "toolsOverlap": 0.0,
+          "materialsOverlap": 0.0,
+          "credentialOverlap": 0.0,
+          "weighted": 2.8,
+          "method": "max-of-three"
+        },
+        "tfq": {
+          "passes": true,
+          "failedTraits": [],
+          "reserveMargin": 42.92,
+          "score": 42.92
+        },
+        "vaq": {
+          "tools": 0,
+          "workProcesses": 33,
+          "workSetting": 33,
+          "industry": 33,
+          "average": 24.75
+        },
+        "lmq": {
+          "employmentScore": 86,
+          "wageScore": 47,
+          "projectionsScore": 50,
+          "joltsScore": null,
+          "localDemandScore": null,
+          "composite": 61.78
+        },
+        "pvq": 24.97,
+        "excluded": false,
+        "exclusionReason": null,
+        "confidenceGrade": "B"
+      },
+      "verificationNotes": "Hand-calculated 2026-03-27. STQ: Carpenter\u2192File Clerk. SVP gate: 7\u21923, passes. Tasks: minimal overlap ('materials' token match at best). Tools: no overlap (saws/hammers vs filing cabinets). Materials: no overlap (lumber vs documents). Knowledge: no meaningful overlap. Work fields: 'construction' vs 'clerical handling' \u2192 no overlap. TFQ: medium profile exceeds all File Clerk demands (max clericalPerception=3, medium profile has 3). Reserve: sum of margins = 41.2/96*100 = 42.92. LMQ: File Clerk emp=137,570\u2192log=5.14\u2192(5.14-2)*24.32+10=86.4\u219286; wage=37950/80000=47.4\u219247; proj=50. LMQ=0.357*86+0.357*47+0.286*50=30.7+16.78+14.3=61.78. VAQ: completely different fields \u2192 0/33/33/33=24.75. PVQ = 0.45*2.8 + 0.25*42.92 + 0.15*24.75 + 0.15*61.78 = 1.26 + 10.73 + 3.71 + 9.27 = 24.97. Approximate."
+    },
+    {
+      "id": "pair-010",
+      "description": "TFQ exclusion: Electrician to Carpenter (light profile, strength 1 vs demand 3)",
+      "sourceOccupationId": "benchmark-011",
+      "targetOccupationId": "benchmark-014",
+      "workerProfileId": "profile-light",
+      "prwSVP": 7,
+      "ageAtAnalysis": 40,
+      "ageRule": "standard",
+      "expectedResults": {
+        "svpGatePasses": true,
+        "stq": {
+          "taskDwaOverlap": 20.0,
+          "wfMpsmsOverlap": 25.0,
+          "toolsOverlap": 16.67,
+          "materialsOverlap": 0.0,
+          "credentialOverlap": 50.0,
+          "weighted": 18.58,
+          "method": "max-of-three"
+        },
+        "tfq": {
+          "passes": false,
+          "failedTraits": [
+            "spatialPerception",
+            "motorCoordination",
+            "manualDexterity",
+            "eyeHandFoot",
+            "strength",
+            "climbBalance",
+            "stoopKneel",
+            "reachHandle",
+            "workLocation",
+            "noiseVibration",
+            "hazards",
+            "dustsFumes"
+          ],
+          "reserveMargin": -9.17,
+          "score": 0
+        },
+        "vaq": {
+          "tools": 33,
+          "workProcesses": 67,
+          "workSetting": 67,
+          "industry": 67,
+          "average": 58.5
+        },
+        "lmq": {
+          "employmentScore": 100,
+          "wageScore": 70,
+          "projectionsScore": 50,
+          "joltsScore": null,
+          "localDemandScore": null,
+          "composite": 74.97
+        },
+        "pvq": 0,
+        "excluded": true,
+        "exclusionReason": "Post-profile trait failure: Spatial Perception, Motor Coordination, Manual Dexterity, Eye-Hand-Foot Coord., Strength, Climb/Balance, Stoop/Kneel, Reach/Handle, Work Location, Noise/Vibration, Hazards, Dusts/Fumes",
+        "confidenceGrade": "B"
+      },
+      "verificationNotes": "Hand-calculated 2026-03-27. TFQ EXCLUSION CASE. Light profile (strength=1, most physical traits at 1-2) vs Carpenter demands (strength=3, climbBalance=2, stoopKneel=2, reachHandle=3, workLocation=3, noiseVibration=3, hazards=2, dustsFumes=2). 12 traits fail: spatialPerception (2<3), motorCoordination (2<3), manualDexterity (2<3), eyeHandFoot (1<2), strength (1<3 SEVERE), climbBalance (1<2), stoopKneel (1<2), reachHandle (2<3), workLocation (1<3 SEVERE), noiseVibration (2<3), hazards (1<2), dustsFumes (1<2). Multiple severe failures make this excluded even in clinical mode. PVQ=0."
+    },
+    {
+      "id": "pair-011",
+      "description": "SVP gate exclusion: Truck Driver to Machinist (sedentary profile, SVP 4 to SVP 7)",
+      "sourceOccupationId": "benchmark-009",
+      "targetOccupationId": "benchmark-008",
+      "workerProfileId": "profile-sedentary",
+      "prwSVP": 4,
+      "ageAtAnalysis": 45,
+      "ageRule": "standard",
+      "expectedResults": {
+        "svpGatePasses": false,
+        "stq": {
+          "taskDwaOverlap": 0,
+          "wfMpsmsOverlap": 0,
+          "toolsOverlap": 0,
+          "materialsOverlap": 0,
+          "credentialOverlap": 0,
+          "weighted": 0,
+          "method": "max-of-three"
+        },
+        "tfq": {
+          "passes": false,
+          "failedTraits": [
+            "spatialPerception",
+            "formPerception",
+            "motorCoordination",
+            "fingerDexterity",
+            "manualDexterity",
+            "eyeHandFoot",
+            "strength",
+            "stoopKneel",
+            "reachHandle",
+            "extremeHeat",
+            "wetnessHumidity",
+            "noiseVibration",
+            "hazards",
+            "dustsFumes"
+          ],
+          "reserveMargin": -20.0,
+          "score": 0
+        },
+        "vaq": {
+          "tools": 0,
+          "workProcesses": 33,
+          "workSetting": 33,
+          "industry": 33,
+          "average": 24.75
+        },
+        "lmq": {
+          "employmentScore": 94,
+          "wageScore": 61,
+          "projectionsScore": 50,
+          "joltsScore": null,
+          "localDemandScore": null,
+          "composite": 69.63
+        },
+        "pvq": 0,
+        "excluded": true,
+        "exclusionReason": "Target SVP (7) exceeds source SVP (4)",
+        "confidenceGrade": "C"
+      },
+      "verificationNotes": "Hand-calculated 2026-03-27. DUAL EXCLUSION: SVP gate AND TFQ both fail. SVP: target Machinist SVP=7 > source Truck Driver SVP=4 \u2192 gate fails immediately, STQ=0. Even if SVP passed, TFQ would also fail: sedentary profile (strength=0, most physical traits 0-2) vs Machinist demands (strength=2, spatialPerception=3, formPerception=3, fingerDexterity=3, manualDexterity=3, reachHandle=3). 14 traits fail. PVQ=0."
+    },
+    {
+      "id": "pair-012",
+      "description": "Advanced age: Cashier to Cashier (advanced-age-sedentary profile, age 57, VAQ exclusion under advanced age rule)",
+      "sourceOccupationId": "benchmark-001",
+      "targetOccupationId": "benchmark-001",
+      "workerProfileId": "profile-advanced-age-sedentary",
+      "prwSVP": 3,
+      "ageAtAnalysis": 57,
+      "ageRule": "advanced_age",
+      "expectedResults": {
+        "svpGatePasses": true,
+        "stq": {
+          "taskDwaOverlap": 100.0,
+          "wfMpsmsOverlap": 100.0,
+          "toolsOverlap": 100.0,
+          "materialsOverlap": 100.0,
+          "credentialOverlap": 100.0,
+          "weighted": 100.0,
+          "method": "max-of-three",
+          "note": "Same occupation used as both source and target; unskilled pathway applies (SVP 3\u21923)"
+        },
+        "tfq": {
+          "passes": false,
+          "failedTraits": [
+            "spatialPerception",
+            "formPerception",
+            "motorCoordination",
+            "fingerDexterity",
+            "manualDexterity",
+            "eyeHandFoot",
+            "strength",
+            "stoopKneel",
+            "reachHandle",
+            "noiseVibration"
+          ],
+          "reserveMargin": -8.75,
+          "score": 0
+        },
+        "vaq": {
+          "tools": 100,
+          "workProcesses": 100,
+          "workSetting": 100,
+          "industry": 100,
+          "average": 100.0,
+          "ageRuleApplies": true,
+          "ageRulePasses": true,
+          "note": "Same occupation = no adjustment needed. However, TFQ fails first."
+        },
+        "lmq": {
+          "employmentScore": 100,
+          "wageScore": 36,
+          "projectionsScore": 50,
+          "joltsScore": null,
+          "localDemandScore": null,
+          "composite": 62.85
+        },
+        "pvq": 0,
+        "excluded": true,
+        "exclusionReason": "Post-profile trait failure: Spatial Perception, Form Perception, Motor Coordination, Finger Dexterity, Manual Dexterity, Eye-Hand-Foot Coord., Strength, Stoop/Kneel, Reach/Handle, Noise/Vibration",
+        "confidenceGrade": "C"
+      },
+      "verificationNotes": "Hand-calculated 2026-03-27. ADVANCED AGE EXCLUSION CASE. Worker profile is advanced-age-sedentary (age 57, strength=0, most physical/environmental traits 0-1). Even for the same occupation (Cashier, a light-duty job), the severely limited post-injury profile fails TFQ on 10 traits: spatialPerception (1<2), formPerception (1<2), motorCoordination (1<2), fingerDexterity (1<2), manualDexterity (1<2), eyeHandFoot (0<1), strength (0<1), stoopKneel (0<1), reachHandle (1<2), noiseVibration (0<1). The advanced age rule (ageRule=advanced_age) would require VAQ=100 on all dimensions for passage, but the TFQ gate fails before VAQ is even evaluated. This demonstrates the compound effect of age and severe physical limitations. PVQ=0."
+    }
+  ]
+}

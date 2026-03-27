@@ -15,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { FileText, Download, ChevronDown, ChevronUp, ExternalLink, DollarSign, TrendingUp, ArrowUpDown, Sparkles, Loader2, RefreshCw, AlertTriangle, BarChart3, ShieldCheck, Target, Layers, Info, Globe, BookOpen } from "lucide-react";
+import { FileText, Download, ChevronDown, ChevronUp, ExternalLink, DollarSign, TrendingUp, ArrowUpDown, AlertTriangle, BarChart3, ShieldCheck, Target, Layers, Info, Globe, BookOpen } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Fragment } from "react";
@@ -984,7 +984,6 @@ export default function ResultsPage() {
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [narrative, setNarrative] = useState("");
-  const [generatingNarrative, setGeneratingNarrative] = useState(false);
   const [profileUpdatedAfterAnalysis, setProfileUpdatedAfterAnalysis] = useState(false);
 
   const load = useCallback(async () => {
@@ -1049,57 +1048,6 @@ export default function ResultsPage() {
       toast.error("Something went wrong");
     }
     setDownloading(false);
-  }
-
-  async function generateNarrative() {
-    if (!selected) return;
-    setGeneratingNarrative(true);
-    try {
-      const viableOccs = (selected.targetOccupations ?? [])
-        .filter((t) => !t.excluded)
-        .sort((a, b) => (b.pvq ?? 0) - (a.pvq ?? 0));
-      const excludedOccs = (selected.targetOccupations ?? []).filter((t) => t.excluded);
-
-      const topOccupations = viableOccs.slice(0, 5).map((t) => {
-        const d = (t.lmqDetails as Record<string, unknown>)?.details as Record<string, unknown> | undefined;
-        return {
-          title: t.title,
-          pvq: t.pvq ?? 0,
-          medianWage: (d?.medianWage as number) ?? null,
-          grade: t.confidenceGrade ?? "\u2014",
-        };
-      });
-
-      const res = await fetch("/api/ai/narrative", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          clientName: selected.case?.clientName ?? "Client",
-          ageRule: selected.ageRule ?? "standard",
-          priorEarnings: selected.priorEarnings,
-          prwSummary: "Past relevant work analyzed per case file",
-          viableCount: viableOccs.length,
-          excludedCount: excludedOccs.length,
-          topOccupations,
-        }),
-      });
-
-      if (res.status === 503) {
-        toast.error("AI not available \u2014 OpenAI key not configured");
-        return;
-      }
-
-      const data = await res.json();
-      if (data.narrative) {
-        setNarrative(data.narrative);
-        toast.success("Vocational opinion generated!");
-      } else {
-        toast.error("Failed to generate narrative");
-      }
-    } catch {
-      toast.error("Failed to generate narrative");
-    }
-    setGeneratingNarrative(false);
   }
 
   if (loading) return <div className="p-6">Loading...</div>;
@@ -2262,75 +2210,42 @@ export default function ResultsPage() {
         </Card>
       )}
 
-      {/* AI Vocational Opinion */}
+      {/* Vocational Opinion */}
       {viable.length > 0 && (
         <Card>
           <CardHeader>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-purple-600" />
-                AI Vocational Opinion
+                <FileText className="h-5 w-5" />
+                Vocational Opinion
               </CardTitle>
-              <Button
-                onClick={generateNarrative}
-                disabled={generatingNarrative}
-                variant={narrative ? "outline" : "default"}
-                size="sm"
-              >
-                {generatingNarrative ? (
-                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generating...</>
-                ) : narrative ? (
-                  <><RefreshCw className="mr-2 h-4 w-4" />Regenerate</>
-                ) : (
-                  <><Sparkles className="mr-2 h-4 w-4" />Generate Vocational Opinion</>
-                )}
-              </Button>
+              {narrative && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    navigator.clipboard.writeText(narrative);
+                    toast.success("Copied to clipboard!");
+                  }}
+                >
+                  Copy to Clipboard
+                </Button>
+              )}
             </div>
             <p className="text-sm text-muted-foreground">
-              AI-generated professional vocational opinion narrative using PVQ-TM methodology.
-              Review and edit before including in reports.
+              Write your professional vocational opinion narrative using PVQ-TM methodology.
             </p>
           </CardHeader>
           <CardContent>
-            {!narrative && !generatingNarrative && (
-              <div className="text-center py-6 text-muted-foreground">
-                <Sparkles className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                <p className="text-sm">Click &quot;Generate Vocational Opinion&quot; to create an AI-drafted narrative</p>
-                <p className="text-xs mt-1">Uses analysis results, wage data, and transferability findings</p>
-              </div>
-            )}
-            {generatingNarrative && (
-              <div className="flex items-center justify-center gap-2 py-8 text-muted-foreground">
-                <Loader2 className="h-5 w-5 animate-spin" />
-                <span>Writing vocational opinion...</span>
-              </div>
-            )}
-            {narrative && !generatingNarrative && (
-              <div className="space-y-3">
-                <Textarea
-                  value={narrative}
-                  onChange={(e) => setNarrative(e.target.value)}
-                  rows={12}
-                  className="text-sm leading-relaxed"
-                />
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Sparkles className="h-3 w-3" />
-                    AI-generated — review and edit before use in reports
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      navigator.clipboard.writeText(narrative);
-                      toast.success("Copied to clipboard!");
-                    }}
-                  >
-                    Copy to Clipboard
-                  </Button>
-                </div>
-              </div>
-            )}
+            <div className="space-y-3">
+              <Textarea
+                value={narrative}
+                onChange={(e) => setNarrative(e.target.value)}
+                rows={12}
+                className="text-sm leading-relaxed"
+                placeholder="Enter your vocational opinion narrative here. Summarize the transferability analysis methodology, key findings, viable alternatives, wage implications, and any limitations or considerations..."
+              />
+            </div>
           </CardContent>
         </Card>
       )}

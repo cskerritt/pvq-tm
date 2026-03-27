@@ -78,9 +78,12 @@ model OccupationWages {
   pct10       Float?
   pct25       Float?
   pct75       Float?
-  pct90       Float?
-  year        Int
-  createdAt   DateTime @default(now())
+  pct90           Float?
+  rseEmployment   Float?  // BLS Relative Standard Error for employment estimate
+  rseMedianWage   Float?  // RSE for median wage estimate
+  rseMeanWage     Float?  // RSE for mean wage estimate
+  year            Int
+  createdAt       DateTime @default(now())
 
   @@unique([onetSocCode, areaType, areaCode, year])
   @@index([onetSocCode])
