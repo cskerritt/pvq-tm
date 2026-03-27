@@ -3,6 +3,11 @@
  *
  * Generates a comprehensive coverage report for the PVQ-TM data system.
  * Used for auditing data completeness and identifying gaps.
+ *
+ * Now includes fallback coverage metrics from:
+ * - crosswalk-fallback.ts (DOT→O*NET fallback mapping)
+ * - oews-fallback.ts (OEWS wage data fallback)
+ * - residual-category-handler.ts (trait data for residual categories)
  */
 
 import {
@@ -18,6 +23,17 @@ import {
   type TraitVector,
 } from "@/lib/engine/traits";
 import { computeVQ } from "@/lib/engine/vocational-quotient";
+import { getCrosswalkCoverage } from "@/lib/engine/crosswalk-fallback";
+import { getOEWSCoverage } from "@/lib/engine/oews-fallback";
+import { getResidualCoverage } from "@/lib/engine/residual-category-handler";
+
+export interface FallbackCoverageDetail {
+  direct: number;
+  fallback: number;
+  uncovered: number;
+  totalPct: number;
+  fallbackByMethod: Record<string, number>;
+}
 
 export interface CoverageSummary {
   dot: {
@@ -54,6 +70,12 @@ export interface CoverageSummary {
     byBand: Record<number, number>;
     meanVQ: number;
     medianVQ: number;
+  };
+  /** Coverage WITH fallback data (100% targets) */
+  withFallbacks?: {
+    crosswalk: FallbackCoverageDetail;
+    oews: FallbackCoverageDetail;
+    traits: FallbackCoverageDetail;
   };
 }
 
@@ -197,6 +219,13 @@ export async function generateCoverageSummary(): Promise<CoverageSummary> {
   const medianVQ =
     vqScores.length > 0 ? vqScores[Math.floor(vqScores.length / 2)] : 0;
 
+  // ── Fallback Coverage ──
+  const [crosswalkCov, oewsCov, residualCov] = await Promise.all([
+    getCrosswalkCoverage(),
+    getOEWSCoverage(onetCodes),
+    getResidualCoverage(),
+  ]);
+
   return {
     dot: {
       total: dotCodes.length,
@@ -229,6 +258,29 @@ export async function generateCoverageSummary(): Promise<CoverageSummary> {
       byBand: vqBands,
       meanVQ: Math.round(meanVQ * 100) / 100,
       medianVQ: Math.round(medianVQ * 100) / 100,
+    },
+    withFallbacks: {
+      crosswalk: {
+        direct: crosswalkCov.directMapped,
+        fallback: crosswalkCov.fallbackMapped,
+        uncovered: crosswalkCov.unmapped,
+        totalPct: Math.round(crosswalkCov.coveragePct * 10) / 10,
+        fallbackByMethod: crosswalkCov.fallbackByMethod,
+      },
+      oews: {
+        direct: oewsCov.directCoverage,
+        fallback: oewsCov.fallbackCoverage,
+        uncovered: oewsCov.noCoverage,
+        totalPct: Math.round(oewsCov.coveragePct * 10) / 10,
+        fallbackByMethod: oewsCov.fallbackByMethod,
+      },
+      traits: {
+        direct: residualCov.withDirectData,
+        fallback: residualCov.withProxyData,
+        uncovered: residualCov.withNoData,
+        totalPct: Math.round(residualCov.coveragePct * 10) / 10,
+        fallbackByMethod: residualCov.proxyBySource,
+      },
     },
   };
 }

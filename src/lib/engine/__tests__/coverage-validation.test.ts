@@ -40,6 +40,20 @@ import {
   classifyVQBand,
   type VQResult,
 } from "@/lib/engine/vocational-quotient";
+import {
+  getONETForDOT,
+  getAllFallbackMappings,
+  getCrosswalkCoverage,
+} from "@/lib/engine/crosswalk-fallback";
+import {
+  getOEWSWithFallback,
+  getOEWSCoverage,
+} from "@/lib/engine/oews-fallback";
+import {
+  getScorableData,
+  getResidualCoverage,
+  needsResidualProxy,
+} from "@/lib/engine/residual-category-handler";
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
@@ -852,5 +866,196 @@ describe("Data Integrity", () => {
       invalid.slice(0, 10).forEach((c) => console.log(`    ${c}`));
     }
     expect(invalid.length).toBe(0);
+  });
+});
+
+// ─── I. Fallback Coverage: DOT→O*NET Crosswalk (100% target) ────────
+
+describe("Fallback Coverage: DOT→O*NET Crosswalk", () => {
+  it("100% of DOT codes should resolve to an O*NET occupation (with fallback)", async () => {
+    const coverage = await getCrosswalkCoverage();
+
+    console.log("  Crosswalk coverage WITH fallbacks:");
+    console.log(`    Direct mapped: ${coverage.directMapped}`);
+    console.log(`    Fallback mapped: ${coverage.fallbackMapped}`);
+    console.log(`    Unmapped: ${coverage.unmapped}`);
+    console.log(`    Total coverage: ${coverage.coveragePct.toFixed(1)}%`);
+    console.log(`    Fallback by method:`, coverage.fallbackByMethod);
+
+    expect(coverage.unmapped).toBe(0);
+    expect(coverage.coveragePct).toBe(100);
+  });
+
+  it("all fallback mappings should produce valid O*NET codes", async () => {
+    const fallbacks = await getAllFallbackMappings();
+    const onetData = await loadONETFullData();
+    const onetCodes = new Set(Object.keys(onetData));
+    const invalidMappings: string[] = [];
+
+    for (const [dotCode, result] of fallbacks) {
+      if (!onetCodes.has(result.onetCode)) {
+        invalidMappings.push(`${dotCode} → ${result.onetCode}`);
+      }
+    }
+
+    if (invalidMappings.length > 0) {
+      console.log(`  Invalid fallback O*NET codes (${invalidMappings.length}):`);
+      invalidMappings.slice(0, 5).forEach(m => console.log(`    ${m}`));
+    }
+    // All fallback mappings should reference valid O*NET codes
+    expect(invalidMappings.length).toBe(0);
+  });
+
+  it("fallback results should be properly flagged", async () => {
+    const dotData = await loadDOTData();
+    const dotCodes = Object.keys(dotData);
+
+    // Pick a DOT code with xw (should not be fallback)
+    const withXW = dotCodes.find(c => dotData[c].xw && dotData[c].xw!.trim());
+    if (withXW) {
+      const result = await getONETForDOT(withXW);
+      expect(result).not.toBeNull();
+      expect(result!.isFallback).toBe(false);
+    }
+
+    // Pick a DOT code without xw (should be fallback)
+    const withoutXW = dotCodes.find(c => !dotData[c].xw || !dotData[c].xw!.trim());
+    if (withoutXW) {
+      const result = await getONETForDOT(withoutXW);
+      expect(result).not.toBeNull();
+      expect(result!.isFallback).toBe(true);
+      expect(result!.fallbackMethod).toBeTruthy();
+    }
+  });
+});
+
+// ─── J. Fallback Coverage: OEWS Wage Data (100% target) ─────────────
+
+describe("Fallback Coverage: OEWS Wage Data", () => {
+  it("100% of O*NET occupations should have wage data (with fallback)", async () => {
+    const onetData = await loadONETFullData();
+    const onetCodes = Object.keys(onetData);
+    const coverage = await getOEWSCoverage(onetCodes);
+
+    console.log("  OEWS coverage WITH fallbacks:");
+    console.log(`    Direct coverage: ${coverage.directCoverage}`);
+    console.log(`    Fallback coverage: ${coverage.fallbackCoverage}`);
+    console.log(`    No coverage: ${coverage.noCoverage}`);
+    console.log(`    Total coverage: ${coverage.coveragePct.toFixed(1)}%`);
+    console.log(`    Fallback by method:`, coverage.fallbackByMethod);
+
+    expect(coverage.coveragePct).toBeGreaterThanOrEqual(100);
+  });
+
+  it("fallback wage data should have valid median wages", async () => {
+    const onetData = await loadONETFullData();
+    const onetCodes = Object.keys(onetData);
+    const oewsData = await loadOEWSData();
+    const oewsSet = new Set(Object.keys(oewsData));
+
+    const missingCodes = onetCodes.filter(c => !oewsSet.has(c.replace(/\.\d+$/, "")));
+    let withWages = 0;
+    let withoutWages = 0;
+    const noWageCodes: string[] = [];
+
+    for (const code of missingCodes) {
+      const socCode = code.replace(/\.\d+$/, "");
+      const result = await getOEWSWithFallback(socCode);
+      if (result.wageData.md !== null || result.wageData.m !== null) {
+        withWages++;
+      } else {
+        withoutWages++;
+        noWageCodes.push(code);
+      }
+    }
+
+    console.log(`  Fallback wage resolution: ${withWages}/${missingCodes.length} have wages`);
+    if (noWageCodes.length > 0) {
+      console.log(`  Codes with no fallback wages: ${noWageCodes.join(", ")}`);
+    }
+
+    expect(withWages + withoutWages).toBe(missingCodes.length);
+    // All codes should get wages through some fallback path
+    expect(withWages).toBe(missingCodes.length);
+  });
+
+  it("fallback results should be properly flagged", async () => {
+    // Direct OEWS code should not be flagged
+    const oewsData = await loadOEWSData();
+    const directCode = Object.keys(oewsData)[0];
+    const directResult = await getOEWSWithFallback(directCode);
+    expect(directResult.isFallback).toBe(false);
+
+    // Military code should be flagged as fallback
+    const militaryResult = await getOEWSWithFallback("55-3016");
+    expect(militaryResult.isFallback).toBe(true);
+    expect(militaryResult.fallbackMethod).toBeTruthy();
+  });
+});
+
+// ─── K. Fallback Coverage: Scorable Trait Data (100% target) ────────
+
+describe("Fallback Coverage: Scorable Trait Data", () => {
+  it("100% of O*NET occupations should have scorable trait data (with fallback)", async () => {
+    const coverage = await getResidualCoverage();
+
+    console.log("  Trait data coverage WITH fallbacks:");
+    console.log(`    With direct data: ${coverage.withDirectData}`);
+    console.log(`    With proxy data: ${coverage.withProxyData}`);
+    console.log(`    With no data: ${coverage.withNoData}`);
+    console.log(`    Total coverage: ${coverage.coveragePct.toFixed(1)}%`);
+
+    expect(coverage.coveragePct).toBeGreaterThanOrEqual(100);
+    expect(coverage.withNoData).toBe(0);
+  });
+
+  it("proxy data should contain actual trait elements", async () => {
+    const onetData = await loadONETFullData();
+    const onetCodes = Object.keys(onetData);
+    let emptyProxies = 0;
+    const emptyCodes: string[] = [];
+
+    for (const code of onetCodes) {
+      const needs = await needsResidualProxy(code);
+      if (!needs) continue;
+
+      const data = await getScorableData(code);
+      if (data.abilities.length === 0 && data.skills.length === 0 && data.knowledge.length === 0) {
+        emptyProxies++;
+        emptyCodes.push(code);
+      }
+    }
+
+    if (emptyCodes.length > 0) {
+      console.log(`  Empty proxy data for: ${emptyCodes.slice(0, 5).join(", ")}`);
+    }
+
+    expect(emptyProxies).toBe(0);
+  });
+
+  it("proxy results should be properly flagged with isResidualProxy", async () => {
+    const onetData = await loadONETFullData();
+    const onetCodes = Object.keys(onetData);
+
+    // Find a code with direct data
+    const directCode = onetCodes.find(c => {
+      const e = onetData[c];
+      return (e.ab && e.ab.length > 0) || (e.sk && e.sk.length > 0);
+    });
+    if (directCode) {
+      const data = await getScorableData(directCode);
+      expect(data.isResidualProxy).toBe(false);
+    }
+
+    // Find a code without data (needs proxy)
+    const proxyCode = onetCodes.find(c => {
+      const e = onetData[c];
+      return (!e.ab || e.ab.length === 0) && (!e.sk || e.sk.length === 0) && (!e.kn || e.kn.length === 0);
+    });
+    if (proxyCode) {
+      const data = await getScorableData(proxyCode);
+      expect(data.isResidualProxy).toBe(true);
+      expect(data.proxySource).toBeTruthy();
+    }
   });
 });
