@@ -408,6 +408,11 @@ model TargetOccupation {
   traitMarginAvg     Float?   // average trait margin across all rated traits
   closestFailTrait   String?  // trait name that is closest to failing
 
+  // ─── VQ-Centric Feasibility (replaces binary exclusion) ────
+  feasibilityScore   Float?   // Continuous 0-100 feasibility score (VQ-weighted trait assessment)
+  riskLevel          String?  // "none" | "marginal" | "moderate" | "severe"
+  traitDeficits      Json?    // Array of {trait, label, deficit, vqWeight, penalty}
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
