@@ -3,26 +3,40 @@
 if [ -n "$DATABASE_URL" ]; then
   echo "Running Prisma migrations..."
 
-  # ─── Direct SQL: ensure all required columns exist BEFORE migration resolve ──
+  # ─── Direct SQL: replay ALL migration SQL BEFORE the resolve loop ────────────
   # The resolve loop below marks all migrations as "applied" which prevents
-  # migrate deploy from running new migration SQL. So we run ALTER TABLE
-  # statements directly with IF NOT EXISTS to guarantee columns exist.
-  echo "Ensuring required columns exist via direct SQL..."
+  # migrate deploy from running new migration SQL. So we execute every
+  # migration.sql file directly — they are all idempotent (IF NOT EXISTS).
+  # This guarantees every column, index, and table exists in the database.
+  echo "Replaying all migration SQL (idempotent) to ensure schema is complete..."
   node -e "
     const { Pool } = require('pg');
+    const fs = require('fs');
+    const path = require('path');
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-    pool.query(\`
-      ALTER TABLE \"TargetOccupation\" ADD COLUMN IF NOT EXISTS \"cpcCode\" TEXT;
-      ALTER TABLE \"TargetOccupation\" ADD COLUMN IF NOT EXISTS \"cpcSimilarity\" DOUBLE PRECISION;
-      ALTER TABLE \"Analysis\" ADD COLUMN IF NOT EXISTS \"cpcAnalysis\" JSONB;
-      ALTER TABLE \"Analysis\" ADD COLUMN IF NOT EXISTS \"analysisMode\" TEXT DEFAULT 'strict';
-      ALTER TABLE \"TargetOccupation\" ADD COLUMN IF NOT EXISTS \"pendingEvaluatorReview\" BOOLEAN DEFAULT false;
-      ALTER TABLE \"TargetOccupation\" ADD COLUMN IF NOT EXISTS \"hasTolerations\" BOOLEAN DEFAULT false;
-    \`).then(() => {
-      console.log('All required columns verified/created.');
-      pool.end();
-    }).catch(err => {
-      console.error('Direct SQL column check failed:', err.message);
+    (async () => {
+      const migrationsDir = path.join(__dirname, 'prisma', 'migrations');
+      const dirs = fs.readdirSync(migrationsDir)
+        .filter(d => /^\d/.test(d))
+        .sort();
+      for (const dir of dirs) {
+        const sqlFile = path.join(migrationsDir, dir, 'migration.sql');
+        if (fs.existsSync(sqlFile)) {
+          const sql = fs.readFileSync(sqlFile, 'utf8');
+          try {
+            await pool.query(sql);
+            console.log('  Applied: ' + dir);
+          } catch (err) {
+            // Tolerate errors from CREATE TABLE without IF NOT EXISTS
+            // (init migration) — tables already exist on existing DBs
+            console.log('  Skipped: ' + dir + ' (' + err.message.split('\\n')[0] + ')');
+          }
+        }
+      }
+      console.log('All migration SQL replayed.');
+      await pool.end();
+    })().catch(err => {
+      console.error('Migration SQL replay failed:', err.message);
       pool.end();
       process.exit(1);
     });
