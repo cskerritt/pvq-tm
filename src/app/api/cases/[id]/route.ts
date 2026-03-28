@@ -10,7 +10,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         profiles: true,
         pastRelevantWork: { include: { acquiredSkills: true } },
         acquiredSkills: true,
-        analyses: { include: { targetOccupations: true } },
+        analyses: true,
       },
     });
     if (!c) return NextResponse.json({ error: "Not found" }, { status: 404 });
