@@ -227,6 +227,7 @@ export async function POST(
   // Fetch ALL targets (including excluded) so we can analyze exclusion reasons
   const allTargetsInAnalysis = await prisma.targetOccupation.findMany({
     where: { analysisId },
+    omit: { feasibilityScore: true, riskLevel: true, traitDeficits: true },
     include: { onetOcc: true },
   });
 
@@ -286,6 +287,7 @@ export async function POST(
       // Reload targets with enriched data
       const refreshedTargets = await prisma.targetOccupation.findMany({
         where: { analysisId },
+        omit: { feasibilityScore: true, riskLevel: true, traitDeficits: true },
         include: { onetOcc: true },
       });
       allTargetsInAnalysis.splice(0, allTargetsInAnalysis.length, ...refreshedTargets);
@@ -1014,6 +1016,7 @@ export async function POST(
   // Re-fetch targets with updated scores to compute aggregates
   const updatedTargets = await prisma.targetOccupation.findMany({
     where: { analysisId },
+    omit: { feasibilityScore: true, riskLevel: true, traitDeficits: true },
   });
 
   // Also fetch wage data for employment figures

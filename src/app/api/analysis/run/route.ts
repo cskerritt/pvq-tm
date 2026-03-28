@@ -225,6 +225,7 @@ export async function POST(req: NextRequest) {
     });
     const allTargets = await prisma.targetOccupation.findMany({
       where: { analysisId: analysisRecord.id },
+      omit: { feasibilityScore: true, riskLevel: true, traitDeficits: true },
       orderBy: [{ excluded: "asc" }, { pvq: "desc" }],
     });
 

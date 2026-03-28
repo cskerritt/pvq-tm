@@ -61,6 +61,7 @@ export async function POST(
   // Get all target occupations for this analysis
   const targets = await prisma.targetOccupation.findMany({
     where: { analysisId, excluded: false },
+    omit: { feasibilityScore: true, riskLevel: true, traitDeficits: true },
     include: { onetOcc: true },
   });
 
