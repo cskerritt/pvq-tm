@@ -9,7 +9,14 @@ if [ -n "$DATABASE_URL" ]; then
   # migration.sql file directly — they are all schema-only DDL with
   # IF NOT EXISTS guards, making them safe to re-run.
   # This guarantees every column, index, and table exists in the database.
-  echo "Replaying migration SQL (idempotent DDL) to ensure schema is complete..."
+  #
+  # To avoid redundant work on restarts, we track the latest migration name
+  # in a _schema_version table. If the DB already matches the current image's
+  # latest migration, the replay is skipped entirely.
+  #
+  # Each migration file is executed inside its own transaction so that a
+  # failure rolls back cleanly instead of leaving the schema half-applied.
+  echo "Checking if migration replay is needed..."
   node -e "
     const { Pool } = require('pg');
     const fs = require('fs');
@@ -30,28 +37,67 @@ if [ -n "$DATABASE_URL" ]; then
       const dirs = fs.readdirSync(migrationsDir)
         .filter(d => /^\d/.test(d))
         .sort();
+      if (dirs.length === 0) {
+        console.log('No migrations found — skipping replay.');
+        await pool.end();
+        return;
+      }
+      const latestMigration = dirs[dirs.length - 1];
+
+      // ── Short-circuit: skip replay if DB already matches this image ──
+      await pool.query(\`
+        CREATE TABLE IF NOT EXISTS _schema_version (
+          id INTEGER PRIMARY KEY DEFAULT 1,
+          latest_migration TEXT NOT NULL,
+          applied_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT single_row CHECK (id = 1)
+        )
+      \`);
+      const { rows } = await pool.query(
+        'SELECT latest_migration FROM _schema_version WHERE id = 1'
+      );
+      if (rows.length > 0 && rows[0].latest_migration === latestMigration) {
+        console.log('Schema already up-to-date (latest: ' + latestMigration + ') — skipping replay.');
+        await pool.end();
+        return;
+      }
+
+      // ── Replay all migration SQL inside individual transactions ──
+      console.log('Replaying migration SQL (idempotent DDL)...');
       for (const dir of dirs) {
         const sqlFile = path.join(migrationsDir, dir, 'migration.sql');
         if (fs.existsSync(sqlFile)) {
           const sql = fs.readFileSync(sqlFile, 'utf8');
+          const client = await pool.connect();
           try {
-            await pool.query(sql);
+            await client.query('BEGIN');
+            await client.query(sql);
+            await client.query('COMMIT');
             console.log('  Applied: ' + dir);
           } catch (err) {
+            await client.query('ROLLBACK');
             if (EXPECTED_PG_CODES.has(err.code)) {
-              // Safe to skip: object already exists (e.g. init migration tables)
               console.log('  Skipped: ' + dir + ' (' + err.message.split('\\n')[0] + ')');
             } else {
-              // Unexpected error — fail fast so we don't mask real issues
               console.error('  FAILED: ' + dir);
               console.error('    Code: ' + err.code + ' — ' + err.message);
+              client.release();
               await pool.end();
               process.exit(1);
             }
+          } finally {
+            client.release();
           }
         }
       }
-      console.log('All migration SQL replayed.');
+
+      // ── Record successful replay ──
+      await pool.query(\`
+        INSERT INTO _schema_version (id, latest_migration)
+        VALUES (1, \$1)
+        ON CONFLICT (id) DO UPDATE SET latest_migration = \$1, applied_at = now()
+      \`, [latestMigration]);
+      console.log('All migration SQL replayed. Recorded version: ' + latestMigration);
       await pool.end();
     })().catch(err => {
       console.error('Migration SQL replay failed:', err.message);
