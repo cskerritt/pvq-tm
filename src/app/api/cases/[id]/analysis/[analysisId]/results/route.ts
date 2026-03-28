@@ -12,6 +12,7 @@ export async function GET(
     where: { id: analysisId, caseId: id },
     include: {
       targetOccupations: {
+        omit: { feasibilityScore: true, riskLevel: true, traitDeficits: true },
         orderBy: [{ excluded: "asc" }, { pvq: "desc" }],
       },
       case: true,

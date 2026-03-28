@@ -7,7 +7,23 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const analyses = await prisma.analysis.findMany({
       where: { caseId: id },
       include: {
-        targetOccupations: true,
+        targetOccupations: {
+          select: {
+            id: true,
+            onetSocCode: true,
+            title: true,
+            svp: true,
+            stq: true,
+            tfq: true,
+            tfqDetails: true,
+            vaq: true,
+            lmq: true,
+            pvq: true,
+            excluded: true,
+            exclusionReason: true,
+            confidenceGrade: true,
+          },
+        },
         case: {
           select: {
             id: true,
@@ -51,7 +67,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         ...(body.targetArea !== undefined ? { targetArea: body.targetArea } : {}),
         ...(body.targetAreaName !== undefined ? { targetAreaName: body.targetAreaName } : {}),
       },
-      include: { targetOccupations: true },
+      include: {
+        targetOccupations: {
+          omit: { feasibilityScore: true, riskLevel: true, traitDeficits: true },
+        },
+      },
     });
     return NextResponse.json(updated);
   } catch (error) {
