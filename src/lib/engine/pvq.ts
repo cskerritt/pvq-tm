@@ -1,16 +1,22 @@
 /**
  * PVQ Compositor
  *
- * Combines all four quotients into the final Public Vocational Quotient:
+ * The primary scoring system is now VQ-centric (McCroskey VQS methodology).
+ * The PVQ composite (0.45×STQ + 0.25×TFQ + 0.15×VAQ + 0.15×LMQ) is
+ * retained for backward compatibility but deprecated in favor of
+ * computeUnifiedScore() which uses VQ as the primary score with
+ * continuous feasibility assessment.
  *
- * PVQ = 0.45×STQ + 0.25×TFQ + 0.15×VAQ + 0.15×LMQ
- *
- * The composite is used only for ranking among already-acceptable occupations.
- * It never overrides the legal rule structure.
+ * Reference: McCroskey, B.J. (2011). VQS Manual and Quick Start Tutorial.
  */
 
 import { type STQResult } from "./skill-transfer";
 import { type TFQResult, type AnalysisMode } from "./trait-feasibility";
+import {
+  type FeasibilityResult,
+  type RiskLevel,
+  type TraitDeficit,
+} from "./trait-feasibility";
 import { type VAQResult } from "./vocational-adjustment";
 import { type LMQResult } from "./labor-market";
 
@@ -196,6 +202,7 @@ function gradeConfidence(
 }
 
 /**
+ * @deprecated Use rankByUnifiedScore() instead.
  * Rank target occupations by PVQ score.
  * Excluded occupations are placed at the end.
  */
@@ -205,5 +212,118 @@ export function rankOccupations(results: PVQResult[]): PVQResult[] {
     if (a.excluded !== b.excluded) return a.excluded ? 1 : -1;
     // Then by PVQ descending
     return b.pvq - a.pvq;
+  });
+}
+
+// ─── VQ-Centric Unified Scoring ─────────────────────────────────────────
+
+/**
+ * Unified score result combining VQS primary scoring with
+ * continuous feasibility assessment and supplementary PVQ-TM data.
+ *
+ * Data hierarchy:
+ *   Level 1 (Primary): VQ, VQ Band, TSP, EC — from published VQS methodology
+ *   Level 2 (Feasibility): feasibilityScore, riskLevel, deficits — continuous assessment
+ *   Level 3 (Supplementary): STQ, LMQ, VAQ — PVQ-TM enrichment
+ *   Level 4 (Legacy): pvqLegacy — deprecated PVQ composite
+ */
+export interface UnifiedScoreResult {
+  // ─── Feasibility Assessment (replaces binary exclusion) ────
+  feasibilityScore: number; // 0-100 continuous
+  riskLevel: RiskLevel;
+  deficits: TraitDeficit[];
+
+  // ─── Supplementary (PVQ-TM additions) ──────────────────────
+  stq: number;
+  lmq: number;
+  vaq: number;
+  confidenceGrade: "A" | "B" | "C" | "D";
+
+  // ─── Legacy (backward compatibility) ───────────────────────
+  pvqLegacy: number; // old PVQ composite, kept for migration
+  excluded: boolean; // derived from riskLevel for backward compat
+  exclusionReason?: string;
+
+  // ─── Component references ──────────────────────────────────
+  feasibility: FeasibilityResult;
+  components: {
+    stqResult: STQResult;
+    tfqResult: TFQResult;
+    vaqResult: VAQResult;
+    lmqResult: LMQResult;
+  };
+}
+
+/**
+ * Compute unified score using VQ-centric methodology.
+ *
+ * Unlike computePVQ() which uses binary exclusion gates, this produces
+ * a continuous feasibility assessment alongside the component scores.
+ * No occupation is ever "excluded" from scoring — risk levels are
+ * informational flags, not gates.
+ *
+ * The legacy PVQ composite is still computed for backward compatibility
+ * but should not be used as the primary ranking score. Use VQ (from
+ * computeVQ()) as the primary score, with feasibilityScore as the
+ * secondary sort criterion.
+ */
+export function computeUnifiedScore(
+  stqResult: STQResult,
+  tfqResult: TFQResult,
+  vaqResult: VAQResult,
+  lmqResult: LMQResult,
+  feasibility: FeasibilityResult
+): UnifiedScoreResult {
+  // Compute legacy PVQ composite (for backward compat)
+  const pvqLegacy =
+    Math.round(
+      (PVQ_WEIGHTS.stq * stqResult.stq +
+        PVQ_WEIGHTS.tfq * tfqResult.tfq +
+        PVQ_WEIGHTS.vaq * vaqResult.vaq +
+        PVQ_WEIGHTS.lmq * lmqResult.lmq) *
+        100
+    ) / 100;
+
+  // Derive legacy excluded flag from risk level for backward compat
+  const excluded = feasibility.riskLevel === "severe";
+  const exclusionReason =
+    excluded && feasibility.deficits.length > 0
+      ? `Trait deficits: ${feasibility.deficits.map((d) => d.label).join(", ")}`
+      : undefined;
+
+  return {
+    feasibilityScore: feasibility.feasibilityScore,
+    riskLevel: feasibility.riskLevel,
+    deficits: feasibility.deficits,
+    stq: stqResult.stq,
+    lmq: lmqResult.lmq,
+    vaq: vaqResult.vaq,
+    confidenceGrade: gradeConfidence(stqResult, tfqResult, lmqResult),
+    pvqLegacy,
+    excluded,
+    exclusionReason,
+    feasibility,
+    components: { stqResult, tfqResult, vaqResult, lmqResult },
+  };
+}
+
+/**
+ * Rank occupations using VQ-centric methodology.
+ * Primary sort: feasibility score descending (all occupations included).
+ * Secondary sort: STQ descending (skill transfer relevance).
+ *
+ * Note: VQ score is not included here because it measures job difficulty,
+ * not worker-job fit. VQ should be used for earnings capacity classification,
+ * not as a ranking criterion.
+ */
+export function rankByUnifiedScore(
+  results: UnifiedScoreResult[]
+): UnifiedScoreResult[] {
+  return [...results].sort((a, b) => {
+    // Primary: feasibility score descending
+    const fDiff = b.feasibilityScore - a.feasibilityScore;
+    if (Math.abs(fDiff) > 0.01) return fDiff;
+    // Secondary: STQ descending
+    return b.stq - a.stq;
   });
 }

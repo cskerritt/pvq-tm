@@ -45,7 +45,155 @@ export interface TFQResult {
   toleratedFailures?: TraitComparison[];
 }
 
+// ─── VQ Regression Weights for Feasibility Scoring ─────────────────────
+// These are the same 24 trait weights from McCroskey's published VQ regression
+// (vocational-quotient.ts). Using them as penalty weights ensures that trait
+// deficits are weighted by their published vocational significance.
+//
+// Reference: McCroskey, B.J. (2011). VQS Manual and Quick Start Tutorial.
+const FEASIBILITY_VQ_WEIGHTS: Record<TraitKey, number> = {
+  reasoning: 5.299567,
+  math: 2.213121,
+  language: 1.424168,
+  spatialPerception: 2.241977,
+  formPerception: 1.783972,
+  clericalPerception: 1.95779,
+  motorCoordination: 1.648707,
+  fingerDexterity: 1.631036,
+  manualDexterity: 2.126616,
+  eyeHandFoot: 1.403101,
+  colorDiscrimination: 1.431217,
+  strength: 1.84953,
+  climbBalance: 0.774892,
+  stoopKneel: 0.165864, // absolute value; original is negative
+  reachHandle: 0.776669,
+  talkHear: 4.542681,
+  see: 0.201044,
+  workLocation: 1.470938,
+  extremeCold: 0.330026,
+  extremeHeat: 0.504727,
+  wetnessHumidity: 0.371165,
+  noiseVibration: 1.217675,
+  hazards: 0.200072, // absolute value; original is negative
+  dustsFumes: 0.298293,
+};
+
+// Maximum single-trait VQ weight (Reasoning), used to normalize penalties
+const MAX_VQ_WEIGHT = 5.299567;
+
+/** Risk level for an occupation based on trait deficit severity */
+export type RiskLevel = "none" | "marginal" | "moderate" | "severe";
+
+/** Individual trait deficit detail */
+export interface TraitDeficit {
+  trait: TraitKey;
+  label: string;
+  deficit: number; // positive = how much demand exceeds capacity (in 0-4 scale)
+  vqWeight: number; // McCroskey VQ regression weight for this trait
+  penalty: number; // contribution to feasibility score reduction
+}
+
+/** Result of continuous feasibility scoring */
+export interface FeasibilityResult {
+  feasibilityScore: number; // 0-100, continuous
+  riskLevel: RiskLevel;
+  deficits: TraitDeficit[];
+  reserveMargin: number; // raw reserve margin before penalties
+  traitComparisons: TraitComparison[];
+}
+
 /**
+ * Compute a continuous feasibility score (0-100) for an occupation.
+ *
+ * Unlike the binary pass/fail TFQ, this uses McCroskey's published VQ
+ * regression weights to produce graduated penalties for trait deficits.
+ * No occupation is ever "excluded" — instead, deficits reduce the score
+ * and are classified into risk levels for informational flagging.
+ *
+ * Formula:
+ *   feasibilityScore = max(0, reserveMargin - Σ(deficit_i × vqWeight_i / maxWeight × scaleFactor))
+ *
+ * Risk classification:
+ *   "none"     — no trait deficits
+ *   "marginal" — total weighted penalty ≤ 15 points
+ *   "moderate" — total weighted penalty ≤ 40 points
+ *   "severe"   — total weighted penalty > 40 points
+ *
+ * Reference: VQ regression weights from McCroskey, B.J. (2011).
+ */
+export function computeFeasibilityScore(
+  workerPostProfile: TraitVector,
+  occupationDemands: TraitVector,
+  sources?: Partial<Record<string, TraitSource>>
+): FeasibilityResult {
+  const comparisons = compareTraits(
+    workerPostProfile,
+    occupationDemands,
+    sources as Parameters<typeof compareTraits>[2]
+  );
+
+  const reserveMargin = calculateReserveMargin(
+    workerPostProfile,
+    occupationDemands
+  );
+
+  // Identify deficits: traits where demand exceeds capacity
+  const deficits: TraitDeficit[] = [];
+  let totalPenalty = 0;
+
+  // Scale factor: a 1-level deficit on the highest-weighted trait (Reasoning, w=5.3)
+  // should produce roughly a 20-point penalty. This calibrates to:
+  //   1.0 × (5.3 / 5.3) × scaleFactor = 20  →  scaleFactor = 20
+  const SCALE_FACTOR = 20;
+
+  for (const comp of comparisons) {
+    if (comp.margin !== null && comp.margin < 0) {
+      const deficit = Math.abs(comp.margin);
+      const vqWeight = FEASIBILITY_VQ_WEIGHTS[comp.trait];
+      const normalizedWeight = vqWeight / MAX_VQ_WEIGHT;
+      const penalty = deficit * normalizedWeight * SCALE_FACTOR;
+
+      deficits.push({
+        trait: comp.trait,
+        label: comp.label,
+        deficit: Math.round(deficit * 100) / 100,
+        vqWeight: Math.round(vqWeight * 1000) / 1000,
+        penalty: Math.round(penalty * 100) / 100,
+      });
+
+      totalPenalty += penalty;
+    }
+  }
+
+  // Apply penalties to reserve margin
+  const rawScore = reserveMargin - totalPenalty;
+  const feasibilityScore = Math.round(Math.max(0, Math.min(100, rawScore)) * 100) / 100;
+
+  // Classify risk level based on total penalty magnitude
+  let riskLevel: RiskLevel;
+  if (deficits.length === 0) {
+    riskLevel = "none";
+  } else if (totalPenalty <= 15) {
+    riskLevel = "marginal";
+  } else if (totalPenalty <= 40) {
+    riskLevel = "moderate";
+  } else {
+    riskLevel = "severe";
+  }
+
+  return {
+    feasibilityScore,
+    riskLevel,
+    deficits,
+    reserveMargin: Math.round(reserveMargin * 100) / 100,
+    traitComparisons: comparisons,
+  };
+}
+
+/**
+ * @deprecated Use computeFeasibilityScore() instead. This function uses binary
+ * pass/fail exclusion which is being replaced by continuous feasibility scoring.
+ *
  * Compute the Trait Feasibility Quotient (TFQ).
  *
  * Strict mode (default): any trait failure = automatic exclusion.

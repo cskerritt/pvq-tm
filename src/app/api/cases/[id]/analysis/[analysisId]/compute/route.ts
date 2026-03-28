@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { computePVQ } from "@/lib/engine/pvq";
+import { computePVQ, computeUnifiedScore } from "@/lib/engine/pvq";
 import { computeSTQ, type SkillTransferInput } from "@/lib/engine/skill-transfer";
-import { computeTFQ, buildDOTDemandVector, buildOccupationDemands } from "@/lib/engine/trait-feasibility";
+import { computeTFQ, computeFeasibilityScore, buildDOTDemandVector, buildOccupationDemands } from "@/lib/engine/trait-feasibility";
 import { computeVAQ, estimateVAQ, type VocationalAdjustment } from "@/lib/engine/vocational-adjustment";
 import { computeLMQ } from "@/lib/engine/labor-market";
 import { profileToTraitVector, STRENGTH_LABELS, TRAIT_LABELS, mapORSToTraits } from "@/lib/engine/traits";
@@ -830,8 +830,18 @@ export async function POST(
       stateJoltsOpenings: stateJoltsCurrent,
     });
 
-    // ─── PVQ Composite ──────────────────────────────────────────────
+    // ─── PVQ Composite (legacy) ───────────────────────────────────
     const pvqResult = computePVQ(stqResult, tfqResult, vaqResult, lmqResult);
+
+    // ─── VQ-Centric Feasibility Score ───────────────────────────
+    const feasibilityResult = computeFeasibilityScore(
+      workerTraits,
+      demandVector,
+      demandSources
+    );
+    const unifiedResult = computeUnifiedScore(
+      stqResult, tfqResult, vaqResult, lmqResult, feasibilityResult
+    );
 
     // ─── VQS: VQ Computation ─────────────────────────────────────
     const vqResult = computeVQ(demandVector);
@@ -949,6 +959,12 @@ export async function POST(
         preVqScore,
         preEcMedian,
         preEcDetails: preEcDetailsJson ? JSON.parse(JSON.stringify(preEcDetailsJson)) : null,
+        // VQ-Centric Feasibility (new continuous scoring)
+        feasibilityScore: unifiedResult.feasibilityScore,
+        riskLevel: unifiedResult.riskLevel,
+        traitDeficits: unifiedResult.deficits.length > 0
+          ? JSON.parse(JSON.stringify(unifiedResult.deficits))
+          : null,
       },
     });
   }
