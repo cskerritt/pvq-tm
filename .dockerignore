@@ -4,7 +4,6 @@ node_modules
 .gitignore
 .env*
 .claude
-data
 coverage
 *.md
 *.gif
@@ -15,3 +14,4 @@ create-gif.mjs
 Dockerfile
 docker-compose*.yml
 .dockerignore
+scripts/build-unified

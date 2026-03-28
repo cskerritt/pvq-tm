@@ -25,6 +25,9 @@ COPY . .
 # Next.js collects anonymous telemetry — disable it
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Ensure public directory exists (may be empty)
+RUN mkdir -p public
+
 # Build the standalone Next.js app
 RUN npm run build
 
@@ -54,6 +57,10 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/src/generated ./src/generated
+
+# Copy data files (unified occupations, DOT, O*NET, ORS, OEWS, BLS)
+# These are imported at runtime and may not be traced by standalone output
+COPY --from=builder /app/src/data ./src/data
 
 # Copy the entrypoint script
 COPY docker-entrypoint.sh ./

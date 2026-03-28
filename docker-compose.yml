@@ -1,0 +1,36 @@
+version: "3.8"
+
+services:
+  # PostgreSQL database for local testing
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: pvqtm
+      POSTGRES_PASSWORD: pvqtm_local
+      POSTGRES_DB: pvqtm
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pvqtm"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # PVQ-TM application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://pvqtm:pvqtm_local@db:5432/pvqtm
+      NODE_ENV: production
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
